@@ -1,0 +1,25 @@
+# Python environments and caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# Runtime outputs
+runs/*
+!runs/.gitkeep
+
+# Real scientific datasets
+sample_data/real/*
+!sample_data/real/.gitkeep
+
+# Temporary and sensitive files
+*.tmp
+*.log
+.env
+*.key
+
+# Editor
+.vscode/*.log

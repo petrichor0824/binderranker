@@ -1,0 +1,49 @@
+schema_version: "0.1"
+
+project_name: munc18_syntaxin_3c98
+description: "Munc18a-syntaxin N-peptide binder backbone ranking"
+
+input:
+  pdb_dir: /server/path/to/260625_Munc18a-sytaxin_N-peptide/results
+  recursive: false
+
+  # 原始 RFdiffusion 输出把 target 和 binder 拼接在同一条 A 链。
+  layout: concatenated_single_chain
+  source_chain: A
+
+  # 原始 contig 为 A4-135/0 60-100。
+  target_residue_count: 132
+  target_start_residue: 4
+
+  # 标准化后 target=A，binder=B。
+  normalized_target_chain: A
+  normalized_binder_chain: B
+
+regions:
+  desired:
+    - "A:110-135"
+
+  undesired: []
+
+  hotspots:
+    - "A:115"
+    - "A:127"
+    - "A:128"
+    - "A:130"
+    - "A:131"
+    - "A:132"
+
+  hotspot_expand_radius: 8.0
+
+ranking:
+  ranker_version: v0.1-expert
+  region_policy: "diagnostic"
+  region_filter: "off"
+
+  top_k_report: 30
+  top_n_sheets: 500
+
+safety:
+  unknown_situation: "stop"
+  allow_overwrite: false
+  max_files: null

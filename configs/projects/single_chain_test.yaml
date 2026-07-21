@@ -1,0 +1,32 @@
+schema_version: "0.1"
+
+project_name: single_chain_test
+description: "Local concatenated single-chain test"
+
+input:
+  pdb_dir: sample_data/test_single_chain
+  recursive: false
+  layout: concatenated_single_chain
+  source_chain: A
+  target_residue_count: 2
+  target_start_residue: 1
+  normalized_target_chain: A
+  normalized_binder_chain: B
+
+regions:
+  desired: []
+  undesired: []
+  hotspots: []
+  hotspot_expand_radius: 8.0
+
+ranking:
+  ranker_version: v0.1-expert
+  region_policy: "diagnostic"
+  region_filter: "off"
+  top_k_report: 30
+  top_n_sheets: 500
+
+safety:
+  unknown_situation: "stop"
+  allow_overwrite: false
+  max_files: null

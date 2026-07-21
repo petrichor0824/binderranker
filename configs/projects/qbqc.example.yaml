@@ -1,0 +1,42 @@
+schema_version: "0.1"
+
+project_name: qbqc
+description: "QbQc SNARE-Syt1/Cpx interface binder backbone ranking"
+
+input:
+  pdb_dir: /server/path/to/qbqc/clean_designed_pdbs
+  recursive: false
+
+  # PDB 已经正确分成 binder 和 target 链。
+  layout: existing_chains
+  binder_chain: A
+
+  # 留空表示除 binder 之外的所有链都是 target。
+  target_chains: []
+
+regions:
+  desired:
+    - "164-196"
+    - "223-258"
+
+  undesired:
+    - "19-51"
+    - "89-117"
+
+  hotspots: []
+  hotspot_expand_radius: 8.0
+
+ranking:
+  ranker_version: v0.1-expert
+
+  # 计算 region 指标，但暂不改变主排名。
+  region_policy: "diagnostic"
+  region_filter: "off"
+
+  top_k_report: 30
+  top_n_sheets: 500
+
+safety:
+  unknown_situation: "stop"
+  allow_overwrite: false
+  max_files: null
