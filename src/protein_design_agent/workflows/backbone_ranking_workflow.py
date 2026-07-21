@@ -34,6 +34,9 @@ from pydantic import ValidationError
 from protein_design_agent.schemas.project_config import (
     load_project_config,
 )
+from protein_design_agent.tools.analysis_scope import (
+    classify_analysis_scope,
+)
 from protein_design_agent.tools.check_project_input import (
     evaluate_project_input,
 )
@@ -186,6 +189,38 @@ def prepare(
         )
         raise typer.Exit(code=3)
 
+    analysis_scope = classify_analysis_scope(
+        len(pdb_files)
+    )
+
+    typer.echo(
+        f"    分析级别：{analysis_scope['level']}"
+    )
+    typer.echo(
+        f"    结果用途：{analysis_scope['result_use']}"
+    )
+    typer.echo(
+        f"    说明：{analysis_scope['message']}"
+    )
+
+    warning_path = (
+        run_dir
+        / "SCIENTIFIC_INTERPRETATION_WARNING.txt"
+    )
+    warning_path.write_text(
+        "Analysis scope\n"
+        "==============\n\n"
+        f"level: {analysis_scope['level']}\n"
+        f"pdb_count: {analysis_scope['pdb_count']}\n"
+        "workflow_allows_formal_interpretation: "
+        f"{analysis_scope['workflow_allows_formal_interpretation']}\n"
+        "pool_labels_reliable: "
+        f"{analysis_scope['pool_labels_reliable']}\n"
+        f"result_use: {analysis_scope['result_use']}\n\n"
+        f"{analysis_scope['message']}\n",
+        encoding="utf-8",
+    )
+
     original_reports = [
         inspect_one_pdb(path)
         for path in pdb_files
@@ -202,6 +237,7 @@ def prepare(
             "project_name": project.project_name,
             "input_directory": str(effective_input_dir),
             "pdb_count": len(pdb_files),
+            "analysis_scope": analysis_scope,
             "status": compatibility["status"],
             "compatibility": compatibility,
             "files": original_reports,
@@ -369,6 +405,7 @@ def prepare(
         "ranker_sha256": ranker_sha256,
         "input_directory": str(normalized_dir),
         "input_summary": normalized_summary,
+        "analysis_scope": analysis_scope,
         "output_prefix": str(output_prefix),
         "region_policy": project.ranking.region_policy,
         "command": command,
@@ -405,6 +442,8 @@ def prepare(
             ranker_dir / "ranker_execution_plan.json"
         ),
         "ranker_script": str(run_script),
+        "analysis_scope": analysis_scope,
+        "interpretation_warning": str(warning_path),
         "status": "READY_FOR_REVIEW",
     }
 
@@ -419,6 +458,16 @@ def prepare(
     typer.echo("状态：READY_FOR_REVIEW")
     typer.echo("================================================")
     typer.echo(f"运行目录：{run_dir}")
+    typer.echo(
+        f"分析级别：{analysis_scope['level']}"
+    )
+    typer.echo(
+        "允许正式解释："
+        f"{analysis_scope['workflow_allows_formal_interpretation']}"
+    )
+    typer.echo(
+        f"解释警告：{warning_path}"
+    )
     typer.echo(
         f"标准化 PDB：{normalized_dir}"
     )
