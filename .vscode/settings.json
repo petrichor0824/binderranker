@@ -4,5 +4,10 @@
     "python.testing.unittestEnabled": false,
     "python.analysis.extraPaths": [
         "${workspaceFolder}/src"
-    ]
+    ],
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/.pytest_cache": true,
+        "**/*.egg-info": true
+    }
 }
