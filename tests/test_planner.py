@@ -1,0 +1,127 @@
+from protein_design_agent.agent.planner import (
+    build_agent_plan,
+    questions_for_missing_fields,
+)
+from protein_design_agent.schemas.agent_models import (
+    UserRequest,
+)
+from protein_design_agent.schemas.project_config import (
+    ProjectConfig,
+)
+
+
+def test_incomplete_request_needs_information() -> None:
+    request = UserRequest(
+        raw_text="帮我排名这批骨架"
+    )
+
+    plan = build_agent_plan(request)
+
+    assert plan.status == "NEEDS_INFORMATION"
+    assert plan.execution_allowed is False
+    assert plan.config_preview is None
+
+    assert plan.missing_information == [
+        "input_dir",
+        "input_layout",
+    ]
+
+    questions = questions_for_missing_fields(
+        plan.missing_information
+    )
+
+    assert len(questions) == 2
+    assert "PDB 文件夹路径" in questions[0]
+
+
+def test_complete_existing_chains_request_is_ready() -> None:
+    request = UserRequest(
+        raw_text="检查已经分链的骨架，A链是binder",
+        project_name="two_chain_job",
+        input_dir="sample_data/test_two_chain",
+        input_layout="existing_chains",
+        binder_chain="A",
+    )
+
+    plan = build_agent_plan(request)
+
+    assert plan.status == "READY_FOR_REVIEW"
+    assert plan.execution_allowed is False
+    assert len(plan.steps) == 5
+
+    assert plan.config_preview is not None
+    assert plan.config_preview["project_name"] == (
+        "two_chain_job"
+    )
+    assert plan.config_preview["input"]["binder_chain"] == "A"
+
+    # Planner 生成的预览必须能通过正式配置验证。
+    ProjectConfig.model_validate(plan.config_preview)
+
+
+def test_complete_single_chain_request_is_ready() -> None:
+    request = UserRequest(
+        raw_text=(
+            "A链前132个残基是target，后面是binder"
+        ),
+        project_name="single_chain_job",
+        input_dir="sample_data/real/3c98_small",
+        input_layout="concatenated_single_chain",
+        source_chain="A",
+        target_residue_count=132,
+        hotspots=["A:115", "A:127"],
+    )
+
+    plan = build_agent_plan(request)
+
+    assert plan.status == "READY_FOR_REVIEW"
+
+    config = plan.config_preview
+    assert config is not None
+
+    assert config["input"]["source_chain"] == "A"
+    assert config["input"]["target_residue_count"] == 132
+    assert config["input"]["normalized_binder_chain"] == "B"
+    assert config["regions"]["hotspots"] == [
+        "A:115",
+        "A:127",
+    ]
+
+    ProjectConfig.model_validate(config)
+
+
+def test_execution_request_is_not_automatically_allowed() -> None:
+    request = UserRequest(
+        raw_text="直接执行排名任务",
+        input_dir="sample_data/test_two_chain",
+        input_layout="existing_chains",
+        binder_chain="A",
+        execute_requested=True,
+    )
+
+    plan = build_agent_plan(request)
+
+    assert plan.status == "READY_FOR_REVIEW"
+    assert plan.execution_allowed is False
+
+    assert any(
+        "不会自动执行" in warning
+        for warning in plan.warnings
+    )
+
+
+def test_diagnostic_policy_is_explicitly_explained() -> None:
+    request = UserRequest(
+        raw_text="以diagnostic模式准备排名",
+        input_dir="sample_data/test_two_chain",
+        input_layout="existing_chains",
+        binder_chain="A",
+        region_policy="diagnostic",
+    )
+
+    plan = build_agent_plan(request)
+
+    assert any(
+        "不改变 BinderRanker 默认主分" in warning
+        for warning in plan.warnings
+    )
