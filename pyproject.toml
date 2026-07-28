@@ -32,3 +32,6 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[project.scripts]
+protein-design-agent = "protein_design_agent.cli:app"

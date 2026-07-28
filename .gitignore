@@ -23,3 +23,6 @@ sample_data/real/*
 
 # Editor
 .vscode/*.log
+# User-specific model configurations
+configs/models/*.local.yaml
+configs/models/private/

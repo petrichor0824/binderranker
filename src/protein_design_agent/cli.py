@@ -32,6 +32,20 @@ from pathlib import Path
 from typing import Any, Optional
 
 import typer
+
+from protein_design_agent.agent.local_executor import (
+    LocalExecutionError,
+    execute_approved_binderranker,
+)
+
+from protein_design_agent.agent.analyze_run import (
+    run_analyze_run,
+)
+
+from protein_design_agent.agent.explain_run import (
+    ExplainRunError,
+    run_explain_run,
+)
 from pydantic import ValidationError
 
 from protein_design_agent.agent.approval import (
@@ -607,6 +621,341 @@ def materialize_plan_command(
         f"{result.output_config_sha256}"
     )
     typer.echo("没有执行任何科学工作流。")
+
+
+
+
+
+@app.command("execute-run")
+def execute_run_command(
+    approval: Path = typer.Option(
+        ...,
+        "--approval",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        help=(
+            "approve-run 生成的一次性批准文件。"
+        ),
+    ),
+    confirm_execute: bool = typer.Option(
+        False,
+        "--confirm-execute",
+        help=(
+            "显式确认在本机执行 BinderRanker。"
+        ),
+    ),
+) -> None:
+    """
+    根据一次性批准在本机执行 BinderRanker。
+
+    执行前会重新检查批准摘要、关键文件、
+    标准化数据集、Ranker 哈希和输出状态。
+    """
+    if not confirm_execute:
+        typer.echo(
+            "ERROR：本地执行需要显式传入 "
+            "--confirm-execute",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        result = execute_approved_binderranker(
+            approval_path=approval,
+            confirm_execute=True,
+        )
+
+    except LocalExecutionError as exc:
+        typer.echo(
+            f"ERROR：{exc}",
+            err=True,
+        )
+
+        manifest = getattr(
+            exc,
+            "execution_manifest",
+            None,
+        )
+
+        if manifest is not None:
+            typer.echo(
+                f"执行清单：{manifest}",
+                err=True,
+            )
+
+        raise typer.Exit(code=1) from exc
+
+    except Exception as exc:
+        typer.echo(
+            f"ERROR：{exc}",
+            err=True,
+        )
+        raise typer.Exit(code=1) from exc
+
+    typer.echo("=" * 72)
+    typer.echo("BinderRanker 本地执行完成")
+    typer.echo("=" * 72)
+
+    typer.echo(
+        f"状态：{result.status}"
+    )
+    typer.echo(
+        f"项目：{result.project_name}"
+    )
+    typer.echo(
+        f"批准 ID：{result.approval_id}"
+    )
+    typer.echo(
+        f"返回码：{result.return_code}"
+    )
+    typer.echo(
+        f"输出前缀：{result.output_prefix}"
+    )
+    typer.echo(
+        f"标准输出日志：{result.stdout_log}"
+    )
+    typer.echo(
+        f"标准错误日志：{result.stderr_log}"
+    )
+    typer.echo(
+        f"执行清单：{result.execution_manifest}"
+    )
+    typer.echo(
+        f"输出文件数量：{len(result.output_files)}"
+    )
+
+    for item in result.output_files:
+        typer.echo(
+            f"  - {item.path}"
+        )
+
+    typer.echo("")
+    typer.echo(
+        "该批准已经消耗，不能再次使用。"
+    )
+    typer.echo(
+        "下一步使用 analyze-run 解析和解释结果。"
+    )
+
+
+@app.command("analyze-run")
+def analyze_run_command(
+    bundle_dir: Path = typer.Option(
+        ...,
+        "--bundle-dir",
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
+        help="已经完成 BinderRanker 执行的 bundle。",
+    ),
+    analysis_dir: Path = typer.Option(
+        Path("analyses/analysis_v1"),
+        "--analysis-dir",
+        help=(
+            "分析输出目录；相对路径按 bundle 解析。"
+        ),
+    ),
+    with_model: bool = typer.Option(
+        False,
+        "--with-model",
+        help="在确定性分析后调用受控大模型解释。",
+    ),
+    model_config: Path | None = typer.Option(
+        None,
+        "--model-config",
+        help="模型 Provider 配置文件。",
+    ),
+    profile: str | None = typer.Option(
+        None,
+        "--profile",
+        help="模型配置中的 Profile 名。",
+    ),
+    allow_network: bool = typer.Option(
+        False,
+        "--allow-network",
+        help="显式允许真实模型 API 调用。",
+    ),
+    max_output_tokens: int = typer.Option(
+        8192,
+        "--max-output-tokens",
+        min=128,
+        max=100000,
+    ),
+    timeout_seconds: float = typer.Option(
+        180.0,
+        "--timeout-seconds",
+        min=1.0,
+        max=600.0,
+    ),
+) -> None:
+    """
+    解析、分析并可选解释已完成的 Ranker 运行。
+
+    本命令不会重新执行 BinderRanker。
+    """
+    try:
+        result = run_analyze_run(
+            bundle_dir=bundle_dir,
+            analysis_dir=analysis_dir,
+            with_model=with_model,
+            model_config_path=model_config,
+            profile_name=profile,
+            allow_network=allow_network,
+            max_output_tokens=max_output_tokens,
+            timeout_seconds=timeout_seconds,
+        )
+
+    except Exception as exc:
+        typer.echo(
+            f"ERROR：{exc}",
+            err=True,
+        )
+        raise typer.Exit(code=1) from exc
+
+    typer.echo("=" * 72)
+    typer.echo("Ranker 结果分析完成")
+    typer.echo("=" * 72)
+    typer.echo(f"状态：{result.status}")
+    typer.echo(f"Bundle：{result.bundle_dir}")
+    typer.echo(f"分析目录：{result.analysis_dir}")
+    typer.echo(f"分析清单：{result.manifest_path}")
+    typer.echo(
+        f"结果摘要：{result.result_summary_path}"
+    )
+    typer.echo(
+        f"失败分析：{result.failure_analysis_path}"
+    )
+    typer.echo(
+        f"启用模型：{result.with_model}"
+    )
+
+    if result.with_model:
+        typer.echo(
+            f"Provider：{result.provider_name}"
+        )
+        typer.echo(
+            "模型报告："
+            f"{result.explanation_markdown_path}"
+        )
+
+
+@app.command("explain-run")
+def explain_run_command(
+    bundle_dir: Path = typer.Option(
+        ...,
+        "--bundle-dir",
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
+        help=(
+            "已完成执行和结果解析的 Agent bundle。"
+        ),
+    ),
+    model_config: Path = typer.Option(
+        ...,
+        "--model-config",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        help="模型 Provider 配置文件。",
+    ),
+    profile: str | None = typer.Option(
+        None,
+        "--profile",
+        help=(
+            "模型配置中的 Profile 名；"
+            "省略时使用配置默认值。"
+        ),
+    ),
+    output_dir: Path = typer.Option(
+        Path("explanations/cli_v1"),
+        "--output-dir",
+        help=(
+            "解释输出目录。相对路径按 bundle 解析。"
+        ),
+    ),
+    allow_network: bool = typer.Option(
+        False,
+        "--allow-network",
+        help=(
+            "显式允许调用真实模型 API。"
+        ),
+    ),
+    max_output_tokens: int = typer.Option(
+        8192,
+        "--max-output-tokens",
+        min=128,
+        max=100000,
+        help="本次模型最大输出 token 数。",
+    ),
+    timeout_seconds: float = typer.Option(
+        180.0,
+        "--timeout-seconds",
+        min=1.0,
+        max=600.0,
+        help="模型 API 超时时间。",
+    ),
+) -> None:
+    """
+    为已经完成 Ranker 解析的 bundle 生成受控模型解释。
+
+    本命令不会重新执行 BinderRanker。
+    """
+    try:
+        result = run_explain_run(
+            bundle_dir=bundle_dir,
+            model_config_path=(
+                model_config
+            ),
+            profile_name=profile,
+            output_dir=output_dir,
+            allow_network=allow_network,
+            max_output_tokens=(
+                max_output_tokens
+            ),
+            timeout_seconds=(
+                timeout_seconds
+            ),
+        )
+
+    except Exception as exc:
+        typer.echo(
+            f"ERROR：{exc}",
+            err=True,
+        )
+        raise typer.Exit(code=1) from exc
+
+    typer.echo("=" * 72)
+    typer.echo("结果解释完成")
+    typer.echo("=" * 72)
+    typer.echo(
+        f"状态：{result.status}"
+    )
+    typer.echo(
+        f"Provider：{result.provider_name}"
+    )
+    typer.echo(
+        f"Bundle：{result.bundle_dir}"
+    )
+    typer.echo(
+        f"输出目录：{result.output_dir}"
+    )
+    typer.echo(
+        f"证据：{result.evidence_path}"
+    )
+    typer.echo(
+        "结构化解释："
+        f"{result.explanation_json_path}"
+    )
+    typer.echo(
+        "Markdown 报告："
+        f"{result.explanation_markdown_path}"
+    )
 
 
 @app.command("validate-model-config")

@@ -1,0 +1,26 @@
+{
+  "project_name": "3c98_public_agent_demo",
+  "input_dir": "sample_data/real/3c98_small",
+  "input_layout": "concatenated_single_chain",
+  "source_chain": "A",
+  "target_residue_count": 132,
+  "target_start_residue": 4,
+  "normalized_target_chain": "A",
+  "normalized_binder_chain": "B",
+  "desired_regions": [
+    "A:110-135"
+  ],
+  "undesired_regions": [],
+  "hotspots": [
+    "A:115",
+    "A:127",
+    "A:128",
+    "A:130",
+    "A:131",
+    "A:132"
+  ],
+  "region_policy": "diagnostic",
+  "region_filter": "off",
+  "requested_top_k": 30,
+  "execute_requested": false
+}

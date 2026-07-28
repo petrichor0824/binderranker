@@ -1,0 +1,38 @@
+schema_version: "0.1"
+
+# 这是默认选择的模型配置。
+# 可以改成下面 profiles 中的任意名称。
+active_profile: local_example
+
+profiles:
+
+  # 云端 OpenAI-compatible 接口示例。
+  # 不要在这里填写真实 API Key。
+  cloud_example:
+    kind: openai_compatible
+    base_url: https://api.example.com/v1
+    model: replace-with-cloud-model-name
+
+    # 程序会从该环境变量中读取真正的 API Key。
+    api_key_env: CLOUD_LLM_API_KEY
+    require_api_key: true
+
+    timeout_seconds: 60
+    max_output_tokens: 4096
+    max_tokens_field: "max_tokens"
+    temperature: 0.0
+
+  # 本地 OpenAI-compatible 服务示例。
+  # 可用于兼容接口的本地推理服务。
+  local_example:
+    kind: openai_compatible
+    base_url: http://127.0.0.1:8000/v1
+    model: replace-with-local-model-name
+
+    api_key_env: null
+    require_api_key: false
+
+    timeout_seconds: 120
+    max_output_tokens: 4096
+    max_tokens_field: "max_tokens"
+    temperature: 0.0

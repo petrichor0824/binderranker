@@ -54,6 +54,30 @@ class RequestParserProvider(Protocol):
         ...
 
 
+@runtime_checkable
+class StructuredJSONProvider(Protocol):
+    """
+    能够根据受控消息生成结构化 JSON 的 Provider。
+
+    与 RequestParserProvider 的区别：
+    - RequestParserProvider 只负责自然语言到 UserRequest；
+    - StructuredJSONProvider 可用于结果解释等后续任务；
+    - 它仍然只生成数据，不执行命令或科学程序。
+    """
+
+    @property
+    def name(self) -> str:
+        """Provider 的公开名称。"""
+        ...
+
+    def generate_json(
+        self,
+        messages: list[Mapping[str, str]],
+    ) -> dict[str, Any]:
+        """根据消息生成并解析一个 JSON 对象。"""
+        ...
+
+
 def validate_provider_payload(
     *,
     raw_text: str,
@@ -80,6 +104,17 @@ def validate_provider_payload(
 
     # 用户原始输入是可信来源，不能采用模型生成的 raw_text。
     data["raw_text"] = raw_text
+
+    allowed_fields = set(UserRequest.model_fields)
+    unknown_fields = sorted(
+        set(data) - allowed_fields
+    )
+
+    if unknown_fields:
+        raise ProviderOutputError(
+            "Provider 输出包含未定义字段："
+            f"{unknown_fields}"
+        )
 
     try:
         return UserRequest.model_validate(data)
