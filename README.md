@@ -2,7 +2,7 @@
 
 A safety-oriented, configuration-driven agent for protein-design dataset inspection, BinderRanker planning, controlled execution, and auditable result explanation.
 
-Current release: **0.1.0 Public Beta preparation**
+Current release: **0.1.0 Public Beta**
 
 ## What this project does
 
