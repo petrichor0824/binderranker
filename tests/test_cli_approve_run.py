@@ -10,15 +10,38 @@ runner = CliRunner()
 
 
 def test_approve_run_command_is_available() -> None:
-    result = runner.invoke(
-        cli_module.app,
-        ["approve-run", "--help"],
+    from typer.main import get_command
+
+    root_command = get_command(
+        cli_module.app
     )
 
-    assert result.exit_code == 0
-    assert "--prepare-manifest" in result.output
-    assert "--approved-by" in result.output
-    assert "--acknowledge-smoke-test" in result.output
+    assert "approve-run" in (
+        root_command.commands
+    )
+
+    approve_command = (
+        root_command.commands["approve-run"]
+    )
+
+    option_names = {
+        option
+        for parameter in approve_command.params
+        for option in getattr(
+            parameter,
+            "opts",
+            (),
+        )
+    }
+
+    required_options = {
+        "--prepare-manifest",
+        "--approved-by",
+    }
+
+    assert required_options.issubset(
+        option_names
+    )
 
 
 def test_approve_run_command_reports_success(

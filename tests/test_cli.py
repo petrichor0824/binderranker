@@ -67,15 +67,32 @@ def write_mock_payload(
 
 
 def test_cli_has_expected_commands() -> None:
-    result = runner.invoke(
-        app,
-        ["--help"],
-    )
+    from typer.main import get_command
 
-    assert result.exit_code == 0
-    assert "validate-model-config" in result.output
-    assert "plan-mock" in result.output
-    assert "plan" in result.output
+    from protein_design_agent.cli import app
+
+    root_command = get_command(app)
+
+    expected_commands = {
+        "init",
+        "doctor",
+        "chat",
+        "plan",
+        "plan-mock",
+        "prepare",
+        "prepare-session",
+        "materialize-plan",
+        "approve-run",
+        "execute-run",
+        "run-status",
+        "analyze-run",
+        "explain-run",
+        "validate-model-config",
+    }
+
+    assert expected_commands.issubset(
+        set(root_command.commands)
+    )
 
 
 def test_validate_model_config_does_not_use_network(

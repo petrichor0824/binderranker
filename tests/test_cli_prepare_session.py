@@ -13,14 +13,38 @@ runner = CliRunner()
 
 
 def test_prepare_session_command_is_available() -> None:
-    result = runner.invoke(
-        cli_module.app,
-        ["prepare-session", "--help"],
+    from typer.main import get_command
+
+    from protein_design_agent.cli import app
+
+    root_command = get_command(app)
+
+    assert "prepare-session" in (
+        root_command.commands
     )
 
-    assert result.exit_code == 0
-    assert "--session" in result.output
-    assert "--bundle-dir" in result.output
+    command = root_command.commands[
+        "prepare-session"
+    ]
+
+    option_names = {
+        option
+        for parameter in command.params
+        for option in getattr(
+            parameter,
+            "opts",
+            (),
+        )
+    }
+
+    required_options = {
+        "--session",
+        "--bundle-dir",
+    }
+
+    assert required_options.issubset(
+        option_names
+    )
 
 
 def test_prepare_session_command_reports_success(

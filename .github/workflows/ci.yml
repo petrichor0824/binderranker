@@ -166,6 +166,7 @@ jobs:
         working-directory: /tmp/pda-clean-workspace
         run: |
           env -u DEEPSEEK_API_KEY \
+            PATH=/tmp/pda-clean-venv/bin:/usr/local/bin:/usr/bin:/bin \
             /tmp/pda-clean-venv/bin/protein-design-agent \
             doctor \
             --model-config \
