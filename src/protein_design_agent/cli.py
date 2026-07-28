@@ -33,6 +33,11 @@ from typing import Any, Optional
 
 import typer
 
+from protein_design_agent.agent.chat_session import (
+    ChatSessionError,
+    process_chat_message,
+)
+
 from protein_design_agent.agent.run_status import (
     RunStatusError,
     inspect_run_status,
@@ -630,6 +635,208 @@ def materialize_plan_command(
 
 
 
+
+
+
+@app.command("chat")
+def chat_command(
+    bundle_dir: Path = typer.Option(
+        ...,
+        "--bundle-dir",
+        help=(
+            "本次任务的 Bundle 目录；"
+            "新任务目录可以尚不存在。"
+        ),
+    ),
+    approved_by: str = typer.Option(
+        ...,
+        "--approved-by",
+        help=(
+            "本地批准者标识。"
+            "当前版本不进行身份认证。"
+        ),
+    ),
+    model_config: Path | None = typer.Option(
+        None,
+        "--model-config",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help=(
+            "模型 Provider YAML 配置。"
+            "创建任务、补充信息或生成模型解释时需要。"
+        ),
+    ),
+    profile: str | None = typer.Option(
+        None,
+        "--profile",
+        help="临时覆盖模型 active_profile。",
+    ),
+    allow_network: bool = typer.Option(
+        False,
+        "--allow-network",
+        help=(
+            "显式允许访问模型 API。"
+            "批准、执行和确定性分析本身不依赖模型。"
+        ),
+    ),
+) -> None:
+    """
+    启动 Protein Design Agent 安全自然语言会话。
+
+    大模型只解析数据，不生成或执行 Shell。
+    批准、执行和分析只接受固定确认短语。
+    """
+    resolved_bundle = bundle_dir.resolve()
+
+    provider = None
+    resolved_model_config = None
+
+    if allow_network:
+        if model_config is None:
+            typer.echo(
+                "ERROR：使用 --allow-network 时，"
+                "必须同时提供 --model-config。",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+
+        try:
+            resolved_model_config = (
+                model_config.resolve()
+            )
+
+            config = load_model_provider_config(
+                resolved_model_config
+            )
+
+            selected_name, selected_profile = (
+                resolve_provider_profile(
+                    config,
+                    profile_name=profile,
+                )
+            )
+
+            provider = (
+                build_request_parser_provider(
+                    config,
+                    profile_name=profile,
+                )
+            )
+
+        except Exception as exc:
+            typer.echo(
+                f"ERROR：模型 Provider 初始化失败：{exc}",
+                err=True,
+            )
+            raise typer.Exit(code=2) from exc
+
+        typer.echo(
+            f"模型 Profile：{selected_name}"
+        )
+        typer.echo(
+            f"模型：{selected_profile.model}"
+        )
+        typer.echo(
+            "网络权限：已显式允许"
+        )
+
+    else:
+        typer.echo(
+            "网络权限：未允许；"
+            "状态查看、批准、执行和确定性分析仍可使用。"
+        )
+
+    typer.echo("")
+    typer.echo("=" * 72)
+    typer.echo("Protein Design Agent Chat")
+    typer.echo("=" * 72)
+    typer.echo(
+        f"Bundle：{resolved_bundle}"
+    )
+    typer.echo(
+        "输入“帮助”查看操作；"
+        "输入“退出”结束会话。"
+    )
+    typer.echo(
+        "只有固定确认短语能够触发批准、执行或分析。"
+    )
+
+    exit_commands = {
+        "退出",
+        "exit",
+        "quit",
+        "/exit",
+        "/quit",
+    }
+
+    while True:
+        try:
+            message = typer.prompt(
+                "\n你",
+                prompt_suffix=" > ",
+            )
+
+        except (EOFError, KeyboardInterrupt):
+            typer.echo("")
+            typer.echo(
+                "会话已结束。"
+            )
+            break
+
+        clean = message.strip()
+
+        if clean.lower() in exit_commands:
+            typer.echo(
+                "会话已结束。"
+            )
+            break
+
+        try:
+            result = process_chat_message(
+                message=clean,
+                bundle_dir=resolved_bundle,
+                provider=provider,
+                approved_by=approved_by,
+                model_config_path=(
+                    resolved_model_config
+                ),
+                profile_name=profile,
+                allow_network=allow_network,
+            )
+
+        except ChatSessionError as exc:
+            typer.echo("")
+            typer.echo(
+                f"Agent 拒绝：{exc}",
+                err=True,
+            )
+            continue
+
+        except Exception as exc:
+            typer.echo("")
+            typer.echo(
+                f"Agent 错误：{exc}",
+                err=True,
+            )
+            continue
+
+        typer.echo("")
+        typer.echo("Agent >")
+        typer.echo(result.message)
+
+        if result.artifact_paths:
+            typer.echo("")
+            typer.echo("相关产物：")
+
+            for name, artifact_path in (
+                result.artifact_paths.items()
+            ):
+                typer.echo(
+                    f"  - {name}: {artifact_path}"
+                )
 
 
 @app.command("run-status")
