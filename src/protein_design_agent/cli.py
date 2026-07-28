@@ -1340,6 +1340,68 @@ def explain_run_command(
     )
 
 
+@app.command("doctor")
+def doctor_command(
+    project_root: Optional[Path] = typer.Option(
+        None,
+        "--project-root",
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+        help="项目根目录；未指定时自动寻找。",
+    ),
+    model_config: Optional[Path] = typer.Option(
+        None,
+        "--model-config",
+        file_okay=True,
+        dir_okay=False,
+        resolve_path=True,
+        help=(
+            "模型 Provider YAML；"
+            "默认检查项目中的 DeepSeek 配置。"
+        ),
+    ),
+    profile: Optional[str] = typer.Option(
+        None,
+        "--profile",
+        help=(
+            "要检查的模型 Profile；"
+            "默认使用 active_profile。"
+        ),
+    ),
+    ranker_version: str = typer.Option(
+        "v0.1-expert",
+        "--ranker-version",
+        help="要验证的冻结 Ranker 版本。",
+    ),
+) -> None:
+    """
+    只读检查本地安装、Ranker、示例数据和模型配置。
+
+    本命令不会访问网络，也不会修改环境。
+    """
+    from protein_design_agent.agent.doctor import (
+        render_doctor_report,
+        run_doctor,
+    )
+
+    report = run_doctor(
+        project_root=project_root,
+        model_config_path=model_config,
+        profile_name=profile,
+        ranker_version=ranker_version,
+    )
+
+    typer.echo(
+        render_doctor_report(report)
+    )
+
+    if report.exit_code() != 0:
+        raise typer.Exit(
+            code=report.exit_code()
+        )
+
+
 @app.command("validate-model-config")
 def validate_model_config_command(
     config: Path = typer.Option(
