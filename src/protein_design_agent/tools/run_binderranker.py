@@ -44,21 +44,25 @@ app = typer.Typer(
 )
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PACKAGE_ROOT = (
+    Path(__file__).resolve().parents[1]
+)
+
+RANKER_RESOURCE_ROOT = (
+    PACKAGE_ROOT
+    / "resources"
+    / "binderranker"
+)
 
 RANKER_REGISTRY = {
     "v0.1-expert": {
         "path": (
-            PROJECT_ROOT
-            / "algorithms"
-            / "binderranker"
+            RANKER_RESOURCE_ROOT
             / "v0.1-expert"
             / "contact_field_rank_integrated_region.py"
         ),
         "sha256_manifest": (
-            PROJECT_ROOT
-            / "algorithms"
-            / "binderranker"
+            RANKER_RESOURCE_ROOT
             / "v0.1-expert"
             / "SHA256SUMS"
         ),

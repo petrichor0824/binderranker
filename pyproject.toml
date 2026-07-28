@@ -35,3 +35,8 @@ testpaths = ["tests"]
 
 [project.scripts]
 protein-design-agent = "protein_design_agent.cli:app"
+
+[tool.setuptools.package-data]
+protein_design_agent = [
+    "resources/binderranker/v0.1-expert/*"
+]
