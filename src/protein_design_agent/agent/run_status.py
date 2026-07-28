@@ -159,15 +159,29 @@ def inspect_run_status(
     prepare_path = (
         bundle / "agent_prepare_manifest.json"
     )
+    workflow_manifest_path = (
+        bundle
+        / "workflow"
+        / "workflow_manifest.json"
+    )
     approval_path = bundle / "approval.json"
 
     prepare: dict[str, Any] | None = None
+    workflow_manifest: (
+        dict[str, Any] | None
+    ) = None
     approval: dict[str, Any] | None = None
 
     if prepare_path.is_file():
         prepare = load_json_object(
             prepare_path,
             description="准备清单",
+        )
+
+    if workflow_manifest_path.is_file():
+        workflow_manifest = load_json_object(
+            workflow_manifest_path,
+            description="工作流清单",
         )
 
     if approval_path.is_file():
@@ -208,12 +222,68 @@ def inspect_run_status(
         else None
     )
 
-    analysis_scope_level = (
-        str(approval.get("analysis_scope_level"))
+    workflow_scope: dict[str, Any] | None = None
+
+    if workflow_manifest is not None:
+        raw_workflow_scope = (
+            workflow_manifest.get(
+                "analysis_scope"
+            )
+        )
+
+        if isinstance(
+            raw_workflow_scope,
+            dict,
+        ):
+            workflow_scope = (
+                raw_workflow_scope
+            )
+
+        elif raw_workflow_scope is not None:
+            warnings.append(
+                "工作流清单中的 analysis_scope "
+                "不是 JSON 对象，无法用于状态汇总。"
+            )
+
+    approval_scope_level = (
+        str(
+            approval.get(
+                "analysis_scope_level"
+            )
+        )
         if approval is not None
-        and approval.get("analysis_scope_level")
+        and approval.get(
+            "analysis_scope_level"
+        )
         else None
     )
+
+    workflow_scope_level = (
+        str(workflow_scope.get("level"))
+        if workflow_scope is not None
+        and workflow_scope.get("level")
+        else None
+    )
+
+    # 已批准记录是冻结后的权威来源；
+    # 批准前使用准备阶段工作流清单。
+    analysis_scope_level = (
+        approval_scope_level
+        or workflow_scope_level
+    )
+
+    if (
+        approval_scope_level is not None
+        and workflow_scope_level is not None
+        and approval_scope_level
+        != workflow_scope_level
+    ):
+        warnings.append(
+            "批准清单与工作流清单的分析级别不一致："
+            f"approval={approval_scope_level!r}，"
+            f"workflow={workflow_scope_level!r}。"
+            "状态报告优先采用批准清单。"
+        )
 
     execution_records: list[
         tuple[Path, dict[str, Any]]
@@ -265,14 +335,34 @@ def inspect_run_status(
         ]
     )
 
-    if analysis_scope_level is None:
-        for _, record in execution_records:
-            value = record.get(
-                "analysis_scope_level"
+    for _, record in execution_records:
+        value = record.get(
+            "analysis_scope_level"
+        )
+
+        if not value:
+            continue
+
+        execution_scope_level = str(
+            value
+        )
+
+        if analysis_scope_level is None:
+            analysis_scope_level = (
+                execution_scope_level
             )
-            if value:
-                analysis_scope_level = str(value)
-                break
+
+        elif (
+            execution_scope_level
+            != analysis_scope_level
+        ):
+            warnings.append(
+                "执行清单与当前权威分析级别不一致："
+                f"execution={execution_scope_level!r}，"
+                f"authoritative={analysis_scope_level!r}。"
+            )
+
+        break
 
     approval_consumed: bool | None
 
@@ -446,6 +536,27 @@ def inspect_run_status(
                 "thresholds_formally_"
                 "interpretable"
             ]
+
+    if (
+        candidate_count is None
+        and workflow_scope is not None
+        and isinstance(
+            workflow_scope.get("pdb_count"),
+            int,
+        )
+    ):
+        candidate_count = int(
+            workflow_scope["pdb_count"]
+        )
+
+    # 在正式结果政策尚未生成前，只对明确的小样本
+    # 安全限制给出保守的 False；不为其他级别猜测。
+    if analysis_scope_level == "SMOKE_TEST_ONLY":
+        if recommendation_allowed is None:
+            recommendation_allowed = False
+
+        if thresholds_interpretable is None:
+            thresholds_interpretable = False
 
     root_summary = (
         bundle / "agent_result_summary.json"

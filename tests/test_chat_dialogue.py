@@ -21,9 +21,15 @@ class FakeDialogueProvider:
         self,
         intent: str,
         reply: str | None = None,
+        safety_topics: (
+            list[str] | None
+        ) = None,
     ) -> None:
         self.intent = intent
         self.reply = reply
+        self.safety_topics = (
+            safety_topics or []
+        )
 
     @property
     def name(self) -> str:
@@ -42,6 +48,11 @@ class FakeDialogueProvider:
 
         if self.reply is not None:
             payload["reply"] = self.reply
+
+        if self.safety_topics:
+            payload["safety_topics"] = (
+                self.safety_topics
+            )
 
         return payload
 
@@ -799,3 +810,147 @@ def test_status_can_be_viewed_during_pending_action(
     assert load_pending_action(
         bundle
     ) is not None
+
+
+def test_pending_approval_safety_facts_are_deterministic(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = prepared_bundle(
+        tmp_path
+    )
+
+    report = SimpleNamespace(
+        current_stage="PREPARED",
+        project_name="demo",
+        prepare_status="READY_FOR_REVIEW",
+        approval_status=None,
+        execution_status=None,
+        analysis_status=None,
+        explanation_status=None,
+        analysis_scope_level=(
+            "SMOKE_TEST_ONLY"
+        ),
+        candidate_count=5,
+        approval_consumed=None,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "inspect_run_status",
+        lambda path: report,
+    )
+
+    module.save_pending_action(
+        bundle_dir=bundle,
+        action="APPROVE",
+        summary="是否批准当前计划？",
+    )
+
+    # 故意让模型给出错误回答。
+    wrong_model_reply = (
+        "批准后会马上执行，"
+        "而且仍然可以随时修改参数。"
+    )
+
+    result = process_dialogue_message(
+        message=(
+            "批准后会马上运行吗？"
+            "我还能不能修改参数？"
+        ),
+        bundle_dir=bundle,
+        provider=FakeDialogueProvider(
+            "GENERAL_QUESTION",
+            reply=wrong_model_reply,
+            safety_topics=[
+                (
+                    "APPROVAL_"
+                    "EXECUTION_SEPARATION"
+                ),
+                (
+                    "APPROVAL_"
+                    "CONFIGURATION_FREEZE"
+                ),
+            ],
+        ),
+        approved_by="tester",
+        model_config_path=None,
+        profile_name=None,
+        allow_network=True,
+    )
+
+    assert result.status == "ANSWER"
+
+    assert (
+        "批准不会立即运行 BinderRanker"
+        in result.message
+    )
+    assert (
+        "批准后不能直接修改同一个 Bundle"
+        in result.message
+    )
+
+    assert "会马上执行" not in result.message
+    assert "仍然可以随时修改" not in result.message
+
+    assert "待确认动作仍然保留" in result.message
+    assert load_pending_action(
+        bundle
+    ) is not None
+
+
+def test_pending_smoke_limit_answer_uses_run_status(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = prepared_bundle(
+        tmp_path
+    )
+
+    report = SimpleNamespace(
+        current_stage="PREPARED",
+        project_name="demo",
+        prepare_status="READY_FOR_REVIEW",
+        approval_status=None,
+        execution_status=None,
+        analysis_status=None,
+        explanation_status=None,
+        analysis_scope_level=(
+            "SMOKE_TEST_ONLY"
+        ),
+        candidate_count=5,
+        approval_consumed=None,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "inspect_run_status",
+        lambda path: report,
+    )
+
+    module.save_pending_action(
+        bundle_dir=bundle,
+        action="APPROVE",
+        summary="是否批准当前计划？",
+    )
+
+    result = process_dialogue_message(
+        message="小样本限制到底是什么意思？",
+        bundle_dir=bundle,
+        provider=FakeDialogueProvider(
+            "GENERAL_QUESTION",
+            reply="可以正式选最优候选。",
+            safety_topics=[
+                "SMOKE_TEST_LIMITATION",
+            ],
+        ),
+        approved_by="tester",
+        model_config_path=None,
+        profile_name=None,
+        allow_network=True,
+    )
+
+    assert "当前只有 5 个候选" in result.message
+    assert "SMOKE_TEST_ONLY" in result.message
+    assert "不能把本次排名" in result.message
+    assert "可以正式选最优候选" not in result.message

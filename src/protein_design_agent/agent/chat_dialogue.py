@@ -86,6 +86,15 @@ class ChatDialogueError(RuntimeError):
     """自然语言对话控制失败。"""
 
 
+SafetyQuestionTopic = Literal[
+    "APPROVAL_EXECUTION_SEPARATION",
+    "APPROVAL_CONFIGURATION_FREEZE",
+    "SMOKE_TEST_LIMITATION",
+    "EXECUTION_APPROVAL_CONSUMPTION",
+    "MODEL_USAGE",
+]
+
+
 class DialogueDecision(BaseModel):
     """模型生成的受控意图判断。"""
 
@@ -99,6 +108,12 @@ class DialogueDecision(BaseModel):
     # 当用户提出疑问时，模型应直接给出自然语言回答。
     # 该字段只能用于交流，不能触发执行动作。
     reply: str | None = None
+
+    # 对批准、执行、模型调用等安全事实，
+    # 模型只识别主题，最终答案由确定性代码生成。
+    safety_topics: list[
+        SafetyQuestionTopic
+    ] = []
 
 
 class PendingChatAction(BaseModel):
@@ -595,6 +610,13 @@ def classify_dialogue_intent(
             "CANCEL",
             "GENERAL_QUESTION",
         ],
+        "allowed_safety_topics": [
+            "APPROVAL_EXECUTION_SEPARATION",
+            "APPROVAL_CONFIGURATION_FREEZE",
+            "SMOKE_TEST_LIMITATION",
+            "EXECUTION_APPROVAL_CONSUMPTION",
+            "MODEL_USAGE",
+        ],
         "required_schema": schema,
     }
 
@@ -614,6 +636,25 @@ def classify_dialogue_intent(
                 "选择 REQUEST_EXECUTION。"
                 "当已有 pending_action 且用户表达同意时，"
                 "选择 CONFIRM；表达拒绝时选择 CANCEL。"
+
+                "用户在确认前仍然可以询问动作影响。"
+                "此时选择 GENERAL_QUESTION，"
+                "并根据问题填写 safety_topics："
+                "询问批准是否会立即运行，填写 "
+                "APPROVAL_EXECUTION_SEPARATION；"
+                "询问批准后能否改参数，填写 "
+                "APPROVAL_CONFIGURATION_FREEZE；"
+                "询问小样本限制，填写 "
+                "SMOKE_TEST_LIMITATION；"
+                "询问执行是否消耗批准，填写 "
+                "EXECUTION_APPROVAL_CONSUMPTION；"
+                "询问是否调用大模型，填写 MODEL_USAGE。"
+                "一个问题可以包含多个主题。"
+
+                "涉及 safety_topics 时，"
+                "不要在 reply 中自行断言批准、执行、"
+                "配置冻结或科研解释权限。"
+                "最终安全答案由确定性控制器生成。"
 
                 "当用户明确要求查看、检查、读取 PDB 文件，"
                 "或者说自己无法判断并要求 Agent 根据文件分析时，"
@@ -987,6 +1028,119 @@ def inspect_dataset_and_propose_adoption(
             ),
         },
     )
+
+
+def deterministic_pending_safety_answer(
+    *,
+    pending: PendingChatAction,
+    topics: list[SafetyQuestionTopic],
+    report: RunStatusReport | None,
+) -> str | None:
+    """
+    根据结构化主题生成确定性的高风险动作说明。
+
+    模型的 reply 不参与这些事实的最终回答。
+    """
+    requested = set(topics)
+    lines: list[str] = []
+
+    if (
+        "APPROVAL_EXECUTION_SEPARATION"
+        in requested
+    ):
+        lines.append(
+            "批准不会立即运行 BinderRanker。"
+            "批准只会冻结当前配置、输入数据集指纹"
+            "和 Ranker 哈希；真正执行还需要你"
+            "另行提出执行请求并再次确认。"
+        )
+
+    if (
+        "APPROVAL_CONFIGURATION_FREEZE"
+        in requested
+    ):
+        lines.append(
+            "批准后不能直接修改同一个 Bundle "
+            "中的科研参数或已冻结文件。"
+            "需要修改时，应在批准前取消；"
+            "若已经批准，则应重新建立或重新准备"
+            "一个新的 Bundle，并重新审核批准。"
+        )
+
+    if "SMOKE_TEST_LIMITATION" in requested:
+        candidate_text = ""
+
+        if (
+            report is not None
+            and report.candidate_count
+            is not None
+        ):
+            candidate_text = (
+                f"当前只有 {report.candidate_count} "
+                "个候选。"
+            )
+
+        if (
+            report is not None
+            and report.analysis_scope_level
+            == "SMOKE_TEST_ONLY"
+        ):
+            lines.append(
+                candidate_text
+                + "当前属于 SMOKE_TEST_ONLY，"
+                "只能用于验证解析、标准化、"
+                "评分和输出流程；不能把本次排名、"
+                "动态阈值或候选优劣作为正式科研结论。"
+            )
+        else:
+            lines.append(
+                "是否属于小样本限制，应以工作流清单"
+                "中的 analysis_scope 为准；"
+                "当前状态没有确认这是 "
+                "SMOKE_TEST_ONLY。"
+            )
+
+    if (
+        "EXECUTION_APPROVAL_CONSUMPTION"
+        in requested
+    ):
+        lines.append(
+            "执行会消耗当前一次性批准。"
+            "同一个批准不能用于重复启动 "
+            "BinderRanker；需要再次运行时，"
+            "必须重新准备并取得新的批准。"
+        )
+
+    if "MODEL_USAGE" in requested:
+        if pending.action == "EXPLAIN":
+            lines.append(
+                "该解释动作会先读取确定性分析结果，"
+                "然后调用已配置的大模型生成受控解释。"
+                "模型不能重新计算分数、修改排名"
+                "或放宽科研解释权限。"
+            )
+        elif pending.action == "ANALYZE":
+            lines.append(
+                "该分析动作只运行确定性结果解析"
+                "和失败分析，不调用大模型。"
+            )
+        elif pending.action == "ADOPT_DATASET_ADVICE":
+            lines.append(
+                "采用文件建议时不会调用大模型决定参数。"
+                "参数来自只读 PDB 检查、文件 SHA256"
+                "和你的明确确认。"
+            )
+        else:
+            lines.append(
+                "批准和执行动作由确定性代码处理，"
+                "不会让大模型决定是否批准、"
+                "修改参数或运行命令。"
+            )
+
+    if not lines:
+        return None
+
+    return "\n\n".join(lines)
 
 
 def proposal_summary(
@@ -1412,6 +1566,34 @@ def process_dialogue_message(
         )
 
         if intent == "GENERAL_QUESTION":
+            safety_answer = (
+                deterministic_pending_safety_answer(
+                    pending=pending,
+                    topics=decision.safety_topics,
+                    report=report,
+                )
+            )
+
+            if safety_answer is not None:
+                return ChatTurnResult(
+                    action="HELP",
+                    status="ANSWER",
+                    message=(
+                        safety_answer
+                        + pending_reminder
+                    ),
+                    bundle_dir=(
+                        bundle_dir.resolve()
+                    ),
+                    artifact_paths={
+                        "pending_action": (
+                            pending_action_path(
+                                bundle_dir
+                            )
+                        )
+                    },
+                )
+
             if (
                 decision.reply
                 and decision.reply.strip()
