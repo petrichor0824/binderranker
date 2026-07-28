@@ -1340,6 +1340,53 @@ def explain_run_command(
     )
 
 
+@app.command("init")
+def init_command(
+    destination: Path = typer.Option(
+        ...,
+        "--destination",
+        "-d",
+        file_okay=False,
+        dir_okay=True,
+        help="要创建的工作区目录。",
+    ),
+) -> None:
+    """
+    创建可移植的本地工作区。
+
+    本命令不联网、不写入真实 API Key，
+    也不会覆盖已有的受管文件。
+    """
+    from protein_design_agent.agent.workspace_init import (
+        WorkspaceInitError,
+        initialize_workspace,
+        render_workspace_init_report,
+    )
+
+    try:
+        report = initialize_workspace(
+            destination
+        )
+    except WorkspaceInitError as exc:
+        typer.echo(
+            f"工作区初始化失败：{exc}",
+            err=True,
+        )
+        raise typer.Exit(code=2) from exc
+    except OSError as exc:
+        typer.echo(
+            f"工作区写入失败：{exc}",
+            err=True,
+        )
+        raise typer.Exit(code=2) from exc
+
+    typer.echo(
+        render_workspace_init_report(
+            report
+        )
+    )
+
+
 @app.command("doctor")
 def doctor_command(
     project_root: Optional[Path] = typer.Option(
