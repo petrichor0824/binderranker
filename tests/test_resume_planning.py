@@ -58,6 +58,12 @@ def create_incomplete_bundle(
         provider_name="fake-provider",
         request=request,
         plan=plan,
+        request_explicit_fields=sorted(
+            field_name
+            for field_name
+            in request.model_fields_set
+            if field_name != "raw_text"
+        ),
     )
 
     (
@@ -483,3 +489,46 @@ def test_prepare_failure_restores_original(
     assert not (
         bundle / "partial.txt"
     ).exists()
+
+
+def test_system_default_can_be_overridden() -> None:
+    from protein_design_agent.agent.resume_planning import (
+        UserRequestPatch,
+        merge_request_patch,
+    )
+
+    request = UserRequest(
+        raw_text="分析已有分链数据",
+        input_dir=Path("/tmp/pdbs"),
+        input_layout="existing_chains",
+        binder_chain=None,
+    )
+
+    # target_start_residue=1 来自系统默认，
+    # 不在旧 Provider 的显式字段集合中。
+    merged, accepted = merge_request_patch(
+        old_request=request,
+        old_missing_information=[
+            "binder_chain",
+        ],
+        old_explicit_fields={
+            "input_dir",
+            "input_layout",
+        },
+        patch=UserRequestPatch(
+            binder_chain="B",
+            target_start_residue=4,
+        ),
+        supplement_text=(
+            "binder 链是 B，"
+            "target 从第 4 号残基开始"
+        ),
+    )
+
+    assert merged.binder_chain == "B"
+    assert merged.target_start_residue == 4
+
+    assert set(accepted) == {
+        "binder_chain",
+        "target_start_residue",
+    }

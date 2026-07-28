@@ -9,7 +9,7 @@
 设计原则：
 1. 模型只能提取用户明确提供的信息；
 2. 不得根据文件名、蛋白名称或常识猜测科学参数；
-3. 未提供的信息必须保留为 null 或空列表；
+3. 未提供的信息必须从输出 JSON 中完全省略；
 4. 输出必须满足 UserRequest 的 JSON Schema；
 5. Provider 输出仍需经过 Pydantic 验证。
 """
@@ -37,7 +37,8 @@ REQUEST_PARSER_SYSTEM_PROMPT = """
 1. 只能提取用户明确提供的信息。
 2. 不得猜测 binder 链、target 链、残基边界、hotspot、
    region、输入路径或执行后端。
-3. 未提供的信息必须保留为 null、默认值或空列表。
+3. 未提供的信息必须从 JSON 中完全省略。
+   不得为未提及字段输出 null、默认值或空列表。
 4. 不得因为文件名、蛋白名称或既往常识自动补全参数。
 5. 残基区域统一使用字符串，例如：
    "A:110-135"
@@ -55,9 +56,38 @@ REQUEST_PARSER_SYSTEM_PROMPT = """
 """.strip()
 
 
+def remove_schema_defaults(
+    value: Any,
+) -> Any:
+    """
+    从发送给模型的 JSON Schema 中移除 default。
+
+    Pydantic 本地验证仍然保留默认值；
+    这里只避免模型误以为应该主动输出全部默认字段。
+    """
+    if isinstance(value, dict):
+        cleaned = {
+            key: remove_schema_defaults(item)
+            for key, item in value.items()
+            if key != "default"
+        }
+
+        return cleaned
+
+    if isinstance(value, list):
+        return [
+            remove_schema_defaults(item)
+            for item in value
+        ]
+
+    return value
+
+
 def user_request_json_schema() -> dict[str, Any]:
     """返回 UserRequest 的正式 JSON Schema。"""
-    schema = UserRequest.model_json_schema()
+    schema = remove_schema_defaults(
+        UserRequest.model_json_schema()
+    )
 
     # raw_text 由程序使用用户真实输入填入，
     # 不应要求模型生成。

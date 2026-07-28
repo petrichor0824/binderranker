@@ -14,7 +14,7 @@ def test_system_prompt_forbids_scientific_guessing() -> None:
 
     assert "只能提取用户明确提供的信息" in prompt
     assert "不得猜测 binder 链" in prompt
-    assert "未提供的信息必须保留" in prompt
+    assert "未提供的信息必须从 JSON 中完全省略" in prompt
 
 
 def test_system_prompt_defines_region_format() -> None:

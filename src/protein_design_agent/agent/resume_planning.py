@@ -362,6 +362,14 @@ def validate_incomplete_bundle(
             "NEEDS_INFORMATION 状态"
         )
 
+    if session.request_explicit_fields is None:
+        raise ResumePlanningError(
+            "该任务来自旧版规划会话，"
+            "没有字段来源记录，不能安全续接。"
+            "请保留该目录作为历史记录，"
+            "并使用新的 bundle 重新开始。"
+        )
+
     return (
         session_path,
         manifest_path,
@@ -487,6 +495,7 @@ def merge_request_patch(
     *,
     old_request: UserRequest,
     old_missing_information: list[str],
+    old_explicit_fields: set[str],
     patch: UserRequestPatch,
     supplement_text: str,
 ) -> tuple[UserRequest, list[str]]:
@@ -529,7 +538,8 @@ def merge_request_patch(
             continue
 
         if (
-            field_name in overrides
+            field_name not in old_explicit_fields
+            or field_name in overrides
             or is_empty_value(old_value)
         ):
             merged[field_name] = new_value
@@ -1016,6 +1026,9 @@ def resume_planning_session(
                 old_session.plan
                 .missing_information
             ),
+            old_explicit_fields=set(
+                old_session.request_explicit_fields
+            ),
             patch=extraction.patch,
             supplement_text=(
                 supplement_text
@@ -1027,10 +1040,18 @@ def resume_planning_session(
         merged_request
     )
 
+    merged_explicit_fields = sorted(
+        set(old_session.request_explicit_fields)
+        | set(accepted_fields)
+    )
+
     merged_session = PlanningSession(
         provider_name=old_session.provider_name,
         request=merged_request,
         plan=merged_plan,
+        request_explicit_fields=(
+            merged_explicit_fields
+        ),
     )
 
     if merged_plan.status == (
