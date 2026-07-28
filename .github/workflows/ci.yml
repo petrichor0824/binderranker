@@ -1,0 +1,173 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Tests - Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.10"
+          - "3.11"
+          - "3.12"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install -e ".[dev]"
+
+      - name: Run test suite
+        run: pytest -q
+
+      - name: Run source-checkout doctor
+        run: |
+          protein-design-agent doctor \
+            --project-root "$GITHUB_WORKSPACE"
+
+  package:
+    name: Build and clean-install wheel
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip setuptools wheel build
+
+      - name: Build wheel
+        run: |
+          rm -rf dist
+          python -m build --wheel --outdir dist
+
+      - name: Audit wheel resources
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          wheels = list(
+              Path("dist").glob(
+                  "protein_design_agent-*.whl"
+              )
+          )
+
+          assert len(wheels) == 1, wheels
+
+          wheel = wheels[0]
+
+          with ZipFile(wheel) as archive:
+              names = archive.namelist()
+
+          required_suffixes = (
+              (
+                  "resources/binderranker/"
+                  "v0.1-expert/"
+                  "contact_field_rank_integrated_region.py"
+              ),
+              (
+                  "resources/binderranker/"
+                  "v0.1-expert/SHA256SUMS"
+              ),
+              "dist-info/licenses/LICENSE",
+          )
+
+          for suffix in required_suffixes:
+              assert any(
+                  name.endswith(suffix)
+                  for name in names
+              ), suffix
+
+          print(
+              "PASS: wheel contains Ranker, "
+              "SHA256 manifest, and LICENSE"
+          )
+          PY
+
+      - name: Install wheel into clean environment
+        run: |
+          python -m venv /tmp/pda-clean-venv
+          /tmp/pda-clean-venv/bin/python \
+            -m pip install dist/*.whl
+
+      - name: Verify installed Ranker
+        working-directory: /tmp
+        run: |
+          /tmp/pda-clean-venv/bin/python - <<'PY'
+          import protein_design_agent
+
+          from protein_design_agent.tools.run_binderranker import (
+              resolve_ranker,
+              sha256_file,
+          )
+
+          expected = (
+              "92d6c02f8ca8f500917f5fa61676fe93"
+              "a0acdbb59d49f2cac0c7a74a4a553ed7"
+          )
+
+          ranker, manifest_digest = resolve_ranker(
+              "v0.1-expert"
+          )
+
+          assert ranker.is_file()
+          assert manifest_digest == expected
+          assert sha256_file(ranker) == expected
+          assert "/tmp/pda-clean-venv/" in str(
+              protein_design_agent.__file__
+          )
+          assert "/tmp/pda-clean-venv/" in str(
+              ranker
+          )
+
+          print(
+              "PASS: clean installation can "
+              "load the frozen Ranker"
+          )
+          PY
+
+      - name: Initialize clean workspace
+        working-directory: /tmp
+        run: |
+          rm -rf /tmp/pda-clean-workspace
+
+          /tmp/pda-clean-venv/bin/protein-design-agent \
+            init \
+            --destination /tmp/pda-clean-workspace
+
+      - name: Run workspace doctor
+        working-directory: /tmp/pda-clean-workspace
+        run: |
+          env -u DEEPSEEK_API_KEY \
+            /tmp/pda-clean-venv/bin/protein-design-agent \
+            doctor \
+            --model-config \
+              configs/models/deepseek.local.yaml \
+            --profile deepseek_flash
