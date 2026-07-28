@@ -33,6 +33,11 @@ from typing import Any, Optional
 
 import typer
 
+from protein_design_agent.agent.run_status import (
+    RunStatusError,
+    inspect_run_status,
+)
+
 from protein_design_agent.agent.local_executor import (
     LocalExecutionError,
     execute_approved_binderranker,
@@ -624,6 +629,168 @@ def materialize_plan_command(
 
 
 
+
+
+
+@app.command("run-status")
+def run_status_command(
+    bundle_dir: Path = typer.Option(
+        ...,
+        "--bundle-dir",
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
+        help="要检查的 Protein Design Agent bundle。",
+    ),
+) -> None:
+    """
+    只读显示任务当前所处阶段。
+
+    本命令不会执行 Ranker、不会联网，也不会修改文件。
+    """
+    try:
+        report = inspect_run_status(
+            bundle_dir
+        )
+
+    except RunStatusError as exc:
+        typer.echo(
+            f"ERROR：{exc}",
+            err=True,
+        )
+        raise typer.Exit(code=1) from exc
+
+    def show_bool(
+        value: bool | None,
+        *,
+        true_text: str,
+        false_text: str,
+    ) -> str:
+        if value is True:
+            return true_text
+
+        if value is False:
+            return false_text
+
+        return "未知"
+
+    typer.echo("=" * 72)
+    typer.echo("Protein Design Agent 任务状态")
+    typer.echo("=" * 72)
+
+    typer.echo(
+        f"项目：{report.project_name}"
+    )
+    typer.echo(
+        f"Bundle：{report.bundle_dir}"
+    )
+    typer.echo(
+        f"当前阶段：{report.current_stage}"
+    )
+
+    typer.echo("")
+    typer.echo("阶段明细")
+    typer.echo("-" * 72)
+
+    typer.echo(
+        "准备："
+        f"{report.prepare_status or '未发现'}"
+    )
+    typer.echo(
+        "批准："
+        f"{report.approval_status or '未发现'}"
+    )
+    typer.echo(
+        "执行："
+        f"{report.execution_status or '未发现'}"
+    )
+    typer.echo(
+        "分析："
+        f"{report.analysis_status or '未发现'}"
+    )
+    typer.echo(
+        "模型解释："
+        f"{report.explanation_status or '未发现'}"
+    )
+
+    typer.echo("")
+    typer.echo("任务属性")
+    typer.echo("-" * 72)
+
+    typer.echo(
+        "分析级别："
+        f"{report.analysis_scope_level or '未知'}"
+    )
+
+    typer.echo(
+        "批准 ID："
+        f"{report.approval_id or '未发现'}"
+    )
+
+    typer.echo(
+        "一次性批准："
+        + show_bool(
+            report.approval_consumed,
+            true_text="已消耗",
+            false_text="尚未消耗",
+        )
+    )
+
+    typer.echo(
+        "候选数量："
+        + (
+            str(report.candidate_count)
+            if report.candidate_count
+            is not None
+            else "未知"
+        )
+    )
+
+    typer.echo(
+        "正式候选推荐："
+        + show_bool(
+            report
+            .formal_candidate_recommendation_allowed,
+            true_text="允许",
+            false_text="不允许",
+        )
+    )
+
+    typer.echo(
+        "动态阈值正式解释："
+        + show_bool(
+            report
+            .thresholds_formally_interpretable,
+            true_text="允许",
+            false_text="不允许",
+        )
+    )
+
+    if report.analysis_attempts:
+        typer.echo("")
+        typer.echo("分析尝试")
+        typer.echo("-" * 72)
+
+        for attempt in report.analysis_attempts:
+            typer.echo(
+                f"- {attempt.manifest_path.parent.name}: "
+                f"{attempt.status}; "
+                f"with_model={attempt.with_model}; "
+                f"provider={attempt.provider_name or '无'}; "
+                f"explanation="
+                f"{attempt.explanation_status or '无'}"
+            )
+
+    if report.warnings:
+        typer.echo("")
+        typer.echo("警告")
+        typer.echo("-" * 72)
+
+        for warning in report.warnings:
+            typer.echo(
+                f"- {warning}"
+            )
 
 
 @app.command("execute-run")
