@@ -65,6 +65,7 @@ class DoctorReport(BaseModel):
 
     schema_version: str = "0.1"
 
+    context_mode: str = "SOURCE_CHECKOUT"
     project_root: Path
     working_directory: Path
 
@@ -172,6 +173,145 @@ def discover_project_root(
         "无法自动定位项目根目录。"
         "请使用 --project-root 显式指定。"
     )
+
+
+def is_source_checkout(
+    path: Path,
+) -> bool:
+    """判断目录是否为源码检出目录。"""
+    root = path.resolve()
+
+    return (
+        (root / "pyproject.toml").is_file()
+        and (
+            root
+            / "src"
+            / "protein_design_agent"
+        ).is_dir()
+    )
+
+
+def is_agent_workspace(
+    path: Path,
+) -> bool:
+    """判断目录是否为 init 创建的用户工作区。"""
+    root = path.resolve()
+
+    required_directories = (
+        root / "configs" / "models",
+        root / "data",
+        root / "runs",
+    )
+
+    return all(
+        item.is_dir()
+        for item in required_directories
+    )
+
+
+def resolve_doctor_context(
+    *,
+    project_root: Path | None = None,
+    start_directory: Path | None = None,
+) -> tuple[str, Path, DoctorCheck]:
+    """
+    识别当前诊断上下文。
+
+    工作区优先于源码仓库识别，避免 editable
+    安装时错误跳回源码目录。
+    """
+    if project_root is not None:
+        root = project_root.expanduser().resolve()
+
+        if is_source_checkout(root):
+            return (
+                "SOURCE_CHECKOUT",
+                root,
+                DoctorCheck(
+                    name="runtime_context",
+                    status="PASS",
+                    message="指定目录是源码仓库",
+                    detail=str(root),
+                ),
+            )
+
+        if is_agent_workspace(root):
+            return (
+                "WORKSPACE",
+                root,
+                DoctorCheck(
+                    name="runtime_context",
+                    status="PASS",
+                    message="指定目录是用户工作区",
+                    detail=str(root),
+                ),
+            )
+
+        return (
+            "INVALID_ROOT",
+            root,
+            DoctorCheck(
+                name="runtime_context",
+                status="FAIL",
+                message=(
+                    "指定目录既不是源码仓库，"
+                    "也不是有效用户工作区"
+                ),
+                detail=str(root),
+            ),
+        )
+
+    current = (
+        start_directory.expanduser().resolve()
+        if start_directory is not None
+        else Path.cwd().resolve()
+    )
+
+    if is_agent_workspace(current):
+        return (
+            "WORKSPACE",
+            current,
+            DoctorCheck(
+                name="runtime_context",
+                status="PASS",
+                message="当前目录是用户工作区",
+                detail=str(current),
+            ),
+        )
+
+    try:
+        source_root = discover_project_root(
+            current
+        )
+
+        return (
+            "SOURCE_CHECKOUT",
+            source_root,
+            DoctorCheck(
+                name="runtime_context",
+                status="PASS",
+                message="已定位源码仓库",
+                detail=str(source_root),
+            ),
+        )
+
+    except DoctorError:
+        return (
+            "INSTALLED_PACKAGE",
+            current,
+            DoctorCheck(
+                name="runtime_context",
+                status="WARN",
+                message=(
+                    "当前运行自已安装的软件包，"
+                    "但没有进入用户工作区"
+                ),
+                detail=(
+                    "可运行 protein-design-agent init "
+                    "--destination <目录>"
+                ),
+            ),
+        )
 
 
 def check_ranker_integrity(
@@ -386,63 +526,13 @@ def run_doctor(
     """执行全部只读诊断。"""
     checks: list[DoctorCheck] = []
 
-    if project_root is None:
-        try:
-            root = discover_project_root()
-            checks.append(
-                DoctorCheck(
-                    name="project_root",
-                    status="PASS",
-                    message=(
-                        "已自动定位项目根目录"
-                    ),
-                    detail=str(root),
-                )
-            )
-        except DoctorError as exc:
-            root = Path.cwd().resolve()
-            checks.append(
-                DoctorCheck(
-                    name="project_root",
-                    status="FAIL",
-                    message=(
-                        "无法定位项目根目录"
-                    ),
-                    detail=str(exc),
-                )
-            )
-    else:
-        root = project_root.resolve()
+    context_mode, root, context_check = (
+        resolve_doctor_context(
+            project_root=project_root,
+        )
+    )
 
-        if (
-            (root / "pyproject.toml").is_file()
-            and (
-                root
-                / "src"
-                / "protein_design_agent"
-            ).is_dir()
-        ):
-            checks.append(
-                DoctorCheck(
-                    name="project_root",
-                    status="PASS",
-                    message=(
-                        "指定的项目根目录有效"
-                    ),
-                    detail=str(root),
-                )
-            )
-        else:
-            checks.append(
-                DoctorCheck(
-                    name="project_root",
-                    status="FAIL",
-                    message=(
-                        "指定目录不是有效项目根目录"
-                    ),
-                    detail=str(root),
-                )
-            )
+    checks.append(context_check)
 
     python_version = (
         f"{sys.version_info.major}."
@@ -535,58 +625,105 @@ def run_doctor(
         )
     )
 
-    sample_dir = (
-        root
-        / "sample_data"
-        / "real"
-        / "3c98_small"
-    )
-
-    sample_count = (
-        len(list(sample_dir.glob("*.pdb")))
-        if sample_dir.is_dir()
-        else 0
-    )
-
-    checks.append(
-        DoctorCheck(
-            name="sample_data",
-            status=(
-                "PASS"
-                if sample_count > 0
-                else "WARN"
-            ),
-            message=(
-                f"示例数据可用："
-                f"{sample_count} 个 PDB"
-                if sample_count > 0
-                else "没有找到示例 PDB 数据"
-            ),
-            detail=str(sample_dir),
+    if context_mode == "SOURCE_CHECKOUT":
+        sample_dir = (
+            root
+            / "sample_data"
+            / "real"
+            / "3c98_small"
         )
-    )
 
-    license_path = root / "LICENSE"
-
-    checks.append(
-        DoctorCheck(
-            name="license",
-            status=(
-                "PASS"
-                if license_path.is_file()
-                else "WARN"
-            ),
-            message=(
-                "LICENSE 文件存在"
-                if license_path.is_file()
-                else (
-                    "尚未提供 LICENSE，"
-                    "不适合公开发布"
+        sample_count = (
+            len(
+                list(
+                    sample_dir.glob("*.pdb")
                 )
-            ),
-            detail=str(license_path),
+            )
+            if sample_dir.is_dir()
+            else 0
         )
-    )
+
+        checks.append(
+            DoctorCheck(
+                name="sample_data",
+                status=(
+                    "PASS"
+                    if sample_count > 0
+                    else "WARN"
+                ),
+                message=(
+                    f"示例数据可用："
+                    f"{sample_count} 个 PDB"
+                    if sample_count > 0
+                    else "没有找到源码示例数据"
+                ),
+                detail=str(sample_dir),
+            )
+        )
+
+        license_path = root / "LICENSE"
+
+        checks.append(
+            DoctorCheck(
+                name="license",
+                status=(
+                    "PASS"
+                    if license_path.is_file()
+                    else "WARN"
+                ),
+                message=(
+                    "LICENSE 文件存在"
+                    if license_path.is_file()
+                    else (
+                        "尚未提供 LICENSE，"
+                        "不适合公开发布"
+                    )
+                ),
+                detail=str(license_path),
+            )
+        )
+
+    elif context_mode == "WORKSPACE":
+        workspace_paths = (
+            root / "configs" / "models",
+            root / "data",
+            root / "runs",
+        )
+
+        layout_valid = all(
+            path.is_dir()
+            for path in workspace_paths
+        )
+
+        checks.append(
+            DoctorCheck(
+                name="workspace_layout",
+                status=(
+                    "PASS"
+                    if layout_valid
+                    else "FAIL"
+                ),
+                message=(
+                    "用户工作区目录结构完整"
+                    if layout_valid
+                    else "用户工作区目录结构不完整"
+                ),
+                detail=str(root),
+            )
+        )
+
+    else:
+        checks.append(
+            DoctorCheck(
+                name="workspace_layout",
+                status="WARN",
+                message=(
+                    "当前未指定用户工作区，"
+                    "跳过工作区目录检查"
+                ),
+                detail=str(root),
+            )
+        )
 
     workdir = Path.cwd().resolve()
 
@@ -615,21 +752,27 @@ def run_doctor(
         )
     )
 
-    resolved_model_config = (
-        model_config_path.resolve()
-        if model_config_path is not None
-        else (
+    if model_config_path is not None:
+        resolved_model_config = (
+            model_config_path.expanduser().resolve()
+        )
+    elif context_mode in {
+        "SOURCE_CHECKOUT",
+        "WORKSPACE",
+    }:
+        candidate_model_config = (
             root
             / "configs"
             / "models"
             / "deepseek.local.yaml"
         )
-    )
 
-    if (
-        model_config_path is None
-        and not resolved_model_config.is_file()
-    ):
+        resolved_model_config = (
+            candidate_model_config
+            if candidate_model_config.is_file()
+            else None
+        )
+    else:
         resolved_model_config = None
 
     checks.extend(
@@ -642,6 +785,7 @@ def run_doctor(
     )
 
     return DoctorReport(
+        context_mode=context_mode,
         project_root=root,
         working_directory=workdir,
         checks=checks,
@@ -658,7 +802,8 @@ def render_doctor_report(
         "=" * 72,
         "Protein Design Agent Doctor",
         "=" * 72,
-        f"项目根目录：{report.project_root}",
+        f"运行模式：{report.context_mode}",
+        f"诊断根目录：{report.project_root}",
         (
             "工作目录："
             f"{report.working_directory}"

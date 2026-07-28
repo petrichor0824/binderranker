@@ -1395,7 +1395,7 @@ def doctor_command(
         file_okay=False,
         dir_okay=True,
         resolve_path=True,
-        help="项目根目录；未指定时自动寻找。",
+        help="源码仓库或用户工作区目录；未指定时自动识别。",
     ),
     model_config: Optional[Path] = typer.Option(
         None,
