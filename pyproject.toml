@@ -7,7 +7,18 @@ name = "protein-design-agent"
 version = "0.1.0"
 description = "Configuration-driven protein design and BinderRanker workflow"
 readme = "README.md"
+license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
 
 dependencies = [
     "numpy>=2.0,<3",
