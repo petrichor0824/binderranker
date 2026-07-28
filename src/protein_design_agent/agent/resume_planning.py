@@ -230,6 +230,7 @@ ALLOWED_INCOMPLETE_BUNDLE_ITEMS = {
     "planning_session.json",
     "agent_prepare_manifest.json",
     "history",
+    "chat",
 }
 
 
@@ -288,6 +289,55 @@ def write_bytes_atomically(
         )
 
 
+def validate_incomplete_chat_directory(
+    bundle_dir: Path,
+) -> None:
+    """
+    校验不完整任务中的 Chat 辅助目录。
+
+    只允许已知的对话侧车文件，避免任意内容绕过
+    不完整 Bundle 的覆盖保护。
+    """
+    chat_dir = (
+        bundle_dir.resolve()
+        / "chat"
+    )
+
+    if not chat_dir.exists():
+        return
+
+    if not chat_dir.is_dir():
+        raise ResumePlanningError(
+            f"Chat 辅助路径不是目录：{chat_dir}"
+        )
+
+    allowed_items = {
+        "dataset_advice.json",
+        "pending_action.json",
+    }
+
+    unknown_items = sorted(
+        item.name
+        for item in chat_dir.iterdir()
+        if item.name not in allowed_items
+    )
+
+    if unknown_items:
+        raise ResumePlanningError(
+            "Chat 辅助目录包含未知内容，"
+            "为避免覆盖或采用未经审计的数据，"
+            "拒绝续接："
+            + ", ".join(unknown_items)
+        )
+
+    for item in chat_dir.iterdir():
+        if not item.is_file():
+            raise ResumePlanningError(
+                "Chat 辅助目录只允许普通文件："
+                f"{item}"
+            )
+
+
 def validate_incomplete_bundle(
     bundle_dir: Path,
 ) -> tuple[Path, Path, PlanningSession]:
@@ -312,6 +362,10 @@ def validate_incomplete_bundle(
             "为避免覆盖正式任务，拒绝续接："
             + ", ".join(unknown_items)
         )
+
+    validate_incomplete_chat_directory(
+        bundle
+    )
 
     session_path = (
         bundle / "planning_session.json"
@@ -1045,6 +1099,29 @@ def promote_to_ready_for_review(
                     previous_history,
                     bundle_dir / "history",
                     dirs_exist_ok=True,
+                )
+
+            previous_advice = (
+                backup_bundle
+                / "chat"
+                / "dataset_advice.json"
+            )
+
+            if previous_advice.is_file():
+                destination_advice = (
+                    bundle_dir
+                    / "chat"
+                    / "dataset_advice.json"
+                )
+
+                destination_advice.parent.mkdir(
+                    parents=True,
+                    exist_ok=True,
+                )
+
+                shutil.copy2(
+                    previous_advice,
+                    destination_advice,
                 )
 
             history_record = save_history_record(
