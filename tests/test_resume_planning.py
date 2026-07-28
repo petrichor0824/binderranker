@@ -30,6 +30,8 @@ class FakeStructuredProvider:
         self.payload = payload
         self._name = name
         self.calls = 0
+        self.last_messages = None
+        self.all_messages = []
 
     @property
     def name(self) -> str:
@@ -40,7 +42,68 @@ class FakeStructuredProvider:
         messages,
     ) -> dict:
         self.calls += 1
-        return self.payload
+        self.last_messages = messages
+        self.all_messages.append(messages)
+
+        source_payload = self.payload
+
+        if isinstance(
+            source_payload,
+            list,
+        ):
+            if not source_payload:
+                raise AssertionError(
+                    "FakeStructuredProvider payload 列表不能为空"
+                )
+
+            index = min(
+                self.calls - 1,
+                len(source_payload) - 1,
+            )
+
+            source_payload = (
+                source_payload[index]
+            )
+
+        elif self.calls > 1:
+            # 旧测试只为第一遍解析提供一个 payload。
+            # 第二遍完整性审查默认表示“没有发现遗漏”。
+            source_payload = {
+                "patch": {},
+                "evidence": {},
+                "notes": [],
+            }
+
+        # 浅复制，避免测试代码修改原始 payload。
+        payload = dict(source_payload)
+
+        if (
+            "patch" in payload
+            and "evidence" not in payload
+        ):
+            context = json.loads(
+                messages[-1]["content"]
+            )
+
+            # 第一遍提示词使用 supplement_text，
+            # 第二遍审查提示词使用 conversation_text。
+            evidence_text = str(
+                context.get("supplement_text")
+                or context.get("conversation_text")
+                or ""
+            )
+
+            patch = payload["patch"]
+
+            payload["evidence"] = {
+                field_name: evidence_text
+                for field_name, value
+                in patch.items()
+                if value is not None
+            }
+
+        return payload
+
 
 
 def create_incomplete_bundle(
@@ -532,3 +595,383 @@ def test_system_default_can_be_overridden() -> None:
         "binder_chain",
         "target_start_residue",
     }
+
+
+def create_extraction_session() -> PlanningSession:
+    request = UserRequest(
+        raw_text="分析这个 PDB 目录",
+        input_dir=Path("/tmp/pdbs"),
+    )
+
+    return PlanningSession(
+        provider_name="fake-provider",
+        request=request,
+        plan=build_agent_plan(request),
+        request_explicit_fields=[
+            "input_dir",
+        ],
+    )
+
+
+def test_semantic_extraction_can_capture_layout_and_source_chain() -> None:
+    """
+    一句话可以同时表达多个字段，不能只提取布局。
+    """
+    supplement = (
+        "这些结构里的 target 和 binder "
+        "现在拼在同一条 A 链中。"
+    )
+
+    provider = FakeStructuredProvider(
+        {
+            "patch": {
+                "input_layout": (
+                    "concatenated_single_chain"
+                ),
+                "source_chain": "A",
+            },
+            "evidence": {
+                "input_layout": (
+                    "target 和 binder "
+                    "现在拼在同一条 A 链中"
+                ),
+                "source_chain": (
+                    "同一条 A 链中"
+                ),
+            },
+        }
+    )
+
+    extraction = module.extract_supplement_patch(
+        provider=provider,
+        supplement_text=supplement,
+        session=create_extraction_session(),
+    )
+
+    assert (
+        extraction.patch.input_layout
+        == "concatenated_single_chain"
+    )
+    assert extraction.patch.source_chain == "A"
+
+    system_prompt = (
+        provider.last_messages[0]["content"]
+    )
+
+    assert "不是做关键词匹配" in system_prompt
+    assert "一句话可能同时明确表达多个字段" in (
+        system_prompt
+    )
+    assert (
+        "source_chain=A"
+        in system_prompt
+    )
+
+
+def test_semantic_extraction_can_capture_count_and_start() -> None:
+    """
+    数量和起始编号在同一句中出现时应同时提取。
+    """
+    supplement = (
+        "target 从第 4 号残基开始，"
+        "共有 132 个残基。"
+    )
+
+    provider = FakeStructuredProvider(
+        {
+            "patch": {
+                "target_start_residue": 4,
+                "target_residue_count": 132,
+            },
+            "evidence": {
+                "target_start_residue": (
+                    "从第 4 号残基开始"
+                ),
+                "target_residue_count": (
+                    "共有 132 个残基"
+                ),
+            },
+        }
+    )
+
+    extraction = module.extract_supplement_patch(
+        provider=provider,
+        supplement_text=supplement,
+        session=create_extraction_session(),
+    )
+
+    assert (
+        extraction.patch.target_start_residue
+        == 4
+    )
+    assert (
+        extraction.patch.target_residue_count
+        == 132
+    )
+
+
+def test_supplement_evidence_must_quote_user_text() -> None:
+    """
+    模型不能用自己编造或改写的文本冒充用户依据。
+    """
+    supplement = (
+        "target 和 binder 拼在同一条 A 链中。"
+    )
+
+    provider = FakeStructuredProvider(
+        {
+            "patch": {
+                "input_layout": (
+                    "concatenated_single_chain"
+                ),
+                "source_chain": "A",
+            },
+            "evidence": {
+                "input_layout": (
+                    "拼在同一条 A 链中"
+                ),
+                # 用户原话没有 B 链，这条依据应被拒绝。
+                "source_chain": "原始链是 B 链",
+            },
+        }
+    )
+
+    with pytest.raises(
+        ResumePlanningError,
+        match="不是用户本轮原话",
+    ):
+        module.extract_supplement_patch(
+            provider=provider,
+            supplement_text=supplement,
+            session=create_extraction_session(),
+        )
+
+
+def test_completeness_audit_recovers_omitted_source_chain() -> None:
+    """
+    第一遍只提取布局时，第二遍应能从同一句原话中
+    找回 source_chain=A。
+    """
+    session = create_extraction_session()
+
+    supplement = (
+        "这些结构里的 target 和 binder "
+        "拼在同一条 A 链中。"
+    )
+
+    provider = FakeStructuredProvider(
+        [
+            {
+                "patch": {
+                    "input_layout": (
+                        "concatenated_single_chain"
+                    ),
+                },
+                "evidence": {
+                    "input_layout": (
+                        "target 和 binder "
+                        "拼在同一条 A 链中"
+                    ),
+                },
+            },
+            {
+                "patch": {
+                    "source_chain": "A",
+                },
+                "evidence": {
+                    "source_chain": (
+                        "同一条 A 链中"
+                    ),
+                },
+                "notes": [
+                    (
+                        "第一遍遗漏了用户明确提供的"
+                        " source_chain"
+                    ),
+                ],
+            },
+        ]
+    )
+
+    primary = module.extract_supplement_patch(
+        provider=provider,
+        supplement_text=supplement,
+        session=session,
+    )
+
+    audit = module.audit_omitted_explicit_fields(
+        provider=provider,
+        supplement_text=supplement,
+        session=session,
+        primary_extraction=primary,
+    )
+
+    combined = (
+        module.combine_supplement_extractions(
+            session=session,
+            primary=primary,
+            audit=audit,
+        )
+    )
+
+    assert (
+        combined.patch.input_layout
+        == "concatenated_single_chain"
+    )
+    assert combined.patch.source_chain == "A"
+
+    assert (
+        combined.evidence["source_chain"]
+        == "同一条 A 链中"
+    )
+
+    assert provider.calls == 2
+
+
+def test_completeness_audit_can_recover_from_earlier_user_text() -> None:
+    """
+    第一遍解析器漏掉初始请求中的明确参数时，
+    审查器可以引用此前用户原话恢复。
+    """
+    request = UserRequest(
+        raw_text=(
+            "原始结构只有 A 链，"
+            "target 和 binder 还没有拆开。"
+        ),
+        input_dir=Path("/tmp/pdbs"),
+    )
+
+    session = PlanningSession(
+        provider_name="fake-provider",
+        request=request,
+        plan=build_agent_plan(request),
+        request_explicit_fields=[
+            "input_dir",
+        ],
+    )
+
+    primary = module.SupplementExtraction(
+        patch=module.UserRequestPatch(),
+        evidence={},
+    )
+
+    provider = FakeStructuredProvider(
+        {
+            "patch": {
+                "input_layout": (
+                    "concatenated_single_chain"
+                ),
+                "source_chain": "A",
+            },
+            "evidence": {
+                "input_layout": (
+                    "target 和 binder 还没有拆开"
+                ),
+                "source_chain": (
+                    "原始结构只有 A 链"
+                ),
+            },
+        }
+    )
+
+    audit = module.audit_omitted_explicit_fields(
+        provider=provider,
+        supplement_text=(
+            "我还需要提供什么信息？"
+        ),
+        session=session,
+        primary_extraction=primary,
+    )
+
+    assert (
+        audit.patch.input_layout
+        == "concatenated_single_chain"
+    )
+    assert audit.patch.source_chain == "A"
+
+
+def test_completeness_audit_cannot_change_confirmed_field() -> None:
+    """
+    第二遍审查只能补遗漏，不能修改用户已确认字段。
+    """
+    request = UserRequest(
+        raw_text=(
+            "binder 是 B 链。"
+        ),
+        input_dir=Path("/tmp/pdbs"),
+        input_layout="existing_chains",
+        binder_chain="B",
+    )
+
+    session = PlanningSession(
+        provider_name="fake-provider",
+        request=request,
+        plan=build_agent_plan(request),
+        request_explicit_fields=[
+            "input_dir",
+            "input_layout",
+            "binder_chain",
+        ],
+    )
+
+    primary = module.SupplementExtraction(
+        patch=module.UserRequestPatch(),
+        evidence={},
+    )
+
+    audit = module.SupplementExtraction(
+        patch=module.UserRequestPatch(
+            binder_chain="C",
+        ),
+        evidence={
+            "binder_chain": (
+                "binder 是 C 链"
+            ),
+        },
+    )
+
+    with pytest.raises(
+        ResumePlanningError,
+        match="修改用户已经确认的字段",
+    ):
+        module.combine_supplement_extractions(
+            session=session,
+            primary=primary,
+            audit=audit,
+        )
+
+
+def test_completeness_audit_detects_pass_conflict() -> None:
+    """
+    两遍模型对同一字段给出不同值时必须停止，
+    不能静默选择其中一个。
+    """
+    session = create_extraction_session()
+
+    primary = module.SupplementExtraction(
+        patch=module.UserRequestPatch(
+            source_chain="A",
+        ),
+        evidence={
+            "source_chain": "A 链",
+        },
+    )
+
+    audit = module.SupplementExtraction(
+        patch=module.UserRequestPatch(
+            source_chain="B",
+        ),
+        evidence={
+            "source_chain": "B 链",
+        },
+    )
+
+    with pytest.raises(
+        ResumePlanningError,
+        match="两遍语义提取结果发生冲突",
+    ):
+        module.combine_supplement_extractions(
+            session=session,
+            primary=primary,
+            audit=audit,
+        )

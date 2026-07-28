@@ -137,13 +137,23 @@ class UserRequestPatch(BaseModel):
 
 
 class SupplementExtraction(BaseModel):
-    """模型对本轮补充文本的结构化提取。"""
+    """
+    模型对本轮补充文本的结构化提取。
+
+    evidence 的键必须对应 patch 中实际提取的字段，
+    值必须引用用户本轮原话中的依据。
+    """
 
     model_config = ConfigDict(
         extra="forbid"
     )
 
     patch: UserRequestPatch
+
+    evidence: dict[str, str] = Field(
+        default_factory=dict
+    )
+
     notes: list[str] = Field(
         default_factory=list
     )
@@ -377,6 +387,97 @@ def validate_incomplete_bundle(
     )
 
 
+def normalize_evidence_text(
+    value: str,
+) -> str:
+    """
+    用于核对原文引用。
+
+    仅忽略空白差异，不做同义词替换，
+    防止模型用改写后的内容冒充用户原话。
+    """
+    return "".join(
+        value.split()
+    )
+
+
+def validate_supplement_evidence(
+    *,
+    extraction: SupplementExtraction,
+    supplement_text: str,
+) -> None:
+    """
+    确认每个提取字段都有用户原话依据。
+
+    该校验不判断科研含义，只判断：
+    - evidence 与 patch 字段一致；
+    - 引用文字确实来自本轮用户输入。
+    """
+    patch_fields = {
+        field_name
+        for field_name
+        in extraction.patch.model_fields_set
+        if getattr(
+            extraction.patch,
+            field_name,
+        ) is not None
+    }
+
+    evidence_fields = set(
+        extraction.evidence
+    )
+
+    missing_evidence = sorted(
+        patch_fields - evidence_fields
+    )
+
+    if missing_evidence:
+        raise ResumePlanningError(
+            "模型提取字段缺少用户原文依据："
+            f"{missing_evidence}"
+        )
+
+    unexpected_evidence = sorted(
+        evidence_fields - patch_fields
+    )
+
+    if unexpected_evidence:
+        raise ResumePlanningError(
+            "模型为未提取字段提供了多余依据："
+            f"{unexpected_evidence}"
+        )
+
+    normalized_source = (
+        normalize_evidence_text(
+            supplement_text
+        )
+    )
+
+    invalid_quotes: list[str] = []
+
+    for field_name, quote in (
+        extraction.evidence.items()
+    ):
+        clean_quote = quote.strip()
+
+        if (
+            not clean_quote
+            or normalize_evidence_text(
+                clean_quote
+            )
+            not in normalized_source
+        ):
+            invalid_quotes.append(
+                field_name
+            )
+
+    if invalid_quotes:
+        raise ResumePlanningError(
+            "模型提供的依据不是用户本轮原话："
+            f"{sorted(invalid_quotes)}"
+        )
+
+
 def extract_supplement_patch(
     *,
     provider: StructuredJSONProvider,
@@ -405,9 +506,40 @@ def extract_supplement_patch(
         {
             "role": "system",
             "content": (
-                "你是蛋白设计任务的受控参数补充解析器。"
-                "只提取用户在本轮补充文本中明确给出的字段。"
+                "你是蛋白设计任务的受控语义解析器。"
+                "请阅读并理解用户完整句子的含义，"
+                "不是做关键词匹配。"
+
+                "只提取用户在本轮文本中明确表达的信息，"
                 "不得根据生物学常识、文件名或旧值猜测。"
+
+                "一句话可能同时明确表达多个字段，"
+                "必须把所有明确字段完整提取，不能只取一个。"
+
+                "语义示例："
+                "‘target 和 binder 拼在同一条 A 链中’"
+                "同时表示 input_layout="
+                "concatenated_single_chain，"
+                "以及 source_chain=A。"
+
+                "‘前 132 个残基是 target，从第 4 号开始’"
+                "同时表示 target_residue_count=132，"
+                "以及 target_start_residue=4。"
+
+                "‘原文件已经分成 A、B 两条链，B 是 binder’"
+                "表示 input_layout=existing_chains、"
+                "binder_chain=B；"
+                "只有用户明确说 A 是 target 时，"
+                "才提取 target_chains=[A]。"
+
+                "不同措辞只要语义相同，也应正确理解；"
+                "不得要求用户使用字段名、固定短语或命令格式。"
+
+                "patch 中每个实际提取的字段，"
+                "都必须在 evidence 中给出一段用户原话。"
+                "evidence 的键必须与 patch 字段完全一致，"
+                "引用内容必须逐字来自 supplement_text。"
+
                 "未提及字段必须省略，不要输出 null。"
                 "不得输出 raw_text、task_type、"
                 "execute_requested 或任何 Shell 命令。"
@@ -446,14 +578,23 @@ def extract_supplement_patch(
         ) from exc
 
     try:
-        return SupplementExtraction.model_validate(
-            payload
+        extraction = (
+            SupplementExtraction.model_validate(
+                payload
+            )
         )
     except ValidationError as exc:
         raise ResumePlanningError(
             "补充信息没有通过结构验证：\n"
             f"{exc}"
         ) from exc
+
+    validate_supplement_evidence(
+        extraction=extraction,
+        supplement_text=clean_text,
+    )
+
+    return extraction
 
 
 def is_empty_value(value: Any) -> bool:
@@ -976,6 +1117,281 @@ def promote_to_ready_for_review(
     )
 
 
+def conversation_evidence_text(
+    *,
+    session: PlanningSession,
+    supplement_text: str,
+) -> str:
+    """
+    构造只包含用户原话的审查文本。
+
+    不把系统默认值、模型解释或 Planner 结论
+    混入证据文本。
+    """
+    parts = [
+        session.request.raw_text.strip(),
+        supplement_text.strip(),
+    ]
+
+    return "\n\n".join(
+        part
+        for part in parts
+        if part
+    )
+
+
+def audit_omitted_explicit_fields(
+    *,
+    provider: StructuredJSONProvider,
+    supplement_text: str,
+    session: PlanningSession,
+    primary_extraction: SupplementExtraction,
+) -> SupplementExtraction:
+    """
+    第二遍语义审查。
+
+    目标不是重新修改所有参数，而是检查：
+    用户原话中是否存在第一遍遗漏的明确字段。
+    """
+    conversation_text = conversation_evidence_text(
+        session=session,
+        supplement_text=supplement_text,
+    )
+
+    explicit_fields = set(
+        session.request_explicit_fields
+        or []
+    )
+
+    request_data = session.request.model_dump(
+        mode="json"
+    )
+
+    confirmed_information = {
+        field_name: request_data.get(
+            field_name
+        )
+        for field_name in sorted(
+            explicit_fields
+        )
+    }
+
+    primary_patch = (
+        primary_extraction.patch.model_dump(
+            mode="json",
+            exclude_none=True,
+        )
+    )
+
+    schema = (
+        SupplementExtraction.model_json_schema()
+    )
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是蛋白设计任务的第二遍语义完整性审查器。"
+                "请重新阅读全部用户原话，检查第一遍解析"
+                "是否遗漏了用户已经明确表达的参数。"
+
+                "这不是关键词匹配。"
+                "你需要理解完整句子的语义关系。"
+
+                "只能补充用户原话明确表达、"
+                "但 confirmed_information 和 primary_patch "
+                "中尚未记录的字段。"
+
+                "不得修改或覆盖已经确认的字段。"
+                "不得根据系统默认值、生物学常识、文件名、"
+                "目录内容或模型猜测补参数。"
+
+                "一句话可能表达多个字段。"
+                "例如‘target 和 binder 拼在同一条 A 链中’"
+                "同时表达 input_layout="
+                "concatenated_single_chain 和 source_chain=A。"
+
+                "例如‘target 从第 4 个残基开始，共 132 个’"
+                "同时表达 target_start_residue=4 和"
+                " target_residue_count=132。"
+
+                "若没有遗漏字段，patch 输出空对象。"
+
+                "patch 中每个字段都必须在 evidence 中"
+                "提供逐字来自 conversation_text 的原文依据。"
+                "未提及字段必须省略，不要输出 null。"
+
+                "不得输出 raw_text、task_type、"
+                "execute_requested、批准指令、执行指令"
+                "或任何 Shell 命令。"
+
+                "输出必须严格符合 JSON Schema。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": json.dumps(
+                {
+                    "conversation_text": (
+                        conversation_text
+                    ),
+                    "confirmed_information": (
+                        confirmed_information
+                    ),
+                    "primary_patch": (
+                        primary_patch
+                    ),
+                    "currently_missing": (
+                        session.plan
+                        .missing_information
+                    ),
+                    "required_schema": schema,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+        },
+    ]
+
+    try:
+        payload = provider.generate_json(
+            messages
+        )
+    except Exception as exc:
+        raise ResumePlanningError(
+            f"补充信息完整性审查失败：{exc}"
+        ) from exc
+
+    try:
+        extraction = (
+            SupplementExtraction.model_validate(
+                payload
+            )
+        )
+    except ValidationError as exc:
+        raise ResumePlanningError(
+            "完整性审查结果没有通过结构验证：\n"
+            f"{exc}"
+        ) from exc
+
+    validate_supplement_evidence(
+        extraction=extraction,
+        supplement_text=conversation_text,
+    )
+
+    return extraction
+
+
+def combine_supplement_extractions(
+    *,
+    session: PlanningSession,
+    primary: SupplementExtraction,
+    audit: SupplementExtraction,
+) -> SupplementExtraction:
+    """
+    确定性合并第一遍提取和第二遍审查。
+
+    安全规则：
+    - 审查不能修改旧的显式字段；
+    - 审查不能与第一遍提取发生冲突；
+    - 相同的重复字段可以忽略；
+    - 只有带原文证据的新字段才能加入。
+    """
+    explicit_fields = set(
+        session.request_explicit_fields
+        or []
+    )
+
+    current_request = (
+        session.request.model_dump(
+            mode="python"
+        )
+    )
+
+    primary_data = (
+        primary.patch.model_dump(
+            mode="python",
+            exclude_none=True,
+        )
+    )
+
+    audit_data = (
+        audit.patch.model_dump(
+            mode="python",
+            exclude_none=True,
+        )
+    )
+
+    combined_data = dict(
+        primary_data
+    )
+
+    combined_evidence = dict(
+        primary.evidence
+    )
+
+    for field_name, audit_value in (
+        audit_data.items()
+    ):
+        if field_name in explicit_fields:
+            current_value = (
+                current_request.get(
+                    field_name
+                )
+            )
+
+            if current_value != audit_value:
+                raise ResumePlanningError(
+                    "完整性审查试图修改用户已经确认的字段："
+                    f"{field_name!r}；"
+                    f"旧值={current_value!r}，"
+                    f"审查值={audit_value!r}"
+                )
+
+            # 同值重复，不需要再次加入。
+            continue
+
+        if field_name in primary_data:
+            primary_value = (
+                primary_data[field_name]
+            )
+
+            if primary_value != audit_value:
+                raise ResumePlanningError(
+                    "两遍语义提取结果发生冲突："
+                    f"{field_name!r}；"
+                    f"第一遍={primary_value!r}，"
+                    f"第二遍={audit_value!r}"
+                )
+
+            # 同值重复，保留第一遍结果。
+            continue
+
+        combined_data[field_name] = (
+            audit_value
+        )
+
+        combined_evidence[field_name] = (
+            audit.evidence[field_name]
+        )
+
+    combined_notes = [
+        *primary.notes,
+        *[
+            f"completeness_audit: {note}"
+            for note in audit.notes
+        ],
+    ]
+
+    return SupplementExtraction(
+        patch=UserRequestPatch.model_validate(
+            combined_data
+        ),
+        evidence=combined_evidence,
+        notes=combined_notes,
+    )
+
+
 def resume_planning_session(
     *,
     bundle_dir: Path,
@@ -1013,10 +1429,31 @@ def resume_planning_session(
             f"当前={provider.name!r}"
         )
 
-    extraction = extract_supplement_patch(
-        provider=provider,
-        supplement_text=supplement_text,
-        session=old_session,
+    primary_extraction = (
+        extract_supplement_patch(
+            provider=provider,
+            supplement_text=supplement_text,
+            session=old_session,
+        )
+    )
+
+    audit_extraction = (
+        audit_omitted_explicit_fields(
+            provider=provider,
+            supplement_text=supplement_text,
+            session=old_session,
+            primary_extraction=(
+                primary_extraction
+            ),
+        )
+    )
+
+    extraction = (
+        combine_supplement_extractions(
+            session=old_session,
+            primary=primary_extraction,
+            audit=audit_extraction,
+        )
     )
 
     merged_request, accepted_fields = (

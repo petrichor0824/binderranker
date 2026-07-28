@@ -55,7 +55,7 @@ def test_chat_status_then_exit(
 
     monkeypatch.setattr(
         cli_module,
-        "process_chat_message",
+        "process_dialogue_message",
         fake_process,
     )
 
@@ -108,7 +108,7 @@ def test_chat_error_does_not_terminate_session(
 
     monkeypatch.setattr(
         cli_module,
-        "process_chat_message",
+        "process_dialogue_message",
         fake_process,
     )
 
@@ -187,7 +187,7 @@ def test_chat_builds_provider_only_with_network(
 
     monkeypatch.setattr(
         cli_module,
-        "process_chat_message",
+        "process_dialogue_message",
         fake_process,
     )
 
@@ -217,3 +217,70 @@ def test_chat_builds_provider_only_with_network(
         captured["model_config_path"]
         == model_config.resolve()
     )
+
+
+def test_chat_routes_natural_language_through_dialogue(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    received_messages = []
+
+    def fake_dialogue(**kwargs):
+        received_messages.append(
+            kwargs["message"]
+        )
+
+        if len(received_messages) == 1:
+            return ChatTurnResult(
+                action="APPROVE",
+                status=(
+                    "AWAITING_CONFIRMATION"
+                ),
+                message=(
+                    "你正在请求批准该计划。\n"
+                    "请回答“确认”或“取消”。"
+                ),
+                bundle_dir=bundle,
+            )
+
+        return ChatTurnResult(
+            action="APPROVE",
+            status="APPROVED",
+            message="计划已批准。",
+            bundle_dir=bundle,
+        )
+
+    monkeypatch.setattr(
+        cli_module,
+        "process_dialogue_message",
+        fake_dialogue,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "chat",
+            "--bundle-dir",
+            str(bundle),
+            "--approved-by",
+            "tester",
+        ],
+        input=(
+            "这个方案没问题，批准吧\n"
+            "确认\n"
+            "退出\n"
+        ),
+    )
+
+    assert result.exit_code == 0
+
+    assert received_messages == [
+        "这个方案没问题，批准吧",
+        "确认",
+    ]
+
+    assert "等待" in result.output
+    assert "计划已批准" in result.output

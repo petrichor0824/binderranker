@@ -33,9 +33,12 @@ from typing import Any, Optional
 
 import typer
 
+from protein_design_agent.agent.chat_dialogue import (
+    ChatDialogueError,
+    process_dialogue_message,
+)
 from protein_design_agent.agent.chat_session import (
     ChatSessionError,
-    process_chat_message,
 )
 
 from protein_design_agent.agent.run_status import (
@@ -761,7 +764,9 @@ def chat_command(
         "输入“退出”结束会话。"
     )
     typer.echo(
-        "只有固定确认短语能够触发批准、执行或分析。"
+        "你可以直接使用自然语言。"
+        "批准、执行和分析等动作会先复述影响，"
+        "再等待你确认。"
     )
 
     exit_commands = {
@@ -795,7 +800,7 @@ def chat_command(
             break
 
         try:
-            result = process_chat_message(
+            result = process_dialogue_message(
                 message=clean,
                 bundle_dir=resolved_bundle,
                 provider=provider,
@@ -807,7 +812,10 @@ def chat_command(
                 allow_network=allow_network,
             )
 
-        except ChatSessionError as exc:
+        except (
+            ChatDialogueError,
+            ChatSessionError,
+        ) as exc:
             typer.echo("")
             typer.echo(
                 f"Agent 拒绝：{exc}",
