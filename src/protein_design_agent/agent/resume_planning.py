@@ -695,9 +695,15 @@ def merge_request_patch(
     supplement_text: str,
 ) -> tuple[UserRequest, list[str]]:
     """
-    只填补空字段或当前明确缺失字段。
+    合并用户本轮明确提供的补充字段。
 
-    非空且已确认字段不能被本轮补充静默修改。
+    安全与来源规则：
+    - 空字段或当前缺失字段可以补充；
+    - 系统默认值可以被用户明确覆盖；
+    - 用户给出的值即使与系统默认值相同，
+      也必须登记为新的显式来源；
+    - 已经由用户确认的非空字段不能被静默修改；
+    - 已确认字段的同值重复不会产生伪更新。
     """
     merged = old_request.model_dump(
         mode="python"
@@ -726,10 +732,26 @@ def merge_request_patch(
             field_name
         )
 
-        if (
+        values_equal = (
             normalized_value(old_value)
             == normalized_value(new_value)
-        ):
+        )
+
+        if values_equal:
+            if field_name not in old_explicit_fields:
+                # 数值虽然与系统默认值相同，
+                # 但用户已经在本轮明确确认该值。
+                #
+                # 必须将该字段加入 accepted_fields，
+                # 使 request_explicit_fields 的来源从
+                # SYSTEM_DEFAULT 升级为 USER_EXPLICIT。
+                merged[field_name] = new_value
+                accepted_fields.append(
+                    field_name
+                )
+
+            # 如果该字段此前已经由用户明确确认，
+            # 本轮只是同值重复，不制造伪更新。
             continue
 
         if (

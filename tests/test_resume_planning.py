@@ -975,3 +975,105 @@ def test_completeness_audit_detects_pass_conflict() -> None:
             primary=primary,
             audit=audit,
         )
+
+
+def test_same_default_values_are_promoted_to_explicit_provenance() -> None:
+    """
+    用户明确给出的值即使恰好等于系统默认值，
+    也必须登记为新的显式来源。
+    """
+    request = UserRequest(
+        raw_text="分析拼接链数据",
+        input_dir=Path("/tmp/pdbs"),
+        input_layout=(
+            "concatenated_single_chain"
+        ),
+        source_chain="A",
+        target_residue_count=132,
+        target_start_residue=4,
+    )
+
+    # 以下四个值由 UserRequest 默认产生，
+    # 不在此前用户明确提供的字段集合中。
+    assert request.normalized_target_chain == "A"
+    assert request.normalized_binder_chain == "B"
+    assert request.region_policy == "diagnostic"
+    assert request.region_filter == "off"
+
+    patch = module.UserRequestPatch(
+        normalized_target_chain="A",
+        normalized_binder_chain="B",
+        region_policy="diagnostic",
+        region_filter="off",
+    )
+
+    merged, accepted_fields = (
+        module.merge_request_patch(
+            old_request=request,
+            old_missing_information=[],
+            old_explicit_fields={
+                "input_dir",
+                "input_layout",
+                "source_chain",
+                "target_residue_count",
+                "target_start_residue",
+            },
+            patch=patch,
+            supplement_text=(
+                "拆分后 target 叫 A 链，"
+                "binder 叫 B 链。"
+                "区域信息只用于诊断，不做过滤。"
+            ),
+        )
+    )
+
+    assert set(accepted_fields) == {
+        "normalized_target_chain",
+        "normalized_binder_chain",
+        "region_policy",
+        "region_filter",
+    }
+
+    assert (
+        merged.normalized_target_chain
+        == "A"
+    )
+    assert (
+        merged.normalized_binder_chain
+        == "B"
+    )
+    assert merged.region_policy == "diagnostic"
+    assert merged.region_filter == "off"
+
+
+def test_same_already_explicit_value_is_not_a_false_update() -> None:
+    """
+    已经明确确认的字段再次收到同值时，
+    不应制造新的历史更新。
+    """
+    request = UserRequest(
+        raw_text="标准化 target 链是 A",
+        input_dir=Path("/tmp/pdbs"),
+        normalized_target_chain="A",
+    )
+
+    patch = module.UserRequestPatch(
+        normalized_target_chain="A",
+    )
+
+    with pytest.raises(
+        ResumePlanningError,
+        match="没有提供新的可用字段",
+    ):
+        module.merge_request_patch(
+            old_request=request,
+            old_missing_information=[],
+            old_explicit_fields={
+                "input_dir",
+                "normalized_target_chain",
+            },
+            patch=patch,
+            supplement_text=(
+                "target 仍然叫 A 链"
+            ),
+        )

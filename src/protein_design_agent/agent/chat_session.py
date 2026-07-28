@@ -59,6 +59,8 @@ ChatAction = Literal[
     "EXECUTE",
     "ANALYZE",
     "EXPLAIN",
+    "INSPECT_DATASET",
+    "ADOPT_DATASET_ADVICE",
 ]
 
 

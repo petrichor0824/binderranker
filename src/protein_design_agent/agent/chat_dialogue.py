@@ -40,6 +40,15 @@ from protein_design_agent.agent.providers.base import (
     RequestParserProvider,
     StructuredJSONProvider,
 )
+from protein_design_agent.agent.dataset_advice_adoption import (
+    DatasetAdviceAdoptionError,
+    adopt_dataset_advice,
+)
+from protein_design_agent.agent.dataset_advisor import (
+    DatasetPlanningAdvice,
+    inspect_dataset_for_planning,
+    save_dataset_advice,
+)
 from protein_design_agent.agent.prepare_pipeline import (
     load_planning_session,
 )
@@ -53,6 +62,7 @@ DialogueIntent = Literal[
     "HELP",
     "VIEW_STATUS",
     "PROVIDE_INFORMATION",
+    "REQUEST_DATASET_INSPECTION",
     "REQUEST_APPROVAL",
     "REQUEST_EXECUTION",
     "REQUEST_ANALYSIS",
@@ -68,6 +78,7 @@ PendingActionName = Literal[
     "EXECUTE",
     "ANALYZE",
     "EXPLAIN",
+    "ADOPT_DATASET_ADVICE",
 ]
 
 
@@ -148,6 +159,11 @@ EXACT_INTENTS: dict[str, DialogueIntent] = {
     "当前状态": "VIEW_STATUS",
     "status": "VIEW_STATUS",
     "/status": "VIEW_STATUS",
+
+    "检查文件": "REQUEST_DATASET_INSPECTION",
+    "检查pdb": "REQUEST_DATASET_INSPECTION",
+    "帮我检查文件": "REQUEST_DATASET_INSPECTION",
+    "帮我看看文件": "REQUEST_DATASET_INSPECTION",
 
     "确认": "CONFIRM",
     "确认继续": "CONFIRM",
@@ -244,7 +260,9 @@ def bundle_state_digest(
         return digest.hexdigest()
 
     patterns = (
+        "planning_session.json",
         "agent_prepare_manifest.json",
+        "chat/dataset_advice.json",
         "approval.json",
         "execution_*.json",
         "agent_result_summary.json",
@@ -568,6 +586,7 @@ def classify_dialogue_intent(
             "HELP",
             "VIEW_STATUS",
             "PROVIDE_INFORMATION",
+            "REQUEST_DATASET_INSPECTION",
             "REQUEST_APPROVAL",
             "REQUEST_EXECUTION",
             "REQUEST_ANALYSIS",
@@ -595,6 +614,14 @@ def classify_dialogue_intent(
                 "选择 REQUEST_EXECUTION。"
                 "当已有 pending_action 且用户表达同意时，"
                 "选择 CONFIRM；表达拒绝时选择 CANCEL。"
+
+                "当用户明确要求查看、检查、读取 PDB 文件，"
+                "或者说自己无法判断并要求 Agent 根据文件分析时，"
+                "选择 REQUEST_DATASET_INSPECTION。"
+
+                "仅仅询问‘链布局是什么意思’或"
+                "‘应该怎样判断’时，不要检查文件，"
+                "选择 GENERAL_QUESTION 并直接解释。"
 
                 "当用户在询问概念、原因、如何判断，"
                 "或者表达‘我不知道’时，"
@@ -765,6 +792,200 @@ def determine_intent(
         pending,
         current_stage,
         report,
+    )
+
+
+def format_dataset_advice(
+    advice: DatasetPlanningAdvice,
+) -> str:
+    """把确定性文件证据转成人类可读说明。"""
+    lines = [
+        "我已经只读检查了当前任务的 PDB 文件。",
+        "",
+        (
+            f"- 共处理 {advice.processed_file_count} 个 PDB"
+        ),
+        (
+            f"- 有效文件：{advice.valid_file_count}"
+        ),
+        (
+            f"- 无效文件：{advice.invalid_file_count}"
+        ),
+    ]
+
+    if (
+        advice.all_valid_files_are_single_chain
+        and advice.common_single_chain_id
+    ):
+        lines.extend(
+            [
+                "- 所有有效文件都只有一条链",
+                (
+                    "- 所有有效文件的唯一链名均为 "
+                    f"{advice.common_single_chain_id}"
+                ),
+            ]
+        )
+
+    suggestion = advice.conditional_suggestion
+
+    if suggestion is None:
+        lines.extend(
+            [
+                "",
+                "目前的文件结构不足以形成统一建议。",
+            ]
+        )
+
+    else:
+        patch = suggestion.candidate_patch
+
+        lines.extend(
+            [
+                "",
+                "根据文件证据，我可以提出一个条件建议：",
+                (
+                    "- 链布局：target 与 binder "
+                    "尚未拆分在不同链中"
+                ),
+                (
+                    "- 原始源链："
+                    f"{patch.get('source_chain')}"
+                ),
+                "",
+                "但这里有一个重要边界：",
+                (
+                    "单链文件只能证明文件里只有一条链，"
+                    "不能单独证明这条链同时包含 "
+                    "target 和 binder。"
+                ),
+            ]
+        )
+
+    if advice.cautions:
+        lines.append("")
+        lines.append("检查中还发现：")
+
+        for caution in advice.cautions:
+            lines.append(
+                f"- {caution}"
+            )
+
+    if suggestion is not None:
+        lines.extend(
+            [
+                "",
+                (
+                    "这些建议来自 PDB 文件检查和文件 SHA256，"
+                    "不是大模型猜测。"
+                ),
+                (
+                    "假如你确认这些单链结构确实同时包含 "
+                    "target 和 binder，请回答“确认”。"
+                ),
+                "回答“取消”则不修改任何规划参数。",
+            ]
+        )
+
+    return "\n".join(lines)
+
+
+def inspect_dataset_and_propose_adoption(
+    *,
+    bundle_dir: Path,
+) -> ChatTurnResult:
+    """
+    只读检查当前规划的输入目录。
+
+    有条件建议时建立待确认动作，但不直接修改参数。
+    """
+    bundle = bundle_dir.resolve()
+
+    prepare_status = load_prepare_status(
+        bundle
+    )
+
+    if prepare_status != "NEEDS_INFORMATION":
+        raise ChatDialogueError(
+            "文件规划建议只用于仍在补充信息的任务；"
+            f"当前状态为 {prepare_status!r}"
+        )
+
+    session_path = (
+        bundle / "planning_session.json"
+    )
+
+    if not session_path.is_file():
+        raise ChatDialogueError(
+            f"缺少规划会话：{session_path}"
+        )
+
+    try:
+        session = load_planning_session(
+            session_path
+        )
+    except Exception as exc:
+        raise ChatDialogueError(
+            f"无法读取规划会话：{exc}"
+        ) from exc
+
+    input_dir = session.request.input_dir
+
+    if input_dir is None:
+        raise ChatDialogueError(
+            "目前还不知道 PDB 输入目录。"
+            "请先告诉我文件位于哪个目录，"
+            "然后我才能进行只读检查。"
+        )
+
+    try:
+        advice = inspect_dataset_for_planning(
+            input_dir=input_dir,
+            recursive=False,
+        )
+
+        advice_path = save_dataset_advice(
+            bundle_dir=bundle,
+            advice=advice,
+        )
+
+    except Exception as exc:
+        raise ChatDialogueError(
+            f"PDB 文件只读检查失败：{exc}"
+        ) from exc
+
+    message = format_dataset_advice(
+        advice
+    )
+
+    if advice.conditional_suggestion is None:
+        return ChatTurnResult(
+            action="INSPECT_DATASET",
+            status="INCONCLUSIVE",
+            message=message,
+            bundle_dir=bundle,
+            artifact_paths={
+                "dataset_advice": advice_path,
+            },
+        )
+
+    save_pending_action(
+        bundle_dir=bundle,
+        action="ADOPT_DATASET_ADVICE",
+        summary=message,
+    )
+
+    return ChatTurnResult(
+        action="INSPECT_DATASET",
+        status="AWAITING_CONFIRMATION",
+        message=message,
+        bundle_dir=bundle,
+        artifact_paths={
+            "dataset_advice": advice_path,
+            "pending_action": (
+                pending_action_path(bundle)
+            ),
+        },
     )
 
 
@@ -941,6 +1162,56 @@ def confirm_pending_action(
     _, report = inspect_bundle(
         bundle_dir
     )
+
+    if pending.action == "ADOPT_DATASET_ADVICE":
+        try:
+            adopted = adopt_dataset_advice(
+                bundle_dir=bundle_dir
+            )
+        except DatasetAdviceAdoptionError as exc:
+            clear_pending_action(
+                bundle_dir
+            )
+
+            raise ChatDialogueError(
+                f"无法采用文件建议：{exc}"
+            ) from exc
+
+        clear_pending_action(
+            bundle_dir
+        )
+
+        if adopted.status == "NEEDS_INFORMATION":
+            message = (
+                "已采用经过文件验证且由你确认的建议。\n\n"
+                + natural_missing_message(
+                    bundle_dir
+                )
+            )
+        else:
+            message = (
+                "已采用经过文件验证且由你确认的建议。\n\n"
+                "必要信息已经补齐，"
+                "任务现已达到 READY_FOR_REVIEW。"
+            )
+
+        return ChatTurnResult(
+            action="ADOPT_DATASET_ADVICE",
+            status=adopted.status,
+            message=message,
+            bundle_dir=bundle_dir.resolve(),
+            artifact_paths={
+                "planning_session": (
+                    adopted.planning_session
+                ),
+                "prepare_manifest": (
+                    adopted.prepare_manifest
+                ),
+                "history_record": (
+                    adopted.history_record
+                ),
+            },
+        )
 
     if pending.action == "APPROVE":
         if (
@@ -1134,12 +1405,117 @@ def process_dialogue_message(
         )
 
     if pending is not None:
+        pending_reminder = (
+            "\n\n当前待确认动作仍然保留。"
+            "了解清楚后，你可以回答“确认”继续，"
+            "或回答“取消”放弃。"
+        )
+
+        if intent == "GENERAL_QUESTION":
+            if (
+                decision.reply
+                and decision.reply.strip()
+            ):
+                return ChatTurnResult(
+                    action="HELP",
+                    status="ANSWER",
+                    message=(
+                        decision.reply.strip()
+                        + pending_reminder
+                    ),
+                    bundle_dir=(
+                        bundle_dir.resolve()
+                    ),
+                    artifact_paths={
+                        "pending_action": (
+                            pending_action_path(
+                                bundle_dir
+                            )
+                        )
+                    },
+                )
+
+            return ChatTurnResult(
+                action="HELP",
+                status=(
+                    "AWAITING_CONFIRMATION"
+                ),
+                message=(
+                    pending.summary
+                    + pending_reminder
+                ),
+                bundle_dir=(
+                    bundle_dir.resolve()
+                ),
+                artifact_paths={
+                    "pending_action": (
+                        pending_action_path(
+                            bundle_dir
+                        )
+                    )
+                },
+            )
+
+        if intent == "VIEW_STATUS":
+            status_result = (
+                process_chat_message(
+                    message="状态",
+                    bundle_dir=bundle_dir,
+                    provider=provider,
+                    approved_by=approved_by,
+                    model_config_path=(
+                        model_config_path
+                    ),
+                    profile_name=profile_name,
+                    allow_network=(
+                        allow_network
+                    ),
+                )
+            )
+
+            return status_result.model_copy(
+                update={
+                    "message": (
+                        status_result.message
+                        + pending_reminder
+                    )
+                }
+            )
+
+        if intent == "HELP":
+            help_result = (
+                process_chat_message(
+                    message="帮助",
+                    bundle_dir=bundle_dir,
+                    provider=provider,
+                    approved_by=approved_by,
+                    model_config_path=(
+                        model_config_path
+                    ),
+                    profile_name=profile_name,
+                    allow_network=(
+                        allow_network
+                    ),
+                )
+            )
+
+            return help_result.model_copy(
+                update={
+                    "message": (
+                        help_result.message
+                        + pending_reminder
+                    )
+                }
+            )
+
         return ChatTurnResult(
             action="HELP",
             status="AWAITING_CONFIRMATION",
             message=(
                 pending.summary
-                + "\n\n当前仍在等待你的确认或取消。"
+                + "\n\n当前已有一个动作等待确认，"
+                "暂时不会开始其他操作。"
+                + pending_reminder
             ),
             bundle_dir=bundle_dir.resolve(),
             artifact_paths={
@@ -1171,6 +1547,11 @@ def process_dialogue_message(
             model_config_path=model_config_path,
             profile_name=profile_name,
             allow_network=allow_network,
+        )
+
+    if intent == "REQUEST_DATASET_INSPECTION":
+        return inspect_dataset_and_propose_adoption(
+            bundle_dir=bundle_dir
         )
 
     if intent == "REQUEST_APPROVAL":
