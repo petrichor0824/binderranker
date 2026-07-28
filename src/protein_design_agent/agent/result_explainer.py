@@ -1001,9 +1001,16 @@ def build_result_explainer_messages(
 
 当前为 SMOKE_TEST_ONLY：
 - evidence 中没有向你提供可解释的动态阈值；
+- 这表示阈值被发布政策屏蔽、不得解释，
+  不能改写成“阈值未设置、未配置或未启用”；
 - 不得讨论 broad、medium、strict；
 - 不得使用“通过、失败、淘汰、越过门槛”等表达；
 - 不得声称某候选存在多少个失败指标；
+- region_score 是否启用属于任务配置选择，
+  不得声称正式筛选必须启用区域分数；
+- 没有 Pearson、Spearman、Kendall 或其他
+  确定性统计证据时，不得使用“正相关、负相关、
+  高度相关、显著相关、趋势一致”等统计断言；
 - 只能解释总分构成、原始指标表现和需要检查的结构假设；
 - 候选之间的高低只能称为本次小样本内的工程观察。
 """.rstrip()
@@ -1178,6 +1185,214 @@ def iter_model_narrative_texts(
             f"next_dataset_requirements[{index}]",
             value,
         )
+
+
+
+def iter_generated_text_fields(
+    value: Any,
+    *,
+    prefix: str = "",
+):
+    """
+    遍历模型解释中的自然语言字段。
+
+    只用于质量验证，不修改模型输出。
+    """
+    if hasattr(value, "model_dump"):
+        value = value.model_dump(
+            mode="python"
+        )
+
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_prefix = (
+                f"{prefix}.{key}"
+                if prefix
+                else str(key)
+            )
+
+            yield from iter_generated_text_fields(
+                child,
+                prefix=child_prefix,
+            )
+
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            yield from iter_generated_text_fields(
+                child,
+                prefix=f"{prefix}[{index}]",
+            )
+
+    elif isinstance(value, str):
+        stripped = value.strip()
+
+        if stripped:
+            yield prefix, stripped
+
+
+def evidence_contains_statistical_relationship(
+    evidence: dict[str, Any],
+) -> bool:
+    """
+    检查确定性证据是否真的提供了相关性统计。
+
+    仅键名明确表示相关系数或趋势统计时才返回 True。
+    """
+    statistical_key_tokens = (
+        "pearson",
+        "spearman",
+        "kendall",
+        "correlation",
+        "rank_correlation",
+        "trend_statistic",
+    )
+
+    def walk(value: Any) -> bool:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                normalized_key = str(key).lower()
+
+                if any(
+                    token in normalized_key
+                    for token in statistical_key_tokens
+                ):
+                    return True
+
+                if walk(child):
+                    return True
+
+        elif isinstance(value, list):
+            return any(
+                walk(child)
+                for child in value
+            )
+
+        return False
+
+    return walk(evidence)
+
+
+def validate_generated_claim_boundaries(
+    *,
+    explanation: Any,
+    evidence: dict[str, Any],
+) -> None:
+    """
+    阻止模型把权限限制改写成不存在的科研事实。
+
+    当前只处理三个已经在真实 v6 报告中出现的问题：
+    1. 把小样本阈值屏蔽写成阈值未设置或未启用；
+    2. 声称正式筛选必须启用区域分数；
+    3. 没有统计证据时声称相关性或趋势一致。
+    """
+    threshold_suppressed = (
+        evidence.get("threshold_analysis_mode")
+        == "DISABLED_SMALL_SAMPLE"
+    )
+
+    statistical_evidence_available = (
+        evidence_contains_statistical_relationship(
+            evidence
+        )
+    )
+
+    threshold_absence_pattern = re.compile(
+        r"(?:未|没有)(?:设置|配置|启用)"
+        r".{0,20}(?:动态)?(?:过滤|筛选)?"
+        r"(?:门槛|阈值)"
+        r"|"
+        r"(?:动态)?(?:过滤|筛选)?"
+        r"(?:门槛|阈值).{0,20}"
+        r"(?:未|没有)(?:设置|配置|启用)"
+    )
+
+    region_requirement_pattern = re.compile(
+        r"(?:正式筛选|正式分析|正式结论)"
+        r".{0,35}"
+        r"(?:必须|需要|需|应当|应该)"
+        r".{0,20}"
+        r"(?:启用|使用|配置)"
+        r".{0,15}"
+        r"(?:score_region|region[_ ]?score|区域分数)"
+        r"|"
+        r"(?:必须|需要|需|应当|应该)"
+        r".{0,20}"
+        r"(?:启用|使用|配置)"
+        r".{0,15}"
+        r"(?:score_region|region[_ ]?score|区域分数)"
+        r".{0,35}"
+        r"(?:正式筛选|正式分析|正式结论)",
+        flags=re.IGNORECASE,
+    )
+
+    statistical_assertion_pattern = re.compile(
+        r"(?:高度|显著|强烈|明显)?"
+        r"(?:正相关|负相关|相关性)"
+        r"|"
+        r"(?:趋势|排序).{0,12}"
+        r"(?:基本一致|高度一致|显著一致)"
+    )
+
+    negated_region_requirement_pattern = re.compile(
+        r"(?:无需|不需要|并非必须|不是必须|"
+        r"不是必要条件|不构成必要条件)"
+    )
+
+    for field_name, value in (
+        iter_generated_text_fields(
+            explanation
+        )
+    ):
+        sentences = re.split(
+            r"(?<=[。！？；\n])",
+            value,
+        )
+
+        for sentence in sentences:
+            sentence = sentence.strip()
+
+            if not sentence:
+                continue
+
+            if (
+                threshold_suppressed
+                and threshold_absence_pattern.search(
+                    sentence
+                )
+            ):
+                raise ResultExplanationError(
+                    "模型把小样本下被屏蔽、"
+                    "不可解释的动态阈值错误描述为"
+                    "未设置或未启用："
+                    f"{field_name}: {sentence}"
+                )
+
+            if (
+                region_requirement_pattern.search(
+                    sentence
+                )
+                and not (
+                    negated_region_requirement_pattern
+                    .search(sentence)
+                )
+            ):
+                raise ResultExplanationError(
+                    "模型错误声称正式筛选必须启用"
+                    "区域分数："
+                    f"{field_name}: {sentence}"
+                )
+
+            if (
+                not statistical_evidence_available
+                and statistical_assertion_pattern.search(
+                    sentence
+                )
+            ):
+                raise ResultExplanationError(
+                    "确定性证据没有提供相关性统计，"
+                    "但模型输出了统计关系断言："
+                    f"{field_name}: {sentence}"
+                )
 
 
 def validate_model_narrative(
@@ -1455,6 +1670,11 @@ def validate_model_explanation(
             )
 
     validate_model_narrative(
+        explanation=explanation,
+        evidence=evidence,
+    )
+
+    validate_generated_claim_boundaries(
         explanation=explanation,
         evidence=evidence,
     )
