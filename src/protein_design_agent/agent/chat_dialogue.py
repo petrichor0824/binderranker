@@ -2235,10 +2235,26 @@ def process_dialogue_message(
         )
 
     if intent == "REQUEST_ANALYSIS":
-        return create_action_proposal(
-            action="ANALYZE",
+        if (
+            report is None
+            or report.execution_status != "COMPLETED"
+        ):
+            raise ChatDialogueError(
+                "只有 BinderRanker 执行完成后"
+                "才能分析结果。"
+            )
+
+        # 确定性分析是只读操作：
+        # 不调用模型、不修改 Ranker 原始输出，
+        # 因此不需要额外确认。
+        return process_chat_message(
+            message="分析结果",
             bundle_dir=bundle_dir,
-            report=report,
+            provider=None,
+            approved_by=approved_by,
+            model_config_path=None,
+            profile_name=None,
+            allow_network=False,
         )
 
     if intent == "REQUEST_EXPLANATION":

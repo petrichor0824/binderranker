@@ -1358,3 +1358,82 @@ def test_approval_proposal_displays_plan_before_confirmation(
         pending.summary
     )
     assert "当前任务计划" not in pending.summary
+
+
+def test_deterministic_analysis_runs_without_confirmation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = prepared_bundle(tmp_path)
+
+    report = SimpleNamespace(
+        current_stage="EXECUTED",
+        project_name="demo",
+        prepare_status="READY_FOR_REVIEW",
+        approval_status="APPROVED",
+        execution_status="COMPLETED",
+        analysis_status=None,
+        explanation_status=None,
+        analysis_scope_level="EXPLORATORY",
+        candidate_count=20,
+        approval_consumed=True,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "inspect_run_status",
+        lambda path: report,
+    )
+
+    captured = {}
+
+    def fake_engine(**kwargs):
+        captured.update(kwargs)
+
+        return ChatTurnResult(
+            action="ANALYZE",
+            status="COMPLETED",
+            message="确定性分析完成。",
+            bundle_dir=bundle,
+        )
+
+    monkeypatch.setattr(
+        module,
+        "process_chat_message",
+        fake_engine,
+    )
+
+    def fail_proposal(**kwargs):
+        raise AssertionError(
+            "确定性分析不应创建待确认动作"
+        )
+
+    monkeypatch.setattr(
+        module,
+        "create_action_proposal",
+        fail_proposal,
+    )
+
+    result = process_dialogue_message(
+        message=(
+            "帮我总结这批结果，"
+            "看看哪些指标拖了后腿。"
+        ),
+        bundle_dir=bundle,
+        provider=FakeDialogueProvider(
+            "REQUEST_ANALYSIS"
+        ),
+        approved_by="tester",
+        model_config_path=Path("model.yaml"),
+        profile_name="deepseek_flash",
+        allow_network=True,
+    )
+
+    assert result.action == "ANALYZE"
+    assert result.status == "COMPLETED"
+    assert captured["message"] == "分析结果"
+    assert captured["provider"] is None
+    assert captured["model_config_path"] is None
+    assert captured["profile_name"] is None
+    assert captured["allow_network"] is False
+    assert load_pending_action(bundle) is None
