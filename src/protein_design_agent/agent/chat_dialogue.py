@@ -1669,6 +1669,15 @@ def create_action_proposal(
         report=report,
     )
 
+    display_message = summary
+
+    if action == "APPROVE":
+        display_message = (
+            format_current_plan(bundle_dir)
+            + "\n\n"
+            + summary
+        )
+
     save_pending_action(
         bundle_dir=bundle_dir,
         action=action,
@@ -1685,7 +1694,7 @@ def create_action_proposal(
     return ChatTurnResult(
         action=action_mapping[action],
         status="AWAITING_CONFIRMATION",
-        message=summary,
+        message=display_message,
         bundle_dir=bundle_dir.resolve(),
         artifact_paths={
             "pending_action": (

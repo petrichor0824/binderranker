@@ -1313,3 +1313,48 @@ def test_view_plan_reports_when_no_plan_exists(
     assert result.action == "VIEW_PLAN"
     assert result.status == "PLAN_AVAILABLE"
     assert "还没有生成任务计划" in result.message
+
+
+def test_approval_proposal_displays_plan_before_confirmation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = prepared_bundle(tmp_path)
+
+    monkeypatch.setattr(
+        module,
+        "format_current_plan",
+        lambda path: (
+            "当前任务计划\n"
+            "项目：demo\n"
+            "输入目录：/data/pdbs\n"
+            "标准化 target 链：A\n"
+            "标准化 binder 链：B"
+        ),
+    )
+
+    report = SimpleNamespace(
+        project_name="demo",
+        analysis_scope_level="EXPLORATORY",
+        approval_status=None,
+    )
+
+    result = module.create_action_proposal(
+        action="APPROVE",
+        bundle_dir=bundle,
+        report=report,
+    )
+
+    assert result.status == "AWAITING_CONFIRMATION"
+    assert result.message.startswith("当前任务计划")
+    assert "标准化 target 链：A" in result.message
+    assert "批准会冻结配置" in result.message
+    assert "请回答“确认”" in result.message
+
+    pending = load_pending_action(bundle)
+
+    assert pending is not None
+    assert "你正在请求批准项目：demo" in (
+        pending.summary
+    )
+    assert "当前任务计划" not in pending.summary
