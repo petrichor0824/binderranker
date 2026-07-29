@@ -589,3 +589,69 @@ def test_diagnostic_metric_cannot_claim_primary_score() -> None:
             evidence=current_evidence,
             confirm_model_call=True,
         )
+
+
+class SequencedStructuredProvider:
+    """按顺序返回多次模型结果。"""
+
+    name = "sequenced-explainer"
+
+    def __init__(
+        self,
+        payloads: list[dict[str, Any]],
+    ) -> None:
+        self.payloads = list(payloads)
+        self.messages_history = []
+
+    def generate_json(self, messages):
+        self.messages_history.append(messages)
+
+        if not self.payloads:
+            raise AssertionError(
+                "模型调用次数超出测试预期"
+            )
+
+        return self.payloads.pop(0)
+
+
+def test_invalid_explanation_is_repaired_once() -> None:
+    invalid_payload = build_valid_payload()
+    invalid_payload[
+        "cross_candidate_patterns"
+    ] = [
+        (
+            "总分和 morphology_adaptive_score "
+            "高度正相关。"
+        )
+    ]
+
+    repaired_payload = build_valid_payload()
+
+    provider = SequencedStructuredProvider(
+        [
+            invalid_payload,
+            repaired_payload,
+        ]
+    )
+
+    record = request_result_explanation(
+        provider=provider,
+        evidence=build_evidence(),
+        confirm_model_call=True,
+    )
+
+    assert record.status == "EXPLAINED"
+    assert len(provider.messages_history) == 2
+
+    repair_messages = (
+        provider.messages_history[1]
+    )
+
+    assert (
+        "没有通过确定性证据校验"
+        in repair_messages[-1]["content"]
+    )
+    assert (
+        "不得添加证据中不存在的相关性"
+        in repair_messages[-1]["content"]
+    )

@@ -1709,12 +1709,58 @@ def request_result_explanation(
         messages
     )
 
-    explanation = (
-        validate_model_explanation(
-            raw_payload=raw_payload,
-            evidence=evidence,
+    try:
+        explanation = (
+            validate_model_explanation(
+                raw_payload=raw_payload,
+                evidence=evidence,
+            )
         )
-    )
+    except ResultExplanationError as first_error:
+        repair_messages = [
+            *messages,
+            {
+                "role": "assistant",
+                "content": json.dumps(
+                    raw_payload,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    "你刚才的结构化解释没有通过"
+                    "确定性证据校验。\n"
+                    f"校验错误：{first_error}\n\n"
+                    "请只修正违规字段，并重新输出完整 JSON。"
+                    "不得改变候选名称、候选顺序、排名、分数、"
+                    "分析级别、推荐权限或任何证据数值。"
+                    "不得添加证据中不存在的相关性、因果关系、"
+                    "统计显著性、阈值方向或候选推荐。"
+                    "只输出符合原 JSON Schema 的对象。"
+                ),
+            },
+        ]
+
+        repaired_payload = provider.generate_json(
+            repair_messages
+        )
+
+        try:
+            explanation = (
+                validate_model_explanation(
+                    raw_payload=repaired_payload,
+                    evidence=evidence,
+                )
+            )
+        except ResultExplanationError as second_error:
+            raise ResultExplanationError(
+                "模型解释首次校验失败，"
+                "自动修正重试后仍未通过。"
+                f"首次错误：{first_error}；"
+                f"重试错误：{second_error}"
+            ) from second_error
 
     return ResultExplanationRecord(
         provider_name=provider.name,
