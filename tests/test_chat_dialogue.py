@@ -1104,3 +1104,77 @@ def test_latest_result_summary_is_injected_into_model_context(
         ][1]["raw_filter_level"]
         == "MEDIUM"
     )
+
+
+def test_information_correction_replaces_pending_action(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = prepared_bundle(tmp_path)
+
+    report = SimpleNamespace(
+        current_stage="PREPARED",
+        project_name="demo",
+        prepare_status="READY_FOR_REVIEW",
+        approval_status=None,
+        execution_status=None,
+        analysis_status=None,
+        explanation_status=None,
+        analysis_scope_level="EXPLORATORY",
+        candidate_count=20,
+        approval_consumed=None,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "inspect_run_status",
+        lambda path: report,
+    )
+
+    module.save_pending_action(
+        bundle_dir=bundle,
+        action="APPROVE",
+        summary="是否批准当前计划？",
+    )
+
+    captured = {}
+
+    def fake_engine(**kwargs):
+        captured.update(kwargs)
+        return ChatTurnResult(
+            action="PREPARE",
+            status="NEEDS_INFORMATION",
+            message="已记录 binder 为 B 链。",
+            bundle_dir=bundle,
+        )
+
+    monkeypatch.setattr(
+        module,
+        "process_chat_message",
+        fake_engine,
+    )
+
+    result = process_dialogue_message(
+        message=(
+            "我刚才说错了，"
+            "target 是 A 链，binder 是 B 链。"
+        ),
+        bundle_dir=bundle,
+        provider=FakeDialogueProvider(
+            "PROVIDE_INFORMATION"
+        ),
+        approved_by="tester",
+        model_config_path=None,
+        profile_name=None,
+        allow_network=True,
+    )
+
+    assert result.status == "NEEDS_INFORMATION"
+    assert captured["message"] == (
+        "我刚才说错了，"
+        "target 是 A 链，binder 是 B 链。"
+    )
+    assert "原待确认动作 APPROVE" in result.message
+    assert "取消" in result.message
+    assert "已记录 binder 为 B 链" in result.message
+    assert load_pending_action(bundle) is None

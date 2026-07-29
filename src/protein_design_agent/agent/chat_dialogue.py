@@ -774,8 +774,14 @@ def classify_dialogue_intent(
                 "选择 REQUEST_APPROVAL。"
                 "当用户表达‘开始跑、开始计算、执行吧’时，"
                 "选择 REQUEST_EXECUTION。"
-                "当已有 pending_action 且用户表达同意时，"
-                "选择 CONFIRM；表达拒绝时选择 CANCEL。"
+                "当已有 pending_action 且用户明确同意"
+                "当前提案时，选择 CONFIRM；"
+                "明确放弃当前提案时选择 CANCEL。"
+                "如果用户补充参数、纠正事实、"
+                "表示刚才说错了或要求修改方案，"
+                "必须选择 PROVIDE_INFORMATION。"
+                "不能仅因句中出现不、不要、不是，"
+                "就判断用户要取消整个动作。"
 
                 "用户在确认前仍然可以询问动作影响。"
                 "此时选择 GENERAL_QUESTION，"
@@ -1722,6 +1728,31 @@ def process_dialogue_message(
         )
 
     if pending is not None:
+        if intent == "PROVIDE_INFORMATION":
+            old_action = pending.action
+            clear_pending_action(bundle_dir)
+
+            updated = process_chat_message(
+                message=message.strip(),
+                bundle_dir=bundle_dir,
+                provider=provider,
+                approved_by=approved_by,
+                model_config_path=model_config_path,
+                profile_name=profile_name,
+                allow_network=allow_network,
+            )
+
+            return updated.model_copy(
+                update={
+                    "message": (
+                        "已收到你的补充或纠正。"
+                        f"原待确认动作 {old_action} 已取消，"
+                        "任务已经按新信息重新处理。\n\n"
+                        + updated.message
+                    )
+                }
+            )
+
         pending_reminder = (
             "\n\n当前待确认动作仍然保留。"
             "了解清楚后，你可以回答“确认”继续，"
