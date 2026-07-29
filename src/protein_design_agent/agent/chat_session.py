@@ -38,6 +38,10 @@ from protein_design_agent.agent.local_executor import (
 from protein_design_agent.agent.natural_language_prepare import (
     prepare_from_natural_language,
 )
+from protein_design_agent.agent.ranker_result_parser import (
+    RankerResultSummary,
+    parse_completed_ranker_run,
+)
 from protein_design_agent.agent.providers.base import (
     RequestParserProvider,
     StructuredJSONProvider,
@@ -63,6 +67,86 @@ ChatAction = Literal[
     "INSPECT_DATASET",
     "ADOPT_DATASET_ADVICE",
 ]
+
+
+RESULT_PREVIEW_LIMIT = 5
+
+
+def format_execution_result_preview(
+    summary: RankerResultSummary,
+) -> str:
+    """生成不依赖大模型的执行结果预览。"""
+    candidates = sorted(
+        summary.candidates_by_engineering_rank,
+        key=lambda item: item.engineering_rank,
+    )[:RESULT_PREVIEW_LIMIT]
+
+    scope_level = str(
+        summary.analysis_scope.get(
+            "level",
+            "UNKNOWN",
+        )
+    )
+
+    lines = [
+        "",
+        (
+            "结果预览："
+            f"共 {summary.candidate_count} 个候选，"
+            f"显示前 {len(candidates)} 名"
+        ),
+        f"分析范围：{scope_level}",
+        "",
+    ]
+
+    for candidate in candidates:
+        filter_display = (
+            candidate.public_filter_level
+            or candidate.public_filter_status
+        )
+
+        if (
+            candidate
+            .filter_reasons_formally_interpretable
+        ):
+            reasons = (
+                candidate.strict_reasons
+                or candidate.medium_reasons
+                or candidate.broad_reasons
+            )
+            reason_display = (
+                "、".join(reasons[:3])
+                if reasons
+                else "未记录过滤拖累"
+            )
+        else:
+            reason_display = (
+                "当前样本范围不展示阈值拖累"
+            )
+
+        lines.append(
+            f"{candidate.engineering_rank}. "
+            f"{candidate.pdb_name} | "
+            f"总分 {candidate.final_score_v4:.4f} | "
+            f"过滤 {filter_display} | "
+            f"{reason_display}"
+        )
+
+    if not (
+        summary
+        .formal_candidate_recommendation_allowed
+    ):
+        lines.extend(
+            [
+                "",
+                (
+                    "注意：当前范围不允许把该排序"
+                    "作为正式候选推荐或科研结论。"
+                ),
+            ]
+        )
+
+    return "\n".join(lines)
 
 
 class ChatSessionError(RuntimeError):
@@ -433,6 +517,35 @@ def process_chat_message(
                 f"BinderRanker 执行失败：{exc}"
             ) from exc
 
+        try:
+            parsed_summary = (
+                parse_completed_ranker_run(
+                    bundle
+                )
+            )
+            result_preview = (
+                format_execution_result_preview(
+                    parsed_summary
+                )
+            )
+        except Exception as exc:
+            # BinderRanker 已经成功完成。
+            # 预览失败不得把执行结果改成失败。
+            result_preview = "\n".join(
+                [
+                    "",
+                    "结果预览暂不可用。",
+                    (
+                        "这不影响已经完成的 "
+                        "BinderRanker 执行及原始输出。"
+                    ),
+                    (
+                        "预览错误："
+                        f"{type(exc).__name__}: {exc}"
+                    ),
+                ]
+            )
+
         return ChatTurnResult(
             action="EXECUTE",
             status=result.status,
@@ -443,6 +556,7 @@ def process_chat_message(
                         "输出文件数量："
                         f"{len(result.output_files)}"
                     ),
+                    result_preview,
                     (
                         "一次性批准已经消耗，"
                         "不能再次使用。"

@@ -379,3 +379,159 @@ def test_model_explanation_requires_network(
             profile_name="fake",
             allow_network=False,
         )
+
+
+def test_execution_immediately_shows_rank_preview(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    (bundle / "approval.json").write_text(
+        "{}",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        module,
+        "execute_approved_binderranker",
+        lambda **kwargs: SimpleNamespace(
+            status="COMPLETED",
+            output_files=[
+                bundle / "metrics.csv",
+                bundle / "scored.csv",
+                bundle / "ranking.xlsx",
+                bundle / "report.txt",
+            ],
+            execution_manifest=(
+                bundle / "execution_apr_test.json"
+            ),
+            stdout_log=bundle / "stdout.log",
+            stderr_log=bundle / "stderr.log",
+        ),
+    )
+
+    candidates = [
+        SimpleNamespace(
+            pdb_name="_2577",
+            engineering_rank=1,
+            final_score_v4=0.6141,
+            public_filter_level="MEDIUM",
+            public_filter_status=(
+                "EXPLORATORY_ONLY"
+            ),
+            filter_reasons_formally_interpretable=True,
+            strict_reasons=[
+                "low_contact_map_continuity_score",
+            ],
+            medium_reasons=[],
+            broad_reasons=[],
+        ),
+        SimpleNamespace(
+            pdb_name="_498",
+            engineering_rank=2,
+            final_score_v4=0.5977,
+            public_filter_level="MEDIUM",
+            public_filter_status=(
+                "EXPLORATORY_ONLY"
+            ),
+            filter_reasons_formally_interpretable=True,
+            strict_reasons=[
+                "high_contact_map_jump_fraction",
+            ],
+            medium_reasons=[],
+            broad_reasons=[],
+        ),
+    ]
+
+    monkeypatch.setattr(
+        module,
+        "parse_completed_ranker_run",
+        lambda path: SimpleNamespace(
+            candidate_count=2,
+            analysis_scope={
+                "level": "EXPLORATORY",
+            },
+            candidates_by_engineering_rank=(
+                candidates
+            ),
+            formal_candidate_recommendation_allowed=(
+                False
+            ),
+        ),
+    )
+
+    result = process_chat_message(
+        message="确认执行",
+        bundle_dir=bundle,
+        provider=None,
+        approved_by="tester",
+        model_config_path=None,
+        profile_name=None,
+        allow_network=False,
+    )
+
+    assert result.status == "COMPLETED"
+    assert "结果预览：共 2 个候选" in (
+        result.message
+    )
+    assert "1. _2577" in result.message
+    assert "总分 0.6141" in result.message
+    assert (
+        "low_contact_map_continuity_score"
+        in result.message
+    )
+    assert "正式候选推荐" in result.message
+    assert "科研结论" in result.message
+    assert "不允许" in result.message
+
+
+def test_preview_failure_does_not_change_execution_success(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    (bundle / "approval.json").write_text(
+        "{}",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        module,
+        "execute_approved_binderranker",
+        lambda **kwargs: SimpleNamespace(
+            status="COMPLETED",
+            output_files=[],
+            execution_manifest=(
+                bundle / "execution_apr_test.json"
+            ),
+            stdout_log=bundle / "stdout.log",
+            stderr_log=bundle / "stderr.log",
+        ),
+    )
+
+    def fail_preview(path):
+        raise RuntimeError("preview unavailable")
+
+    monkeypatch.setattr(
+        module,
+        "parse_completed_ranker_run",
+        fail_preview,
+    )
+
+    result = process_chat_message(
+        message="确认执行",
+        bundle_dir=bundle,
+        provider=None,
+        approved_by="tester",
+        model_config_path=None,
+        profile_name=None,
+        allow_network=False,
+    )
+
+    assert result.status == "COMPLETED"
+    assert "结果预览暂不可用" in result.message
+    assert "不影响已经完成" in result.message
