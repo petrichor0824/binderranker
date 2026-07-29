@@ -954,3 +954,37 @@ def test_pending_smoke_limit_answer_uses_run_status(
     assert "SMOKE_TEST_ONLY" in result.message
     assert "不能把本次排名" in result.message
     assert "可以正式选最优候选" not in result.message
+
+
+def test_empty_bundle_general_question_does_not_start_task(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "empty_bundle"
+    bundle.mkdir()
+
+    answer = (
+        "你好。我可以先介绍程序的用途、原理、"
+        "安全边界和完整使用流程。"
+    )
+
+    result = process_dialogue_message(
+        message="你好，先介绍一下这个程序",
+        bundle_dir=bundle,
+        provider=FakeDialogueProvider(
+            "GENERAL_QUESTION",
+            reply=answer,
+        ),
+        approved_by="tester",
+        model_config_path=None,
+        profile_name=None,
+        allow_network=True,
+    )
+
+    assert result.status == "ANSWER"
+    assert result.message == answer
+    assert not (
+        bundle / "planning_session.json"
+    ).exists()
+    assert not (
+        bundle / "agent_prepare_manifest.json"
+    ).exists()

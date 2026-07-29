@@ -628,6 +628,13 @@ def classify_dialogue_intent(
                 "受控对话意图分类器。"
                 "你只能判断用户意图，不能执行任何动作，"
                 "不能输出 Shell 命令，也不能修改科研参数。"
+                "在 EMPTY 阶段，只有用户明确要求分析、"
+                "排名或处理 PDB，或者主动提供目录、链、"
+                "残基边界等任务信息时，"
+                "才选择 PROVIDE_INFORMATION。"
+                "问候、模型连接测试、程序介绍、使用方法、"
+                "原理、能力、局限和安全机制等内容，"
+                "必须选择 GENERAL_QUESTION 并自然回答。"
                 "当用户在补充链、残基、目录、区域等参数时，"
                 "选择 PROVIDE_INFORMATION。"
                 "当用户表达‘同意方案、按这个方案来’时，"
@@ -762,13 +769,26 @@ def determine_intent(
             report,
         )
 
-    # 新任务的第一句话直接交给正式请求解析器，
-    # 不额外消耗一次意图分类调用。
-    if current_stage == "EMPTY":
+    # 空 Bundle 中不能假定用户已经开始科研任务。
+    # 已启用模型时，先判断用户是在普通交流、
+    # 了解程序，还是明确提出了新的排名任务。
+    if (
+        current_stage == "EMPTY"
+        and not (
+            allow_network
+            and isinstance(
+                provider,
+                StructuredJSONProvider,
+            )
+        )
+    ):
         return (
             DialogueDecision(
-                intent="PROVIDE_INFORMATION",
-                reason="空 Bundle 中的首条任务描述",
+                intent="GENERAL_QUESTION",
+                reason=(
+                    "空 Bundle 且没有可用的"
+                    "自然语言意图模型"
+                ),
             ),
             pending,
             current_stage,
