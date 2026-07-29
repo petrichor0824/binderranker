@@ -567,6 +567,134 @@ def load_dialogue_context(
     }
 
 
+
+MAX_DIALOGUE_RESULT_CANDIDATES = 50
+
+
+def load_latest_result_evidence(
+    bundle_dir: Path,
+) -> dict[str, Any] | None:
+    """
+    读取当前 Bundle 最新的确定性结果摘要。
+
+    只提取对解释和筛选有用的受控字段，
+    不执行分析，也不修改任何文件。
+    """
+    bundle = bundle_dir.resolve()
+
+    paths = sorted(
+        (
+            path.resolve()
+            for path in bundle.glob(
+                "analyses/*/agent_result_summary.json"
+            )
+            if path.is_file()
+        ),
+        key=lambda item: str(item),
+    )
+
+    root_summary = (
+        bundle / "agent_result_summary.json"
+    )
+    if root_summary.is_file():
+        paths.append(root_summary.resolve())
+        paths.sort(key=lambda item: str(item))
+
+    if not paths:
+        return None
+
+    summary_path = paths[-1]
+
+    try:
+        raw = json.loads(
+            summary_path.read_text(
+                encoding="utf-8"
+            )
+        )
+    except (
+        OSError,
+        json.JSONDecodeError,
+    ) as exc:
+        return {
+            "status": "UNAVAILABLE",
+            "source_path": str(
+                summary_path.relative_to(bundle)
+            ),
+            "reason": (
+                "确定性结果摘要无法读取："
+                f"{exc}"
+            ),
+        }
+
+    if not isinstance(raw, dict):
+        return {
+            "status": "UNAVAILABLE",
+            "source_path": str(
+                summary_path.relative_to(bundle)
+            ),
+            "reason": "确定性结果摘要不是 JSON 对象",
+        }
+
+    rows = raw.get(
+        "candidates_by_engineering_rank",
+        [],
+    )
+    if not isinstance(rows, list):
+        rows = []
+
+    allowed_fields = (
+        "pdb_name",
+        "engineering_rank",
+        "final_score_v4",
+        "raw_filter_level",
+        "public_filter_level",
+        "public_filter_status",
+        "broad_pass",
+        "medium_pass",
+        "strict_pass",
+        "broad_reasons",
+        "medium_reasons",
+        "strict_reasons",
+        "filter_reasons_formally_interpretable",
+        "component_scores",
+        "key_metrics",
+        "row_error",
+    )
+
+    candidates = []
+    for row in rows[
+        :MAX_DIALOGUE_RESULT_CANDIDATES
+    ]:
+        if not isinstance(row, dict):
+            continue
+
+        candidates.append(
+            {
+                field: row.get(field)
+                for field in allowed_fields
+            }
+        )
+
+    return {
+        "status": "AVAILABLE",
+        "source_path": str(
+            summary_path.relative_to(bundle)
+        ),
+        "analysis_scope": raw.get(
+            "analysis_scope"
+        ),
+        "candidate_count": raw.get(
+            "candidate_count"
+        ),
+        "candidates_by_engineering_rank": (
+            candidates
+        ),
+        "truncated": (
+            len(rows)
+            > MAX_DIALOGUE_RESULT_CANDIDATES
+        ),
+    }
+
 def classify_dialogue_intent(
     *,
     provider: StructuredJSONProvider,
@@ -582,6 +710,11 @@ def classify_dialogue_intent(
     schema = DialogueDecision.model_json_schema()
 
     dialogue_context = load_dialogue_context(
+        bundle_dir
+    )
+    dialogue_context[
+        "latest_result_evidence"
+    ] = load_latest_result_evidence(
         bundle_dir
     )
 
@@ -690,6 +823,16 @@ def classify_dialogue_intent(
                 "拼在同一条 A 链中，随后问‘源链是什么’，"
                 "应解释源链是标准化前的原始链，"
                 "并指出根据他刚才的话，源链应是 A。"
+
+                "conversation_context 中的 "
+                "latest_result_evidence 来自当前 Bundle "
+                "已经生成的确定性结果摘要。"
+                "当用户询问刚才的排名、候选优缺点、"
+                "筛选结果或为什么靠前靠后时，"
+                "必须优先使用其中的证据回答，"
+                "不能要求用户再次粘贴 JSON。"
+                "不得声称未提供的相关性、因果关系、"
+                "统计显著性或正式科研结论。"
 
                 "输出必须严格符合 JSON Schema。"
             ),

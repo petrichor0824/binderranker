@@ -30,6 +30,7 @@ class FakeDialogueProvider:
         self.safety_topics = (
             safety_topics or []
         )
+        self.last_messages = None
 
     @property
     def name(self) -> str:
@@ -41,6 +42,7 @@ class FakeDialogueProvider:
         )
 
     def generate_json(self, messages):
+        self.last_messages = messages
         payload = {
             "intent": self.intent,
             "reason": "test",
@@ -988,3 +990,117 @@ def test_empty_bundle_general_question_does_not_start_task(
     assert not (
         bundle / "agent_prepare_manifest.json"
     ).exists()
+
+
+
+def test_latest_result_summary_is_injected_into_model_context(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = prepared_bundle(tmp_path)
+
+    summary_path = (
+        bundle
+        / "analyses"
+        / "chat_deterministic_0001"
+        / "agent_result_summary.json"
+    )
+    write_json(
+        summary_path,
+        {
+            "analysis_scope": {
+                "level": "SMOKE_TEST_ONLY",
+            },
+            "candidate_count": 2,
+            "candidates_by_engineering_rank": [
+                {
+                    "pdb_name": "_2577",
+                    "engineering_rank": 1,
+                    "final_score_v4": 0.6141,
+                    "raw_filter_level": "FAIL",
+                    "strict_reasons": [
+                        "low_score_safety",
+                    ],
+                    "component_scores": {
+                        "score_safety": 0.444,
+                    },
+                    "key_metrics": {},
+                },
+                {
+                    "pdb_name": "_498",
+                    "engineering_rank": 2,
+                    "final_score_v4": 0.5977,
+                    "raw_filter_level": "MEDIUM",
+                    "strict_reasons": [
+                        (
+                            "low_contact_map_"
+                            "continuity_score"
+                        ),
+                    ],
+                    "component_scores": {},
+                    "key_metrics": {},
+                },
+            ],
+        },
+    )
+
+    monkeypatch.setattr(
+        module,
+        "inspect_run_status",
+        lambda path: SimpleNamespace(
+            current_stage="ANALYZED",
+            project_name="demo",
+            prepare_status=(
+                "READY_FOR_REVIEW"
+            ),
+            approval_status="APPROVED",
+            execution_status="COMPLETED",
+            analysis_status="COMPLETED",
+            explanation_status=None,
+            analysis_scope_level=(
+                "SMOKE_TEST_ONLY"
+            ),
+            candidate_count=2,
+            approval_consumed=True,
+        ),
+    )
+
+    provider = FakeDialogueProvider(
+        "GENERAL_QUESTION",
+        reply="我已经读取当前结果。",
+    )
+
+    result = process_dialogue_message(
+        message="解释一下刚才的排名",
+        bundle_dir=bundle,
+        provider=provider,
+        approved_by="tester",
+        model_config_path=None,
+        profile_name=None,
+        allow_network=True,
+    )
+
+    assert result.status == "ANSWER"
+    assert provider.last_messages is not None
+
+    model_context = json.loads(
+        provider.last_messages[1]["content"]
+    )
+    evidence = model_context[
+        "conversation_context"
+    ]["latest_result_evidence"]
+
+    assert evidence["status"] == "AVAILABLE"
+    assert evidence["candidate_count"] == 2
+    assert (
+        evidence[
+            "candidates_by_engineering_rank"
+        ][0]["pdb_name"]
+        == "_2577"
+    )
+    assert (
+        evidence[
+            "candidates_by_engineering_rank"
+        ][1]["raw_filter_level"]
+        == "MEDIUM"
+    )
