@@ -535,3 +535,91 @@ def test_preview_failure_does_not_change_execution_success(
     assert result.status == "COMPLETED"
     assert "结果预览暂不可用" in result.message
     assert "不影响已经完成" in result.message
+
+
+def test_chat_reports_model_explanation_fallback(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    monkeypatch.setattr(
+        module,
+        "inspect_run_status",
+        lambda path: SimpleNamespace(
+            execution_status="COMPLETED",
+        ),
+    )
+
+    analysis_dir = (
+        bundle
+        / "analyses"
+        / "chat_model_fallback"
+    )
+
+    monkeypatch.setattr(
+        module,
+        "next_analysis_directory",
+        lambda **kwargs: analysis_dir,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "run_analyze_run",
+        lambda **kwargs: SimpleNamespace(
+            status="COMPLETED",
+            analysis_dir=analysis_dir,
+            manifest_path=(
+                analysis_dir
+                / "analyze_run_manifest.json"
+            ),
+            result_summary_path=(
+                analysis_dir
+                / "agent_result_summary.json"
+            ),
+            failure_analysis_path=(
+                analysis_dir
+                / "agent_failure_analysis_v2.json"
+            ),
+            explanation_markdown_path=None,
+            explanation_status="UNAVAILABLE",
+            explanation_error_type=(
+                "ResultExplanationError"
+            ),
+            explanation_error_message=(
+                "自动修正后仍未通过"
+            ),
+        ),
+    )
+
+    result = process_chat_message(
+        message="分析并解释结果",
+        bundle_dir=bundle,
+        provider=None,
+        approved_by="tester",
+        model_config_path=(
+            tmp_path / "models.yaml"
+        ),
+        profile_name="fake",
+        allow_network=True,
+    )
+
+    assert result.status == "COMPLETED"
+    assert result.action == "EXPLAIN"
+    assert (
+        "确定性分析完成"
+        in result.message
+    )
+    assert (
+        "模型解释暂不可用"
+        in result.message
+    )
+    assert (
+        "结果摘要和失败分析"
+        in result.message
+    )
+    assert (
+        "自动修正后仍未通过"
+        in result.message
+    )

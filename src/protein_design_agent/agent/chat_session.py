@@ -663,6 +663,58 @@ def process_chat_message(
                 result.explanation_markdown_path
             )
 
+        explanation_status = getattr(
+            result,
+            "explanation_status",
+            None,
+        )
+
+        if (
+            with_model
+            and explanation_status == "UNAVAILABLE"
+        ):
+            error_type = (
+                getattr(
+                    result,
+                    "explanation_error_type",
+                    None,
+                )
+                or "模型解释错误"
+            )
+            error_message = (
+                getattr(
+                    result,
+                    "explanation_error_message",
+                    None,
+                )
+                or "未提供详细错误信息"
+            )
+
+            completion_message = "\n".join(
+                [
+                    (
+                        "确定性分析完成，"
+                        "但模型解释暂不可用。"
+                    ),
+                    (
+                        "结果摘要和失败分析"
+                        "已经完整保留。"
+                    ),
+                    (
+                        f"解释错误：{error_type}: "
+                        f"{error_message}"
+                    ),
+                ]
+            )
+        elif with_model:
+            completion_message = (
+                "分析与模型解释完成。"
+            )
+        else:
+            completion_message = (
+                "确定性分析完成。"
+            )
+
         return ChatTurnResult(
             action=(
                 "EXPLAIN"
@@ -672,11 +724,7 @@ def process_chat_message(
             status=result.status,
             message="\n".join(
                 [
-                    (
-                        "分析与模型解释完成。"
-                        if with_model
-                        else "确定性分析完成。"
-                    ),
+                    completion_message,
                     (
                         "分析目录："
                         f"{result.analysis_dir}"
