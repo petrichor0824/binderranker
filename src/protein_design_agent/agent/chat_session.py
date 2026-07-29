@@ -53,6 +53,7 @@ from protein_design_agent.agent.run_status import (
 ChatAction = Literal[
     "HELP",
     "STATUS",
+    "VIEW_PLAN",
     "PREPARE",
     "RESUME",
     "APPROVE",

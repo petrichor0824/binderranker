@@ -1178,3 +1178,138 @@ def test_information_correction_replaces_pending_action(
     assert "取消" in result.message
     assert "已记录 binder 为 B 链" in result.message
     assert load_pending_action(bundle) is None
+
+
+def test_semantic_view_plan_returns_real_plan(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = create_incomplete_inspection_bundle(tmp_path)
+
+    monkeypatch.setattr(
+        module,
+        "inspect_run_status",
+        lambda path: SimpleNamespace(
+            current_stage="PREPARED",
+            project_name="demo",
+            prepare_status="READY_FOR_REVIEW",
+            approval_status=None,
+            execution_status=None,
+            analysis_status=None,
+            explanation_status=None,
+            analysis_scope_level="EXPLORATORY",
+            candidate_count=20,
+            approval_consumed=None,
+        ),
+    )
+
+    result = process_dialogue_message(
+        message=(
+            "执行之前把你准备采用的方案"
+            "完整过一遍，我想检查有没有设错。"
+        ),
+        bundle_dir=bundle,
+        provider=FakeDialogueProvider(
+            "VIEW_PLAN"
+        ),
+        approved_by="tester",
+        model_config_path=None,
+        profile_name=None,
+        allow_network=True,
+    )
+
+    assert result.action == "VIEW_PLAN"
+    assert result.status == "PLAN_AVAILABLE"
+    assert "当前任务计划" in result.message
+    assert "输入目录：" in result.message
+    assert "计划步骤：" in result.message
+
+
+def test_view_plan_does_not_cancel_pending_action(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = prepared_bundle(tmp_path)
+
+    monkeypatch.setattr(
+        module,
+        "inspect_run_status",
+        lambda path: SimpleNamespace(
+            current_stage="PREPARED",
+            project_name="demo",
+            prepare_status="READY_FOR_REVIEW",
+            approval_status=None,
+            execution_status=None,
+            analysis_status=None,
+            explanation_status=None,
+            analysis_scope_level="EXPLORATORY",
+            candidate_count=20,
+            approval_consumed=None,
+        ),
+    )
+
+    module.save_pending_action(
+        bundle_dir=bundle,
+        action="APPROVE",
+        summary="是否批准当前计划？",
+    )
+
+    result = process_dialogue_message(
+        message=(
+            "我先不确认，把完整参数和"
+            "处理步骤再讲一遍。"
+        ),
+        bundle_dir=bundle,
+        provider=FakeDialogueProvider(
+            "VIEW_PLAN"
+        ),
+        approved_by="tester",
+        model_config_path=None,
+        profile_name=None,
+        allow_network=True,
+    )
+
+    assert result.action == "VIEW_PLAN"
+    assert load_pending_action(bundle) is not None
+    assert "待确认动作仍然保留" in result.message
+
+
+
+def test_view_plan_reports_when_no_plan_exists(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = prepared_bundle(tmp_path)
+
+    monkeypatch.setattr(
+        module,
+        "inspect_run_status",
+        lambda path: SimpleNamespace(
+            current_stage="PREPARED",
+            project_name="demo",
+            prepare_status="READY_FOR_REVIEW",
+            approval_status=None,
+            execution_status=None,
+            analysis_status=None,
+            explanation_status=None,
+            analysis_scope_level="EXPLORATORY",
+            candidate_count=20,
+            approval_consumed=None,
+        ),
+    )
+
+    result = process_dialogue_message(
+        message="把当前方案给我看看。",
+        bundle_dir=bundle,
+        provider=FakeDialogueProvider(
+            "VIEW_PLAN"
+        ),
+        approved_by="tester",
+        model_config_path=None,
+        profile_name=None,
+        allow_network=True,
+    )
+
+    assert result.action == "VIEW_PLAN"
+    assert result.status == "PLAN_AVAILABLE"
+    assert "还没有生成任务计划" in result.message

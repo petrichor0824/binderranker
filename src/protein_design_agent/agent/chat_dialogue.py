@@ -61,6 +61,7 @@ from protein_design_agent.agent.run_status import (
 DialogueIntent = Literal[
     "HELP",
     "VIEW_STATUS",
+    "VIEW_PLAN",
     "PROVIDE_INFORMATION",
     "REQUEST_DATASET_INSPECTION",
     "REQUEST_APPROVAL",
@@ -571,6 +572,244 @@ def load_dialogue_context(
 MAX_DIALOGUE_RESULT_CANDIDATES = 50
 
 
+
+def load_current_plan_evidence(
+    bundle_dir: Path,
+) -> dict[str, Any] | None:
+    """
+    只读加载当前计划的真实参数。
+
+    不调用模型，不执行工作流，不修改 Bundle。
+    """
+    bundle = bundle_dir.resolve()
+    session_path = bundle / "planning_session.json"
+
+    if not session_path.is_file():
+        return None
+
+    try:
+        session = load_planning_session(
+            session_path
+        )
+    except Exception as exc:
+        raise ChatDialogueError(
+            f"无法读取当前计划：{exc}"
+        ) from exc
+
+    workflow_manifest = None
+    workflow_path = (
+        bundle
+        / "workflow"
+        / "workflow_manifest.json"
+    )
+    if workflow_path.is_file():
+        try:
+            value = json.loads(
+                workflow_path.read_text(
+                    encoding="utf-8"
+                )
+            )
+            if isinstance(value, dict):
+                workflow_manifest = value
+        except (
+            OSError,
+            json.JSONDecodeError,
+        ):
+            workflow_manifest = None
+
+    ranker_plan = None
+    ranker_path = (
+        bundle
+        / "workflow"
+        / "ranker"
+        / "ranker_execution_plan.json"
+    )
+    if ranker_path.is_file():
+        try:
+            value = json.loads(
+                ranker_path.read_text(
+                    encoding="utf-8"
+                )
+            )
+            if isinstance(value, dict):
+                ranker_plan = value
+        except (
+            OSError,
+            json.JSONDecodeError,
+        ):
+            ranker_plan = None
+
+    return {
+        "status": session.plan.status,
+        "request": session.request.model_dump(
+            mode="json"
+        ),
+        "missing_information": (
+            session.plan.missing_information
+        ),
+        "warnings": session.plan.warnings,
+        "steps": [
+            step.model_dump(mode="json")
+            for step in session.plan.steps
+        ],
+        "config_preview": (
+            session.plan.config_preview
+        ),
+        "execution_allowed": (
+            session.plan.execution_allowed
+        ),
+        "workflow_manifest": workflow_manifest,
+        "ranker_plan": ranker_plan,
+    }
+
+
+def format_current_plan(
+    bundle_dir: Path,
+) -> str:
+    """
+    将真实计划转换为适合用户审阅的摘要。
+    """
+    evidence = load_current_plan_evidence(
+        bundle_dir
+    )
+
+    if evidence is None:
+        return (
+            "当前 Bundle 还没有生成任务计划。"
+            "你可以先描述希望分析的 PDB 数据和目标。"
+        )
+
+    config = (
+        evidence.get("config_preview")
+        or {}
+    )
+    input_config = config.get("input") or {}
+    regions = config.get("regions") or {}
+    ranking = config.get("ranking") or {}
+
+    workflow = (
+        evidence.get("workflow_manifest")
+        or {}
+    )
+    scope = (
+        workflow.get("analysis_scope")
+        or {}
+    )
+
+    ranker = (
+        evidence.get("ranker_plan")
+        or {}
+    )
+    input_summary = (
+        ranker.get("input_summary")
+        or {}
+    )
+
+    desired = regions.get("desired") or []
+    undesired = (
+        regions.get("undesired") or []
+    )
+    hotspots = regions.get("hotspots") or []
+
+    def show_list(value: list[Any]) -> str:
+        if not value:
+            return "未设置"
+        return ", ".join(str(item) for item in value)
+
+    lines = [
+        "当前任务计划",
+        "",
+        f"项目：{config.get('project_name', '未命名')}",
+        f"计划状态：{evidence.get('status')}",
+        (
+            "输入目录："
+            f"{input_config.get('pdb_dir', '未设置')}"
+        ),
+        (
+            "候选数量："
+            f"{input_summary.get('pdb_count', '尚未确定')}"
+        ),
+        (
+            "原始链布局："
+            f"{input_config.get('layout', '未设置')}"
+        ),
+        (
+            "源链："
+            f"{input_config.get('source_chain', '不适用')}"
+        ),
+        (
+            "target 起始位置："
+            f"{input_config.get('target_start_residue', '未设置')}"
+        ),
+        (
+            "target 残基数量："
+            f"{input_config.get('target_residue_count', '未设置')}"
+        ),
+        (
+            "标准化 target 链："
+            f"{input_config.get('normalized_target_chain', '未设置')}"
+        ),
+        (
+            "标准化 binder 链："
+            f"{input_config.get('normalized_binder_chain', '未设置')}"
+        ),
+        f"目标区域：{show_list(desired)}",
+        f"排除区域：{show_list(undesired)}",
+        f"hotspot：{show_list(hotspots)}",
+        (
+            "区域评分模式："
+            f"{ranking.get('region_policy', '未设置')}"
+        ),
+        (
+            "区域过滤："
+            f"{ranking.get('region_filter', '未设置')}"
+        ),
+        (
+            "Ranker 版本："
+            f"{ranking.get('ranker_version', '未设置')}"
+        ),
+        (
+            "报告 Top K："
+            f"{ranking.get('top_k_report', '未设置')}"
+        ),
+        (
+            "分析范围："
+            f"{scope.get('level', '尚未确定')}"
+        ),
+        (
+            "允许正式科研解释："
+            f"{scope.get('workflow_allows_formal_interpretation', '尚未确定')}"
+        ),
+        (
+            "当前允许直接执行："
+            f"{evidence.get('execution_allowed')}"
+        ),
+        "",
+        "计划步骤：",
+    ]
+
+    for index, step in enumerate(
+        evidence.get("steps") or [],
+        start=1,
+    ):
+        approval = (
+            "需要批准"
+            if step.get("requires_approval")
+            else "只读/准备步骤"
+        )
+        lines.append(
+            f"{index}. {step.get('description', step.get('step_id'))}"
+            f"（{approval}）"
+        )
+
+    warnings = evidence.get("warnings") or []
+    if warnings:
+        lines.extend(["", "注意事项："])
+        for warning in warnings:
+            lines.append(f"- {warning}")
+
+    return "\n".join(lines)
+
 def load_latest_result_evidence(
     bundle_dir: Path,
 ) -> dict[str, Any] | None:
@@ -733,6 +972,7 @@ def classify_dialogue_intent(
         "allowed_intents": [
             "HELP",
             "VIEW_STATUS",
+            "VIEW_PLAN",
             "PROVIDE_INFORMATION",
             "REQUEST_DATASET_INSPECTION",
             "REQUEST_APPROVAL",
@@ -770,6 +1010,11 @@ def classify_dialogue_intent(
                 "必须选择 GENERAL_QUESTION 并自然回答。"
                 "当用户在补充链、残基、目录、区域等参数时，"
                 "选择 PROVIDE_INFORMATION。"
+                "当用户用任何自然表达希望查看、核对、"
+                "复述或解释当前任务方案、参数、步骤、"
+                "输入设置或执行前配置时，选择 VIEW_PLAN。"
+                "不要要求用户使用固定口令，也不要把"
+                "查看计划误判为批准、执行或普通状态查询。"
                 "当用户表达‘同意方案、按这个方案来’时，"
                 "选择 REQUEST_APPROVAL。"
                 "当用户表达‘开始跑、开始计算、执行吧’时，"
@@ -1832,6 +2077,26 @@ def process_dialogue_message(
                 },
             )
 
+        if intent == "VIEW_PLAN":
+            return ChatTurnResult(
+                action="VIEW_PLAN",
+                status="PLAN_AVAILABLE",
+                message=(
+                    format_current_plan(
+                        bundle_dir
+                    )
+                    + pending_reminder
+                ),
+                bundle_dir=bundle_dir.resolve(),
+                artifact_paths={
+                    "pending_action": (
+                        pending_action_path(
+                            bundle_dir
+                        )
+                    )
+                },
+            )
+
         if intent == "VIEW_STATUS":
             status_result = (
                 process_chat_message(
@@ -1912,6 +2177,22 @@ def process_dialogue_message(
             model_config_path=model_config_path,
             profile_name=profile_name,
             allow_network=allow_network,
+        )
+
+    if intent == "VIEW_PLAN":
+        return ChatTurnResult(
+            action="VIEW_PLAN",
+            status="PLAN_AVAILABLE",
+            message=format_current_plan(
+                bundle_dir
+            ),
+            bundle_dir=bundle_dir.resolve(),
+            artifact_paths={
+                "planning_session": (
+                    bundle_dir.resolve()
+                    / "planning_session.json"
+                )
+            },
         )
 
     if intent == "VIEW_STATUS":
