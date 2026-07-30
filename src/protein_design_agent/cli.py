@@ -38,7 +38,7 @@ from protein_design_agent.agent.chat_dialogue import (
     process_dialogue_message,
 )
 from protein_design_agent.cli_defaults import (
-    resolve_chat_bundle_dir,
+    resolve_chat_target,
     resolve_local_approved_by,
 )
 from protein_design_agent.agent.chat_session import (
@@ -658,6 +658,14 @@ def chat_command(
             "未提供时使用当前目录下的安全默认工作空间。"
         ),
     ),
+    task_name: str | None = typer.Option(
+        None,
+        "--task",
+        help=(
+            "默认工作空间中的任务名称。"
+            "每个任务拥有独立计划、批准、执行和结果。"
+        ),
+    ),
     approved_by: str | None = typer.Option(
         None,
         "--approved-by",
@@ -700,9 +708,21 @@ def chat_command(
     大模型只解析数据，不生成或执行 Shell。
     批准、执行和分析只接受固定确认短语。
     """
-    resolved_bundle = resolve_chat_bundle_dir(
-        bundle_dir
-    )
+    try:
+        chat_target = resolve_chat_target(
+            bundle_dir=bundle_dir,
+            task_name=task_name,
+        )
+    except ValueError as exc:
+        typer.echo(
+            f"ERROR：任务选择无效：{exc}",
+            err=True,
+        )
+        raise typer.Exit(code=2) from exc
+
+    resolved_bundle = chat_target.bundle_dir
+    resolved_task_name = chat_target.task_name
+
     resolved_approved_by = (
         resolve_local_approved_by(
             approved_by
@@ -712,15 +732,20 @@ def chat_command(
     workspace_report = None
     workspace_root = None
 
-    if bundle_dir is None:
+    if chat_target.uses_default_workspace:
         from protein_design_agent.agent.workspace_init import (
             WorkspaceInitError,
             ensure_workspace,
         )
 
         workspace_root = (
-            resolved_bundle.parent.parent
+            chat_target.workspace_dir
         )
+
+        if workspace_root is None:
+            raise RuntimeError(
+                "默认工作空间解析结果缺少根目录"
+            )
 
         try:
             workspace_report = ensure_workspace(
@@ -826,6 +851,9 @@ def chat_command(
             f"{workspace_status_text}"
         )
 
+    typer.echo(
+        f"当前任务：{resolved_task_name}"
+    )
     typer.echo(
         f"Bundle：{resolved_bundle}"
     )

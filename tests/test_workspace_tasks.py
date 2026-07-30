@@ -173,3 +173,58 @@ def test_existing_task_symlink_cannot_escape_runs(
             workspace_dir=workspace,
             task_name="group_a",
         )
+
+
+def test_many_tasks_have_independent_state_files(
+    tmp_path: Path,
+) -> None:
+    names = [
+        "group_a",
+        "group_b",
+        "group_c",
+        "group_d",
+        "group_e",
+        "group_f",
+    ]
+
+    bundles = [
+        resolve_task_bundle(
+            workspace_dir=tmp_path,
+            task_name=name,
+        )
+        for name in names
+    ]
+
+    assert len(set(bundles)) == len(names)
+
+    for bundle in bundles:
+        bundle.mkdir(parents=True)
+
+    approval_a = (
+        bundles[0] / "approval.json"
+    )
+    pending_a = (
+        bundles[0]
+        / "chat"
+        / "pending_action.json"
+    )
+
+    approval_a.write_text(
+        '{"status":"APPROVED"}',
+        encoding="utf-8",
+    )
+    pending_a.parent.mkdir()
+    pending_a.write_text(
+        '{"action":"EXECUTE"}',
+        encoding="utf-8",
+    )
+
+    for bundle in bundles[1:]:
+        assert not (
+            bundle / "approval.json"
+        ).exists()
+        assert not (
+            bundle
+            / "chat"
+            / "pending_action.json"
+        ).exists()

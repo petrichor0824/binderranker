@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import protein_design_agent.cli as cli_module
 from protein_design_agent.agent.chat_session import (
@@ -355,8 +356,15 @@ def test_chat_starts_with_safe_defaults(
 
     monkeypatch.setattr(
         cli_module,
-        "resolve_chat_bundle_dir",
-        lambda value: default_bundle,
+        "resolve_chat_target",
+        lambda **kwargs: SimpleNamespace(
+            bundle_dir=default_bundle,
+            workspace_dir=(
+                default_bundle.parent.parent
+            ),
+            task_name="default",
+            uses_default_workspace=True,
+        ),
     )
     monkeypatch.setattr(
         cli_module,
@@ -453,3 +461,70 @@ def test_chat_reuses_default_workspace(
     assert first.exit_code == 0
     assert second.exit_code == 0
     assert "已存在，安全复用" in second.output
+
+
+def test_chat_selects_named_task(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    captured = []
+
+    def fake_process(**kwargs):
+        captured.append(kwargs)
+
+        return ChatTurnResult(
+            action="HELP",
+            status="HELP",
+            message="帮助内容",
+            bundle_dir=kwargs["bundle_dir"],
+        )
+
+    monkeypatch.setattr(
+        cli_module,
+        "process_dialogue_message",
+        fake_process,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "chat",
+            "--task",
+            "group_b",
+        ],
+        input="帮助\n退出\n",
+    )
+
+    expected_bundle = (
+        tmp_path
+        / ".protein-design-agent"
+        / "runs"
+        / "group_b"
+    ).resolve()
+
+    assert result.exit_code == 0
+    assert "当前任务：group_b" in result.output
+    assert str(expected_bundle) in result.output
+    assert captured[0]["bundle_dir"] == (
+        expected_bundle
+    )
+
+
+def test_chat_rejects_task_with_explicit_bundle(
+    tmp_path: Path,
+) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "chat",
+            "--bundle-dir",
+            str(tmp_path / "bundle"),
+            "--task",
+            "group_b",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "不能同时使用" in result.output
