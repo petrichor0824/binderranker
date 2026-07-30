@@ -97,7 +97,7 @@ def test_chat_proposes_multiple_dataset_groups(
         "INSPECT_DATASET"
     )
     assert result.status == (
-        "GROUPING_PROPOSED"
+        "AWAITING_CONFIRMATION"
     )
     assert "group_a | group_a | 1" in (
         result.message
@@ -112,3 +112,15 @@ def test_chat_proposes_multiple_dataset_groups(
         / "chat"
         / "dataset_advice.json"
     ).exists()
+
+    assert (
+        bundle
+        / "chat"
+        / "dataset_grouping_proposal.json"
+    ).is_file()
+
+    pending = module.load_pending_action(bundle)
+    assert pending is not None
+    assert pending.action == (
+        "CREATE_DATASET_GROUP_TASKS"
+    )

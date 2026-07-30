@@ -80,6 +80,7 @@ PendingActionName = Literal[
     "ANALYZE",
     "EXPLAIN",
     "ADOPT_DATASET_ADVICE",
+    "CREATE_DATASET_GROUP_TASKS",
 ]
 
 
@@ -279,6 +280,7 @@ def bundle_state_digest(
         "planning_session.json",
         "agent_prepare_manifest.json",
         "chat/dataset_advice.json",
+        "chat/dataset_grouping_proposal.json",
         "approval.json",
         "execution_*.json",
         "agent_result_summary.json",
@@ -1457,14 +1459,52 @@ def inspect_dataset_and_propose_adoption(
                 f"无法生成可靠的多数据集分组建议：{exc}"
             ) from exc
 
+        if load_pending_action(bundle) is not None:
+            raise ChatDialogueError(
+                "当前已有动作等待确认，"
+                "请先确认或取消旧动作"
+            )
+
+        from protein_design_agent.agent.dataset_group_tasks import (
+            save_grouping_proposal,
+        )
+
+        preview = format_dataset_grouping_preview(
+            grouping=grouping,
+            report=discovery,
+        )
+
+        proposal_path = save_grouping_proposal(
+            bundle_dir=bundle,
+            report=discovery,
+            grouping=grouping,
+            user_description=user_message,
+        )
+
+        save_pending_action(
+            bundle_dir=bundle,
+            action="CREATE_DATASET_GROUP_TASKS",
+            summary=preview,
+        )
+
         return ChatTurnResult(
             action="INSPECT_DATASET",
-            status="GROUPING_PROPOSED",
-            message=format_dataset_grouping_preview(
-                grouping=grouping,
-                report=discovery,
+            status="AWAITING_CONFIRMATION",
+            message=(
+                preview
+                + "\n\n确认后只会创建相互隔离的任务 "
+                "Bundle，不会批准或执行。"
+                "\n请回答“确认”或“取消”。"
             ),
             bundle_dir=bundle,
+            artifact_paths={
+                "dataset_grouping_proposal": (
+                    proposal_path
+                ),
+                "pending_action": (
+                    pending_action_path(bundle)
+                ),
+            },
         )
 
     try:
@@ -1617,6 +1657,11 @@ def deterministic_pending_safety_answer(
                 "采用文件建议时不会调用大模型决定参数。"
                 "参数来自只读 PDB 检查、文件 SHA256"
                 "和你的明确确认。"
+            )
+        elif pending.action == "CREATE_DATASET_GROUP_TASKS":
+            lines.append(
+                "确认后只创建相互隔离的任务 Bundle"
+                "和数据来源记录。不会批准、执行或生成排名。"
             )
         else:
             lines.append(
@@ -1813,6 +1858,43 @@ def confirm_pending_action(
     _, report = inspect_bundle(
         bundle_dir
     )
+
+    if pending.action == "CREATE_DATASET_GROUP_TASKS":
+        from protein_design_agent.agent.dataset_group_tasks import (
+            DatasetGroupTaskError,
+            create_group_task_bundles,
+        )
+
+        try:
+            created = create_group_task_bundles(
+                source_bundle=bundle_dir
+            )
+        except DatasetGroupTaskError as exc:
+            clear_pending_action(bundle_dir)
+            raise ChatDialogueError(
+                f"无法创建分组任务：{exc}"
+            ) from exc
+
+        clear_pending_action(bundle_dir)
+
+        task_lines = "\n".join(
+            f"- {name}：{bundle}"
+            for name, bundle in zip(
+                created.task_names,
+                created.created_bundles,
+            )
+        )
+
+        return ChatTurnResult(
+            action="INSPECT_DATASET",
+            status="TASKS_CREATED",
+            message=(
+                "已创建相互隔离的任务 Bundle：\n"
+                f"{task_lines}\n\n"
+                "尚未批准或执行任何任务。"
+            ),
+            bundle_dir=bundle_dir.resolve(),
+        )
 
     if pending.action == "ADOPT_DATASET_ADVICE":
         try:
