@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import protein_design_agent.agent.error_guidance as module
@@ -100,3 +101,141 @@ def test_model_failure_uses_deterministic_fallback(
     assert "当前操作没有完成" in text
     assert "检查输入路径" in text
     assert "确定性兜底说明" in text
+
+
+class ExecutionManifestError(RuntimeError):
+    def __init__(
+        self,
+        message: str,
+        execution_manifest: Path,
+    ) -> None:
+        super().__init__(message)
+        self.execution_manifest = (
+            execution_manifest
+        )
+
+
+def test_failed_manifest_and_stderr_are_collected(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    logs = bundle / "logs"
+    logs.mkdir()
+
+    stderr = logs / "ranker_stderr.log"
+    stderr.write_text(
+        "\n".join(
+            [
+                f"ordinary line {index}"
+                for index in range(50)
+            ]
+            + [
+                (
+                    "Authorization: Bearer "
+                    "secret-token"
+                ),
+                "DEEPSEEK_API_KEY=real-secret",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    manifest = bundle / "execution_test.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "status": "FAILED",
+                "error_type": "RuntimeError",
+                "error_message": (
+                    "ranker exited with code 2"
+                ),
+                "return_code": 2,
+                "stderr_log": str(stderr),
+                "missing_outputs": [
+                    str(
+                        bundle
+                        / "results"
+                        / "scored.csv"
+                    )
+                ],
+                "execution_attempted": True,
+                "process_started": True,
+                "approval_reusable": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    context = module.build_safe_error_context(
+        kind="FAILED",
+        error=ExecutionManifestError(
+            "BinderRanker failed",
+            manifest,
+        ),
+        bundle_dir=bundle,
+    )
+
+    evidence = context["failure_evidence"]
+
+    assert evidence["source_kind"] == (
+        "execution"
+    )
+    assert evidence["return_code"] == 2
+    assert evidence["missing_outputs"] == [
+        "scored.csv"
+    ]
+    assert len(evidence["stderr_tail"]) <= 40
+
+    combined = "\n".join(
+        evidence["stderr_tail"]
+    )
+
+    assert "secret-token" not in combined
+    assert "real-secret" not in combined
+    assert "REDACTED" in combined
+
+
+def test_guidance_displays_failure_evidence(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    stderr = bundle / "stderr.log"
+    stderr.write_text(
+        "missing required column\n",
+        encoding="utf-8",
+    )
+
+    manifest = bundle / "execution_test.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "status": "FAILED",
+                "error_type": "ValueError",
+                "error_message": (
+                    "missing output column"
+                ),
+                "return_code": 1,
+                "stderr_log": str(stderr),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    text = format_error_guidance(
+        kind="FAILED",
+        error=ExecutionManifestError(
+            "execution failed",
+            manifest,
+        ),
+        bundle_dir=bundle,
+        provider=None,
+    )
+
+    assert "已读取的失败证据" in text
+    assert "execution_test.json" in text
+    assert "进程返回码：1" in text
+    assert "missing required column" in text

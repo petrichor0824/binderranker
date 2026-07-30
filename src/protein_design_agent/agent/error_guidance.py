@@ -15,6 +15,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from protein_design_agent.agent.providers.base import (
     StructuredJSONProvider,
 )
+from protein_design_agent.agent.failure_evidence import (
+    collect_failure_evidence,
+)
 from protein_design_agent.agent.run_status import (
     inspect_run_status,
 )
@@ -82,6 +85,42 @@ def build_safe_error_context(
         "bundle_name": bundle_dir.resolve().name,
         "state": {},
     }
+
+    failure_evidence = collect_failure_evidence(
+        bundle_dir=bundle_dir,
+        error=error,
+    )
+
+    if failure_evidence:
+        raw_manifest_error = (
+            failure_evidence.get(
+                "error_message"
+            )
+        )
+
+        if isinstance(raw_manifest_error, str):
+            failure_evidence[
+                "error_message"
+            ] = redact_sensitive_text(
+                raw_manifest_error
+            )
+
+        raw_stderr = failure_evidence.get(
+            "stderr_tail"
+        )
+
+        if isinstance(raw_stderr, list):
+            failure_evidence[
+                "stderr_tail"
+            ] = [
+                redact_sensitive_text(line)
+                for line in raw_stderr
+                if isinstance(line, str)
+            ]
+
+        context["failure_evidence"] = (
+            failure_evidence
+        )
 
     try:
         report = inspect_run_status(bundle_dir)
@@ -287,6 +326,65 @@ def format_error_guidance(
             f"{context['error_message']}"
         ),
     ]
+
+    failure_evidence = (
+        context.get("failure_evidence") or {}
+    )
+
+    if failure_evidence:
+        lines.extend(
+            [
+                "",
+                "已读取的失败证据：",
+                (
+                    "清单："
+                    f"{failure_evidence.get('manifest_path')}"
+                ),
+                (
+                    "错误："
+                    f"{failure_evidence.get('error_type')}："
+                    f"{failure_evidence.get('error_message')}"
+                ),
+            ]
+        )
+
+        if (
+            failure_evidence.get("return_code")
+            is not None
+        ):
+            lines.append(
+                "进程返回码："
+                f"{failure_evidence['return_code']}"
+            )
+
+        missing_outputs = (
+            failure_evidence.get(
+                "missing_outputs"
+            )
+            or []
+        )
+
+        if missing_outputs:
+            lines.append(
+                "缺失产物："
+                + ", ".join(missing_outputs)
+            )
+
+        stderr_tail = (
+            failure_evidence.get(
+                "stderr_tail"
+            )
+            or []
+        )
+
+        if stderr_tail:
+            lines.append(
+                "stderr 末尾（已脱敏）："
+            )
+            lines.extend(
+                f"  {line}"
+                for line in stderr_tail[-8:]
+            )
 
     state = context.get("state") or {}
     if state:
