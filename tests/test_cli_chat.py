@@ -284,3 +284,57 @@ def test_chat_routes_natural_language_through_dialogue(
 
     assert "等待" in result.output
     assert "计划已批准" in result.output
+
+
+def test_chat_error_is_converted_to_guidance(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    def fail_dialogue(**kwargs):
+        raise ChatSessionError(
+            "只有执行完成后才能分析"
+        )
+
+    captured = {}
+
+    def fake_guidance(**kwargs):
+        captured.update(kwargs)
+        return (
+            "当前操作被拒绝。\n"
+            "建议处理：先完成执行步骤。"
+        )
+
+    monkeypatch.setattr(
+        cli_module,
+        "process_dialogue_message",
+        fail_dialogue,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "format_error_guidance",
+        fake_guidance,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "chat",
+            "--bundle-dir",
+            str(bundle),
+            "--approved-by",
+            "tester",
+        ],
+        input="分析结果\n退出\n",
+    )
+
+    assert result.exit_code == 0
+    assert "当前操作被拒绝" in result.output
+    assert "先完成执行步骤" in result.output
+    assert captured["kind"] == "REJECTED"
+    assert isinstance(
+        captured["error"],
+        ChatSessionError,
+    )

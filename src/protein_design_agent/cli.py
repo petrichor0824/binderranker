@@ -40,6 +40,9 @@ from protein_design_agent.agent.chat_dialogue import (
 from protein_design_agent.agent.chat_session import (
     ChatSessionError,
 )
+from protein_design_agent.agent.error_guidance import (
+    format_error_guidance,
+)
 
 from protein_design_agent.agent.run_status import (
     RunStatusError,
@@ -816,19 +819,35 @@ def chat_command(
             ChatDialogueError,
             ChatSessionError,
         ) as exc:
-            typer.echo("")
-            typer.echo(
-                f"Agent 拒绝：{exc}",
-                err=True,
+            guidance = format_error_guidance(
+                kind="REJECTED",
+                error=exc,
+                bundle_dir=resolved_bundle,
+                provider=(
+                    provider
+                    if allow_network
+                    else None
+                ),
             )
+            typer.echo("")
+            typer.echo("Agent >")
+            typer.echo(guidance, err=True)
             continue
 
         except Exception as exc:
-            typer.echo("")
-            typer.echo(
-                f"Agent 错误：{exc}",
-                err=True,
+            guidance = format_error_guidance(
+                kind="FAILED",
+                error=exc,
+                bundle_dir=resolved_bundle,
+                provider=(
+                    provider
+                    if allow_network
+                    else None
+                ),
             )
+            typer.echo("")
+            typer.echo("Agent >")
+            typer.echo(guidance, err=True)
             continue
 
         typer.echo("")
