@@ -13,6 +13,21 @@ DEFAULT_WORKSPACE_NAME = ".protein-design-agent"
 DEFAULT_BUNDLE_NAME = "default"
 
 
+def resolve_chat_workspace_dir(
+    *,
+    cwd: Path | None = None,
+) -> Path:
+    """解析无参数 chat 使用的工作空间根目录。"""
+    working_directory = (
+        cwd if cwd is not None else Path.cwd()
+    )
+
+    return (
+        working_directory.expanduser().resolve()
+        / DEFAULT_WORKSPACE_NAME
+    ).resolve()
+
+
 def resolve_chat_bundle_dir(
     value: Path | None,
     *,
@@ -27,14 +42,13 @@ def resolve_chat_bundle_dir(
     if value is not None:
         return value.expanduser().resolve()
 
-    working_directory = (
-        cwd if cwd is not None else Path.cwd()
+    workspace = resolve_chat_workspace_dir(
+        cwd=cwd
     )
 
     return (
-        working_directory.expanduser().resolve()
-        / DEFAULT_WORKSPACE_NAME
-        / "bundles"
+        workspace
+        / "runs"
         / DEFAULT_BUNDLE_NAME
     ).resolve()
 

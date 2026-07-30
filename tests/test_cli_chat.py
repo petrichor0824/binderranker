@@ -347,7 +347,7 @@ def test_chat_starts_with_safe_defaults(
     default_bundle = (
         tmp_path
         / ".protein-design-agent"
-        / "bundles"
+        / "runs"
         / "default"
     ).resolve()
 
@@ -400,3 +400,56 @@ def test_chat_starts_with_safe_defaults(
         captured[0]["approved_by"]
         == "local-test-user"
     )
+
+
+def test_chat_auto_initializes_default_workspace(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(
+        app,
+        ["chat"],
+        input="退出\n",
+    )
+
+    workspace = (
+        tmp_path / ".protein-design-agent"
+    )
+
+    assert result.exit_code == 0
+    assert "已自动创建" in result.output
+    assert (
+        workspace / "QUICKSTART.md"
+    ).is_file()
+    assert (
+        workspace / ".pda-workspace.json"
+    ).is_file()
+    assert (
+        workspace
+        / "runs"
+        / "default"
+    ).is_dir()
+
+
+def test_chat_reuses_default_workspace(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    first = runner.invoke(
+        app,
+        ["chat"],
+        input="退出\n",
+    )
+    second = runner.invoke(
+        app,
+        ["chat"],
+        input="退出\n",
+    )
+
+    assert first.exit_code == 0
+    assert second.exit_code == 0
+    assert "已存在，安全复用" in second.output

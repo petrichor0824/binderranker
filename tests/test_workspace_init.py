@@ -220,3 +220,81 @@ def test_generated_files_are_portable(
 
         for forbidden in forbidden_values:
             assert forbidden not in content
+
+
+def test_ensure_workspace_is_idempotent(
+    tmp_path: Path,
+) -> None:
+    from protein_design_agent.agent.workspace_init import (
+        ensure_workspace,
+    )
+
+    destination = tmp_path / "workspace"
+
+    first = ensure_workspace(destination)
+    second = ensure_workspace(destination)
+
+    assert first.status == "CREATED"
+    assert second.status == "REUSED"
+    assert second.created_files == ()
+    assert second.created_directories == ()
+
+
+def test_ensure_workspace_preserves_edited_config(
+    tmp_path: Path,
+) -> None:
+    from protein_design_agent.agent.workspace_init import (
+        ensure_workspace,
+    )
+
+    destination = tmp_path / "workspace"
+    ensure_workspace(destination)
+
+    config = (
+        destination
+        / "configs"
+        / "models"
+        / "deepseek.local.yaml"
+    )
+
+    custom_content = (
+        config.read_text(encoding="utf-8")
+        + "\n# user customization\n"
+    )
+    config.write_text(
+        custom_content,
+        encoding="utf-8",
+    )
+
+    report = ensure_workspace(destination)
+
+    assert report.status == "REUSED"
+    assert config.read_text(
+        encoding="utf-8"
+    ) == custom_content
+
+
+def test_invalid_workspace_marker_is_not_accepted(
+    tmp_path: Path,
+) -> None:
+    from protein_design_agent.agent.workspace_init import (
+        ensure_workspace,
+    )
+
+    destination = tmp_path / "workspace"
+    destination.mkdir()
+
+    marker = (
+        destination / ".pda-workspace.json"
+    )
+    marker.write_text(
+        '{"workspace_type":"other"}',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WorkspaceInitError):
+        ensure_workspace(destination)
+
+    assert marker.read_text(
+        encoding="utf-8"
+    ) == '{"workspace_type":"other"}'

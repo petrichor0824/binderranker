@@ -28,7 +28,7 @@ def test_default_bundle_is_inside_current_directory(
     assert result == (
         tmp_path
         / ".protein-design-agent"
-        / "bundles"
+        / "runs"
         / "default"
     ).resolve()
 

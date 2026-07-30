@@ -709,6 +709,40 @@ def chat_command(
         )
     )
 
+    workspace_report = None
+    workspace_root = None
+
+    if bundle_dir is None:
+        from protein_design_agent.agent.workspace_init import (
+            WorkspaceInitError,
+            ensure_workspace,
+        )
+
+        workspace_root = (
+            resolved_bundle.parent.parent
+        )
+
+        try:
+            workspace_report = ensure_workspace(
+                workspace_root
+            )
+            resolved_bundle.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+        except (
+            WorkspaceInitError,
+            OSError,
+        ) as exc:
+            typer.echo(
+                "ERROR：默认工作空间初始化失败："
+                f"{exc}",
+                err=True,
+            )
+            raise typer.Exit(
+                code=2
+            ) from exc
+
     provider = None
     resolved_model_config = None
 
@@ -771,6 +805,27 @@ def chat_command(
     typer.echo("=" * 72)
     typer.echo("Protein Design Agent Chat")
     typer.echo("=" * 72)
+    if workspace_root is not None:
+        typer.echo(
+            f"工作空间：{workspace_root}"
+        )
+
+        workspace_status_text = {
+            "CREATED": "已自动创建",
+            "REUSED": "已存在，安全复用",
+            "REUSED_LEGACY": (
+                "已识别旧版工作空间，安全复用"
+            ),
+        }.get(
+            workspace_report.status,
+            workspace_report.status,
+        )
+
+        typer.echo(
+            "工作空间状态："
+            f"{workspace_status_text}"
+        )
+
     typer.echo(
         f"Bundle：{resolved_bundle}"
     )

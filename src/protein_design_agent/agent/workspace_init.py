@@ -14,8 +14,16 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
+
+
+WORKSPACE_MARKER_TEMPLATE = '''{
+  "schema_version": "0.1",
+  "workspace_type": "protein-design-agent"
+}
+'''
 
 
 MODEL_CONFIG_TEMPLATE = '''schema_version: "0.1"
@@ -125,6 +133,9 @@ MANAGED_DIRECTORIES = (
 
 MANAGED_FILES = {
     Path(
+        ".pda-workspace.json"
+    ): WORKSPACE_MARKER_TEMPLATE,
+    Path(
         "configs/models/deepseek.local.yaml"
     ): MODEL_CONFIG_TEMPLATE,
     Path(".env.example"): ENV_EXAMPLE_TEMPLATE,
@@ -153,6 +164,7 @@ class WorkspaceInitReport:
     destination: Path
     created_directories: tuple[Path, ...]
     created_files: tuple[Path, ...]
+    status: str = "CREATED"
     network_accessed: bool = False
     api_key_written: bool = False
     existing_files_overwritten: bool = False
@@ -183,6 +195,100 @@ def find_conflicts(
             conflicts.append(path)
 
     return tuple(conflicts)
+
+
+def detect_existing_workspace(
+    destination: Path,
+) -> str | None:
+    """
+    识别已经初始化的工作空间。
+
+    新工作空间优先依据标识文件；
+    旧版本工作空间按完整受管目录结构兼容识别。
+    用户可以修改模型配置内容，不要求模板完全相同。
+    """
+    resolved = destination.expanduser().resolve()
+
+    if not resolved.is_dir():
+        return None
+
+    marker = (
+        resolved / ".pda-workspace.json"
+    )
+
+    if marker.is_file():
+        try:
+            value = json.loads(
+                marker.read_text(
+                    encoding="utf-8"
+                )
+            )
+        except (
+            OSError,
+            json.JSONDecodeError,
+        ):
+            return None
+
+        if (
+            isinstance(value, dict)
+            and value.get("workspace_type")
+            == "protein-design-agent"
+            and value.get("schema_version")
+            == "0.1"
+        ):
+            return "REUSED"
+
+        return None
+
+    legacy_files = tuple(
+        relative
+        for relative in MANAGED_FILES
+        if relative
+        != Path(".pda-workspace.json")
+    )
+
+    directories_exist = all(
+        (resolved / relative).is_dir()
+        for relative in MANAGED_DIRECTORIES
+    )
+    files_exist = all(
+        (resolved / relative).is_file()
+        for relative in legacy_files
+    )
+
+    if directories_exist and files_exist:
+        return "REUSED_LEGACY"
+
+    return None
+
+
+def ensure_workspace(
+    destination: Path,
+) -> WorkspaceInitReport:
+    """
+    幂等地确保工作空间存在。
+
+    完整工作空间直接复用；
+    不完整或冲突结构仍由 initialize_workspace 拒绝，
+    不会自动覆盖或修补用户文件。
+    """
+    resolved = destination.expanduser().resolve()
+    existing_status = detect_existing_workspace(
+        resolved
+    )
+
+    if existing_status is not None:
+        return WorkspaceInitReport(
+            destination=resolved,
+            created_directories=(),
+            created_files=(),
+            status=existing_status,
+            network_accessed=False,
+            api_key_written=False,
+            existing_files_overwritten=False,
+        )
+
+    return initialize_workspace(resolved)
 
 
 def initialize_workspace(
