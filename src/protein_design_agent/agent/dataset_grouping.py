@@ -334,3 +334,64 @@ def propose_dataset_grouping(
         proposal=proposal,
         report=report,
     )
+
+
+
+def format_dataset_grouping_preview(
+    *,
+    grouping: ValidatedDatasetGrouping,
+    report: DatasetDiscoveryReport,
+) -> str:
+    """把已校验的分组建议格式化为简洁终端文本。"""
+    lines = [
+        "检测到多个可能独立排序的 PDB 数据集。",
+        f"目录布局：{report.layout}",
+        f"建议任务数：{len(grouping.groups)}",
+        "",
+        "任务名 | 来源目录 | 顶层 PDB 数量",
+        "-" * 56,
+    ]
+
+    for group in grouping.groups:
+        lines.append(
+            f"{group.task_name} | "
+            f"{group.source_relative_path} | "
+            f"{group.pdb_count}"
+        )
+
+    if grouping.omitted_relative_paths:
+        lines.extend(
+            [
+                "",
+                "尚未纳入建议的目录："
+                + ", ".join(
+                    grouping.omitted_relative_paths
+                ),
+            ]
+        )
+
+    if grouping.warnings:
+        lines.append("")
+        lines.append("需要注意：")
+        lines.extend(
+            f"- {warning}"
+            for warning in grouping.warnings
+        )
+
+    if grouping.questions:
+        lines.append("")
+        lines.append("仍需用户确认：")
+        lines.extend(
+            f"- {question}"
+            for question in grouping.questions
+        )
+
+    lines.extend(
+        [
+            "",
+            "当前只生成了只读分组建议；"
+            "尚未创建任务、批准或执行。",
+        ]
+    )
+
+    return "\n".join(lines)

@@ -1048,6 +1048,7 @@ def classify_dialogue_intent(
                 "最终安全答案由确定性控制器生成。"
 
                 "当用户明确要求查看、检查、读取 PDB 文件，"
+                "要求识别多个目录、按目录分组或分别排序，"
                 "或者说自己无法判断并要求 Agent 根据文件分析时，"
                 "选择 REQUEST_DATASET_INSPECTION。"
 
@@ -1348,6 +1349,8 @@ def format_dataset_advice(
 def inspect_dataset_and_propose_adoption(
     *,
     bundle_dir: Path,
+    provider: Any | None = None,
+    user_message: str = "",
 ) -> ChatTurnResult:
     """
     只读检查当前规划的输入目录。
@@ -1391,6 +1394,77 @@ def inspect_dataset_and_propose_adoption(
             "目前还不知道 PDB 输入目录。"
             "请先告诉我文件位于哪个目录，"
             "然后我才能进行只读检查。"
+        )
+
+    from protein_design_agent.agent.dataset_discovery import (
+        discover_dataset_groups,
+    )
+    from protein_design_agent.agent.dataset_grouping import (
+        DatasetGroupingError,
+        format_dataset_grouping_preview,
+        propose_dataset_grouping,
+    )
+
+    try:
+        discovery = discover_dataset_groups(
+            input_dir
+        )
+    except Exception as exc:
+        raise ChatDialogueError(
+            f"PDB 目录只读发现失败：{exc}"
+        ) from exc
+
+    if discovery.layout in {
+        "CHILD_DATASETS",
+        "MIXED_LAYOUT",
+    }:
+        if (
+            provider is None
+            or not hasattr(
+                provider,
+                "generate_json",
+            )
+        ):
+            candidates = "\n".join(
+                (
+                    f"- {group.relative_path}："
+                    f"{group.pdb_count} 个顶层 PDB"
+                )
+                for group in discovery.groups
+            )
+
+            return ChatTurnResult(
+                action="INSPECT_DATASET",
+                status="MODEL_REQUIRED",
+                message=(
+                    "检测到多个可能独立的数据集：\n"
+                    f"{candidates}\n\n"
+                    "需要启用结构化模型，才能结合你的"
+                    "自然语言说明提出分组方案。"
+                    "当前没有创建、批准或执行任何任务。"
+                ),
+                bundle_dir=bundle,
+            )
+
+        try:
+            grouping = propose_dataset_grouping(
+                provider=provider,
+                user_description=user_message,
+                report=discovery,
+            )
+        except DatasetGroupingError as exc:
+            raise ChatDialogueError(
+                f"无法生成可靠的多数据集分组建议：{exc}"
+            ) from exc
+
+        return ChatTurnResult(
+            action="INSPECT_DATASET",
+            status="GROUPING_PROPOSED",
+            message=format_dataset_grouping_preview(
+                grouping=grouping,
+                report=discovery,
+            ),
+            bundle_dir=bundle,
         )
 
     try:
@@ -2217,7 +2291,9 @@ def process_dialogue_message(
 
     if intent == "REQUEST_DATASET_INSPECTION":
         return inspect_dataset_and_propose_adoption(
-            bundle_dir=bundle_dir
+            bundle_dir=bundle_dir,
+            provider=provider,
+            user_message=message,
         )
 
     if intent == "REQUEST_APPROVAL":
