@@ -8,9 +8,13 @@ from __future__ import annotations
 import getpass
 from pathlib import Path
 
+from protein_design_agent.agent.workspace_tasks import (
+    DEFAULT_TASK_NAME,
+    resolve_task_bundle,
+)
+
 
 DEFAULT_WORKSPACE_NAME = ".protein-design-agent"
-DEFAULT_BUNDLE_NAME = "default"
 
 
 def resolve_chat_workspace_dir(
@@ -46,11 +50,10 @@ def resolve_chat_bundle_dir(
         cwd=cwd
     )
 
-    return (
-        workspace
-        / "runs"
-        / DEFAULT_BUNDLE_NAME
-    ).resolve()
+    return resolve_task_bundle(
+        workspace_dir=workspace,
+        task_name=DEFAULT_TASK_NAME,
+    )
 
 
 def resolve_local_approved_by(
