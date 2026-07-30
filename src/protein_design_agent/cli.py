@@ -37,6 +37,10 @@ from protein_design_agent.agent.chat_dialogue import (
     ChatDialogueError,
     process_dialogue_message,
 )
+from protein_design_agent.cli_defaults import (
+    resolve_chat_bundle_dir,
+    resolve_local_approved_by,
+)
 from protein_design_agent.agent.chat_session import (
     ChatSessionError,
 )
@@ -646,20 +650,21 @@ def materialize_plan_command(
 
 @app.command("chat")
 def chat_command(
-    bundle_dir: Path = typer.Option(
-        ...,
+    bundle_dir: Path | None = typer.Option(
+        None,
         "--bundle-dir",
         help=(
-            "本次任务的 Bundle 目录；"
-            "新任务目录可以尚不存在。"
+            "本次任务的 Bundle 目录。"
+            "未提供时使用当前目录下的安全默认工作空间。"
         ),
     ),
-    approved_by: str = typer.Option(
-        ...,
+    approved_by: str | None = typer.Option(
+        None,
         "--approved-by",
         help=(
             "本地批准者标识。"
-            "当前版本不进行身份认证。"
+            "未提供时使用当前系统用户名；"
+            "该标识不代表身份认证。"
         ),
     ),
     model_config: Path | None = typer.Option(
@@ -695,7 +700,14 @@ def chat_command(
     大模型只解析数据，不生成或执行 Shell。
     批准、执行和分析只接受固定确认短语。
     """
-    resolved_bundle = bundle_dir.resolve()
+    resolved_bundle = resolve_chat_bundle_dir(
+        bundle_dir
+    )
+    resolved_approved_by = (
+        resolve_local_approved_by(
+            approved_by
+        )
+    )
 
     provider = None
     resolved_model_config = None
@@ -763,6 +775,10 @@ def chat_command(
         f"Bundle：{resolved_bundle}"
     )
     typer.echo(
+        "本地审计标识："
+        f"{resolved_approved_by}"
+    )
+    typer.echo(
         "输入“帮助”查看操作；"
         "输入“退出”结束会话。"
     )
@@ -807,7 +823,9 @@ def chat_command(
                 message=clean,
                 bundle_dir=resolved_bundle,
                 provider=provider,
-                approved_by=approved_by,
+                approved_by=(
+                    resolved_approved_by
+                ),
                 model_config_path=(
                     resolved_model_config
                 ),

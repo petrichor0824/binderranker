@@ -338,3 +338,65 @@ def test_chat_error_is_converted_to_guidance(
         captured["error"],
         ChatSessionError,
     )
+
+
+def test_chat_starts_with_safe_defaults(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    default_bundle = (
+        tmp_path
+        / ".protein-design-agent"
+        / "bundles"
+        / "default"
+    ).resolve()
+
+    captured = []
+
+    monkeypatch.setattr(
+        cli_module,
+        "resolve_chat_bundle_dir",
+        lambda value: default_bundle,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "resolve_local_approved_by",
+        lambda value: "local-test-user",
+    )
+
+    def fake_process(**kwargs):
+        captured.append(kwargs)
+
+        return ChatTurnResult(
+            action="HELP",
+            status="HELP",
+            message="帮助内容",
+            bundle_dir=default_bundle,
+        )
+
+    monkeypatch.setattr(
+        cli_module,
+        "process_dialogue_message",
+        fake_process,
+    )
+
+    result = runner.invoke(
+        app,
+        ["chat"],
+        input="帮助\n退出\n",
+    )
+
+    assert result.exit_code == 0
+    assert "帮助内容" in result.output
+    assert str(default_bundle) in result.output
+    assert "local-test-user" in result.output
+
+    assert len(captured) == 1
+    assert (
+        captured[0]["bundle_dir"]
+        == default_bundle
+    )
+    assert (
+        captured[0]["approved_by"]
+        == "local-test-user"
+    )
