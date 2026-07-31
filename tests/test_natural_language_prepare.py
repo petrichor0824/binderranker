@@ -136,7 +136,7 @@ def test_complete_request_prepares_workflow(
         "natural_language_test"
     )
 
-    assert result.scientific_workflow_executed is True
+    assert result.scientific_workflow_executed is False
     assert result.binderranker_executed is False
     assert result.remote_backend_used is False
 

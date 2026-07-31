@@ -428,7 +428,7 @@ def test_ready_session_is_promoted(
             prepare_manifest=(
                 prepare_manifest
             ),
-            scientific_workflow_executed=True,
+            scientific_workflow_executed=False,
             binderranker_executed=False,
             remote_backend_used=False,
         )

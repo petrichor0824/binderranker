@@ -205,7 +205,7 @@ def convert_prepared_run(
         workflow_manifest=(
             prepared.workflow_manifest
         ),
-        scientific_workflow_executed=True,
+        scientific_workflow_executed=False,
         binderranker_executed=False,
         remote_backend_used=False,
     )

@@ -712,8 +712,10 @@ def chat_command(
     """
     启动 Protein Design Agent 安全自然语言会话。
 
-    大模型只解析数据，不生成或执行 Shell。
-    批准、执行和分析只接受固定确认短语。
+    大模型负责理解自然语言和生成受控解释，
+    不生成或执行 Shell。
+    批准与执行由确定性安全控制器校验，
+    并在产生副作用前要求用户明确确认。
     """
     try:
         chat_target = resolve_chat_target(
