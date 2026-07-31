@@ -230,6 +230,12 @@ The following checks do not require a model or network access:
 
 Without a configured model, Chat remains available for deterministic status, help, and compatibility commands, but it cannot reliably convert a new free-form scientific request into a complete task plan.
 
+## Scientific documentation
+
+- [Scientific method](docs/SCIENTIFIC_METHOD.md): scoring structure, layered filtering, analysis scope, and scientific boundaries.
+- [Metric reference](docs/METRICS.md): controlled definitions for all externally exposed BinderRanker metrics.
+- [Result interpretation](docs/RESULT_INTERPRETATION.md): guidance for reading rankings, strengths, weaknesses, filters, and candidate pools.
+
 ## Deterministic CLI lifecycle
 
 The public CLI contains commands for each workflow stage:
