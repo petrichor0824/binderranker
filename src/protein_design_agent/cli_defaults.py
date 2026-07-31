@@ -37,9 +37,13 @@ def resolve_chat_workspace_dir(
         cwd if cwd is not None else Path.cwd()
     )
 
+    resolved = working_directory.expanduser().resolve()
+
+    if (resolved / ".pda-workspace.json").is_file():
+        return resolved
+
     return (
-        working_directory.expanduser().resolve()
-        / DEFAULT_WORKSPACE_NAME
+        resolved / DEFAULT_WORKSPACE_NAME
     ).resolve()
 
 

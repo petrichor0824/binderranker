@@ -110,3 +110,24 @@ def test_explicit_bundle_and_task_are_ambiguous(
             bundle_dir=tmp_path / "bundle",
             task_name="group_c",
         )
+
+
+def test_initialized_current_workspace_is_reused(
+    tmp_path: Path,
+) -> None:
+    marker = tmp_path / ".pda-workspace.json"
+    marker.write_text("{}\n", encoding="utf-8")
+
+    target = module.resolve_chat_target(
+        bundle_dir=None,
+        task_name=None,
+        cwd=tmp_path,
+    )
+
+    assert target.workspace_dir == tmp_path.resolve()
+    assert target.bundle_dir == (
+        tmp_path / "runs" / "default"
+    ).resolve()
+    assert not (
+        tmp_path / ".protein-design-agent"
+    ).exists()

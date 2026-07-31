@@ -476,7 +476,7 @@ def render_workspace_init_report(
                 "configs/models/deepseek.local.yaml "
                 "--profile deepseek_flash"
             ),
-            "  protein-design-agent chat --help",
+            "  protein-design-agent chat",
         ]
     )
 
