@@ -2547,15 +2547,38 @@ def process_dialogue_message(
 
         return result
 
-    if (
-        intent == "GENERAL_QUESTION"
-        and decision.reply
-        and decision.reply.strip()
-    ):
+    if intent == "GENERAL_QUESTION":
+        if (
+            decision.reply
+            and decision.reply.strip()
+        ):
+            return ChatTurnResult(
+                action="HELP",
+                status="ANSWER",
+                message=decision.reply.strip(),
+                bundle_dir=bundle_dir.resolve(),
+            )
+
+        if not allow_network:
+            guidance = (
+                "当前处于离线只读模式，"
+                "没有可用的自然语言模型回答这个问题。"
+                "为避免误解，我不会把这句话当作科研参数，"
+                "也不会修改当前任务。"
+                "你仍可使用“帮助”“状态”“查看计划”"
+                "和“任务列表”等确定性功能。"
+            )
+        else:
+            guidance = stage_guidance(
+                bundle_dir=bundle_dir,
+                current_stage=current_stage,
+                report=report,
+            )
+
         return ChatTurnResult(
             action="HELP",
-            status="ANSWER",
-            message=decision.reply.strip(),
+            status="GUIDANCE",
+            message=guidance,
             bundle_dir=bundle_dir.resolve(),
         )
 
