@@ -137,6 +137,135 @@ def format_component_strengths(
     )
 
 
+def format_pool_summary(
+    summary: RankerResultSummary,
+) -> str:
+    """按照既有发布政策展示候选池。"""
+    view = getattr(
+        summary,
+        "pool_reporting",
+        None,
+    )
+    policy = getattr(view, "policy", None)
+    mode = str(
+        getattr(
+            policy,
+            "reporting_mode",
+            "UNKNOWN",
+        )
+    )
+
+    if mode == "SUPPRESSED":
+        return (
+            "候选池：按 SMOKE_TEST_ONLY "
+            "发布政策隐藏"
+        )
+
+    counts = (
+        getattr(
+            view,
+            "public_pool_counts",
+            {},
+        )
+        or {}
+    )
+    candidates = sorted(
+        getattr(
+            summary,
+            "candidates_by_engineering_rank",
+            [],
+        ),
+        key=lambda item: item.engineering_rank,
+    )
+
+    definitions = (
+        ("broad", "宽松", "broad_pass"),
+        ("medium", "中等", "medium_pass"),
+        ("strict", "严格", "strict_pass"),
+    )
+
+    lines = ["候选池摘要："]
+
+    for key, label, flag in definitions:
+        count = counts.get(key)
+
+        if count is None:
+            lines.append(
+                f"{label}：按发布政策隐藏"
+            )
+            continue
+
+        if mode != "STANDARD":
+            lines.append(
+                f"{label}：{count} 个"
+            )
+            continue
+
+        members = [
+            item.pdb_name
+            for item in candidates
+            if bool(getattr(item, flag, False))
+        ]
+        shown = members[:5]
+
+        if not shown:
+            member_display = "无"
+        else:
+            member_display = "、".join(shown)
+            if len(members) > len(shown):
+                member_display += " 等"
+
+        lines.append(
+            f"{label}：{count} 个；"
+            f"排名靠前成员：{member_display}"
+        )
+
+    if mode == "EXPLORATORY":
+        lines.append(
+            "说明：以上池数量仅为批内探索结果，"
+            "不能单独支持正式候选推荐。"
+        )
+
+    return "\n".join(lines)
+
+
+def format_result_provenance(
+    summary: RankerResultSummary,
+) -> str:
+    """展示结构化结果的确定性证据标识。"""
+    provenance = getattr(
+        summary,
+        "result_provenance",
+        None,
+    )
+
+    if provenance is None:
+        return "确定性证据：当前摘要未提供"
+
+    execution = getattr(
+        provenance,
+        "execution_manifest",
+        None,
+    )
+    digest = str(
+        getattr(execution, "sha256", "")
+    )
+    outputs = (
+        getattr(
+            provenance,
+            "verified_output_files",
+            {},
+        )
+        or {}
+    )
+
+    return (
+        "确定性证据：执行清单 SHA256 "
+        f"{digest}；"
+        f"已验证原始输出 {len(outputs)} 个"
+    )
+
+
 def format_execution_result_preview(
     summary: RankerResultSummary,
 ) -> str:
@@ -161,6 +290,8 @@ def format_execution_result_preview(
             f"显示前 {len(candidates)} 名"
         ),
         f"分析范围：{scope_level}",
+        format_pool_summary(summary),
+        format_result_provenance(summary),
         "",
     ]
 
