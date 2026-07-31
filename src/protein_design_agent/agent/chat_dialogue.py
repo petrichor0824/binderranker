@@ -1239,12 +1239,16 @@ def determine_intent(
             report,
         )
 
-    if prepare_status == "NEEDS_INFORMATION":
+    if (
+        prepare_status == "NEEDS_INFORMATION"
+        and provider is not None
+    ):
         return (
             DialogueDecision(
                 intent="PROVIDE_INFORMATION",
                 reason=(
-                    "当前任务正在等待补充参数"
+                    "当前任务正在等待补充参数，"
+                    "且存在显式请求解析器"
                 ),
             ),
             pending,
