@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,8 +21,20 @@ from protein_design_agent.agent.dataset_discovery import (
 from protein_design_agent.agent.dataset_grouping import (
     ValidatedDatasetGrouping,
 )
+from protein_design_agent.agent.natural_language_prepare import (
+    save_incomplete_session,
+)
+from protein_design_agent.agent.orchestrator import (
+    PlanningSession,
+)
+from protein_design_agent.agent.planner import (
+    build_agent_plan,
+)
 from protein_design_agent.agent.workspace_tasks import (
     resolve_task_bundle,
+)
+from protein_design_agent.schemas.agent_models import (
+    UserRequest,
 )
 from protein_design_agent.tools.inspect_pdb_dataset import (
     collect_pdb_files,
@@ -207,11 +221,85 @@ def managed_workspace_from_bundle(
     return workspace
 
 
+PROJECT_NAME_PATTERN = re.compile(
+    r"^[A-Za-z0-9_.-]+$"
+)
+
+
+def build_group_planning_session(
+    *,
+    group: GroupTaskSpec,
+    artifact: DatasetGroupingArtifact,
+) -> PlanningSession:
+    """
+    为一个已确认分组建立正式但未完成的规划会话。
+
+    只采用分组阶段已经确认的数据目录和任务标识；
+    不猜测链布局或其他科学参数。
+    """
+    project_name = (
+        group.task_name
+        if PROJECT_NAME_PATTERN.fullmatch(
+            group.task_name
+        )
+        else None
+    )
+
+    user_description = (
+        artifact.user_description.strip()
+        or "用户确认按已发现的数据目录分别建立排序任务。"
+    )
+
+    raw_text = (
+        f"{user_description}\n\n"
+        f"已确认分组任务：{group.task_name}\n"
+        f"已确认输入目录："
+        f"{group.input_directory.resolve()}\n"
+        "其余科学参数尚未确认。"
+    )
+
+    request = UserRequest(
+        raw_text=raw_text,
+        project_name=project_name,
+        input_dir=group.input_directory.resolve(),
+        execute_requested=False,
+    )
+
+    plan = build_agent_plan(request)
+
+    if plan.status != "NEEDS_INFORMATION":
+        raise DatasetGroupTaskError(
+            "新分组任务没有进入预期的 "
+            "NEEDS_INFORMATION 状态："
+            f"{group.task_name}；{plan.status}"
+        )
+
+    explicit_fields = ["input_dir"]
+
+    if project_name is not None:
+        explicit_fields.append("project_name")
+
+    return PlanningSession(
+        provider_name=(
+            "dataset-grouping-confirmed"
+        ),
+        request=request,
+        plan=plan,
+        request_explicit_fields=(
+            sorted(explicit_fields)
+        ),
+    )
+
+
 def create_group_task_bundles(
     *,
     source_bundle: Path,
 ) -> GroupTaskCreationResult:
-    """确认后创建独立 Bundle；不批准、不执行。"""
+    """
+    确认后创建独立 Bundle 和正式规划会话。
+
+    不批准、不执行，也不复制未经确认的科学参数。
+    """
     artifact = load_grouping_proposal(
         source_bundle
     )
@@ -223,6 +311,7 @@ def create_group_task_bundles(
         tuple[GroupTaskSpec, Path]
     ] = []
 
+    # 所有检查必须在任何写入前完成。
     for group in artifact.groups:
         input_directory = (
             group.input_directory.resolve()
@@ -263,13 +352,20 @@ def create_group_task_bundles(
 
         targets.append((group, target))
 
-    created_directories: list[Path] = []
-    created_files: list[Path] = []
+    created_targets: list[Path] = []
 
     try:
         for group, target in targets:
-            target.mkdir(exist_ok=False)
-            created_directories.append(target)
+            session = build_group_planning_session(
+                group=group,
+                artifact=artifact,
+            )
+
+            prepared = save_incomplete_session(
+                session=session,
+                bundle_dir=target,
+            )
+            created_targets.append(target)
 
             record_path = (
                 target / "group_task_source.json"
@@ -277,11 +373,16 @@ def create_group_task_bundles(
 
             record = {
                 "schema_version": "0.1",
-                "status": "CREATED_FROM_GROUPING",
+                "status": (
+                    "PLANNING_INITIALIZED_FROM_GROUPING"
+                ),
                 "created_at_utc": datetime.now(
                     timezone.utc
                 ).isoformat(),
                 "task_name": group.task_name,
+                "planning_project_name": (
+                    session.request.project_name
+                ),
                 "input_directory": str(
                     group.input_directory.resolve()
                 ),
@@ -294,6 +395,16 @@ def create_group_task_bundles(
                 "source_bundle": str(
                     source_bundle.resolve()
                 ),
+                "planning_session": str(
+                    prepared.planning_session
+                ),
+                "prepare_manifest": str(
+                    prepared.prepare_manifest
+                ),
+                "planning_status": prepared.status,
+                "missing_information": (
+                    prepared.missing_information
+                ),
                 "approval_created": False,
                 "workflow_executed": False,
             }
@@ -302,19 +413,24 @@ def create_group_task_bundles(
                 record_path,
                 record,
             )
-            created_files.append(record_path)
 
-    except Exception:
-        for path in reversed(created_files):
-            path.unlink(missing_ok=True)
-
-        for path in reversed(created_directories):
+    except Exception as exc:
+        # 目标均在写入前确认不存在，因此只回滚本轮创建目录。
+        for target in reversed(created_targets):
             try:
-                path.rmdir()
+                shutil.rmtree(target)
             except OSError:
                 pass
 
-        raise
+        if isinstance(
+            exc,
+            DatasetGroupTaskError,
+        ):
+            raise
+
+        raise DatasetGroupTaskError(
+            f"创建分组规划任务失败：{exc}"
+        ) from exc
 
     return GroupTaskCreationResult(
         workspace_directory=workspace,

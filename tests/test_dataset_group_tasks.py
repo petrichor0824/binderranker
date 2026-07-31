@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -113,9 +114,68 @@ def test_creates_independent_group_bundles(
     ]
 
     for bundle in result.created_bundles:
-        assert (
+        source_record = (
             bundle / "group_task_source.json"
-        ).is_file()
+        )
+        session_path = (
+            bundle / "planning_session.json"
+        )
+        manifest_path = (
+            bundle / "agent_prepare_manifest.json"
+        )
+
+        assert source_record.is_file()
+        assert session_path.is_file()
+        assert manifest_path.is_file()
+
+        session = json.loads(
+            session_path.read_text(
+                encoding="utf-8"
+            )
+        )
+        manifest = json.loads(
+            manifest_path.read_text(
+                encoding="utf-8"
+            )
+        )
+        source = json.loads(
+            source_record.read_text(
+                encoding="utf-8"
+            )
+        )
+
+        assert session["provider_name"] == (
+            "dataset-grouping-confirmed"
+        )
+        assert session["plan"]["status"] == (
+            "NEEDS_INFORMATION"
+        )
+        assert (
+            session["request"]["input_dir"]
+            is not None
+        )
+        assert "input_layout" in (
+            session["plan"]["missing_information"]
+        )
+
+        assert manifest["status"] == (
+            "NEEDS_INFORMATION"
+        )
+        assert (
+            manifest["scientific_workflow_executed"]
+            is False
+        )
+        assert (
+            manifest["binderranker_executed"]
+            is False
+        )
+
+        assert source["planning_status"] == (
+            "NEEDS_INFORMATION"
+        )
+        assert source["approval_created"] is False
+        assert source["workflow_executed"] is False
+
         assert not (
             bundle / "approval.json"
         ).exists()
