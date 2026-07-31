@@ -98,6 +98,7 @@ from protein_design_agent.agent.providers.mock import (
 from protein_design_agent.agent.model_readiness import (
     assess_model_readiness,
     format_model_readiness,
+    resolve_model_config_path,
 )
 from protein_design_agent.schemas.provider_config import (
     load_model_provider_config,
@@ -689,7 +690,9 @@ def chat_command(
         resolve_path=True,
         help=(
             "模型 Provider YAML 配置。"
-            "创建任务、补充信息或生成模型解释时需要。"
+            "默认工作空间未提供时会自动使用 "
+            "configs/models/deepseek.local.yaml；"
+            "外部 Bundle 需要显式提供。"
         ),
     ),
     profile: str | None = typer.Option(
@@ -772,10 +775,9 @@ def chat_command(
                 code=2
             ) from exc
 
-    resolved_model_config = (
-        model_config.expanduser().resolve()
-        if model_config is not None
-        else None
+    resolved_model_config = resolve_model_config_path(
+        explicit_path=model_config,
+        workspace_root=workspace_root,
     )
 
     model_readiness = assess_model_readiness(
@@ -791,7 +793,8 @@ def chat_command(
 
     typer.echo(
         format_model_readiness(
-            model_readiness
+            model_readiness,
+            workspace_root=workspace_root,
         )
     )
 

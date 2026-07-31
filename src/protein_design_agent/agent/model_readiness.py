@@ -15,6 +15,8 @@
 from __future__ import annotations
 
 import os
+import re
+import shlex
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -54,6 +56,31 @@ class ModelReadinessReport:
     api_key_env: str | None = None
 
     provider: RequestParserProvider | None = None
+
+
+def resolve_model_config_path(
+    *,
+    explicit_path: Path | None,
+    workspace_root: Path | None,
+) -> Path | None:
+    """
+    解析 Chat 使用的模型配置。
+
+    显式参数优先；只有受管默认工作空间才能自动发现。
+    外部 Bundle 不猜测配置路径。
+    """
+    if explicit_path is not None:
+        return explicit_path.expanduser().resolve()
+
+    if workspace_root is not None:
+        return (
+            workspace_root.expanduser().resolve()
+            / "configs"
+            / "models"
+            / "deepseek.local.yaml"
+        ).resolve()
+
+    return None
 
 
 def assess_model_readiness(
@@ -187,8 +214,10 @@ def assess_model_readiness(
 
 def format_model_readiness(
     report: ModelReadinessReport,
+    *,
+    workspace_root: Path | None = None,
 ) -> str:
-    """生成不泄露凭据的启动状态文本。"""
+    """生成不泄露凭据的启动状态和修复指引。"""
     lines = [
         f"模型状态：{report.status}",
         (
@@ -197,6 +226,11 @@ def format_model_readiness(
             else "网络权限：未允许"
         ),
     ]
+
+    if report.config_path is not None:
+        lines.append(
+            f"模型配置：{report.config_path}"
+        )
 
     if report.profile_name is not None:
         lines.append(
@@ -218,5 +252,97 @@ def format_model_readiness(
         )
 
     lines.append(report.message)
+
+    if report.status == "MISSING_CREDENTIAL":
+        env_name = report.api_key_env
+
+        if (
+            env_name is not None
+            and re.fullmatch(
+                r"[A-Za-z_][A-Za-z0-9_]*",
+                env_name,
+            )
+        ):
+            lines.extend([
+                "",
+                "修复步骤：",
+                "1. 退出当前 Chat。",
+                "2. 在同一终端运行：",
+                (
+                    "   read -rsp 'API Key: ' "
+                    f"{env_name}; echo; "
+                    f"export {env_name}"
+                ),
+            ])
+
+            if workspace_root is not None:
+                restart = (
+                    "protein-design-agent chat "
+                    "--allow-network"
+                )
+
+                if report.profile_name is not None:
+                    restart += (
+                        " --profile "
+                        + shlex.quote(
+                            report.profile_name
+                        )
+                    )
+
+                lines.extend([
+                    "3. 重新启动：",
+                    f"   {restart}",
+                ])
+            elif report.config_path is not None:
+                lines.extend([
+                    "3. 重启原 Chat 命令，并保留原 "
+                    "--bundle-dir，同时加入：",
+                    (
+                        "   --allow-network "
+                        "--model-config "
+                        + shlex.quote(
+                            str(report.config_path)
+                        )
+                    ),
+                ])
+        else:
+            lines.extend([
+                "",
+                "配置中的 API Key 环境变量名称无效，"
+                "请先修正模型 YAML。",
+            ])
+
+    elif report.status == "NOT_CONFIGURED":
+        lines.append("")
+
+        if report.config_path is not None:
+            config_argument = shlex.quote(
+                str(report.config_path)
+            )
+
+            lines.extend([
+                "请检查该配置文件，并运行：",
+                (
+                    "   protein-design-agent doctor "
+                    f"--model-config {config_argument}"
+                ),
+            ])
+        else:
+            lines.extend([
+                "当前使用外部 Bundle，无法安全推断"
+                "模型配置路径。",
+                "重启时请显式加入：",
+                "   --model-config 你的模型配置文件",
+            ])
+
+    elif (
+        report.status == "OFFLINE"
+        and workspace_root is not None
+    ):
+        lines.extend([
+            "",
+            "需要模型功能时，重新启动：",
+            "   protein-design-agent chat --allow-network",
+        ])
 
     return "\n".join(lines)

@@ -4,6 +4,7 @@ import protein_design_agent.agent.model_readiness as module
 from protein_design_agent.agent.model_readiness import (
     assess_model_readiness,
     format_model_readiness,
+    resolve_model_config_path,
 )
 
 
@@ -152,3 +153,68 @@ def test_provider_initialization_error_is_reported(
 
     assert report.status == "ERROR"
     assert report.provider is None
+
+def test_default_workspace_model_config_is_discovered(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / ".protein-design-agent"
+
+    result = resolve_model_config_path(
+        explicit_path=None,
+        workspace_root=workspace,
+    )
+
+    assert result == (
+        workspace
+        / "configs"
+        / "models"
+        / "deepseek.local.yaml"
+    ).resolve()
+
+
+def test_explicit_model_config_has_priority(
+    tmp_path: Path,
+) -> None:
+    explicit = tmp_path / "custom.yaml"
+    workspace = tmp_path / "workspace"
+
+    result = resolve_model_config_path(
+        explicit_path=explicit,
+        workspace_root=workspace,
+    )
+
+    assert result == explicit.resolve()
+
+
+def test_external_bundle_does_not_guess_config() -> None:
+    result = resolve_model_config_path(
+        explicit_path=None,
+        workspace_root=None,
+    )
+
+    assert result is None
+
+
+def test_missing_credential_has_safe_guidance(
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "models.yaml"
+    write_config(config)
+
+    report = assess_model_readiness(
+        allow_network=True,
+        config_path=config,
+        profile_name=None,
+        environment={},
+    )
+
+    rendered = format_model_readiness(
+        report,
+        workspace_root=tmp_path,
+    )
+
+    assert "TEST_MODEL_API_KEY" in rendered
+    assert "read -rsp" in rendered
+    assert "export TEST_MODEL_API_KEY" in rendered
+    assert str(config.resolve()) in rendered
+    assert "protein-design-agent chat --allow-network" in rendered
