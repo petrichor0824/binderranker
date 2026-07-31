@@ -52,6 +52,9 @@ from protein_design_agent.agent.resume_planning import (
 from protein_design_agent.agent.run_status import (
     inspect_run_status,
 )
+from protein_design_agent.agent.status_narration import (
+    format_status_narration,
+)
 
 
 ChatAction = Literal[
@@ -623,12 +626,21 @@ def process_chat_message(
                 f"任务目录尚不存在：{bundle}"
             )
 
+        try:
+            status_message = format_status_narration(
+                bundle_dir=bundle,
+                provider=provider,
+                allow_model=allow_network,
+            )
+        except Exception as exc:
+            raise ChatSessionError(
+                f"无法检查任务状态：{exc}"
+            ) from exc
+
         return ChatTurnResult(
             action="STATUS",
             status="STATUS",
-            message=format_status_message(
-                bundle
-            ),
+            message=status_message,
             bundle_dir=bundle,
         )
 
