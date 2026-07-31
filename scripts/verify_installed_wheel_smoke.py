@@ -71,11 +71,18 @@ for suffix in (
     assert output.is_file(), output
     assert output.stat().st_size > 0
 
-package_path = str(
+package_path = Path(
     protein_design_agent.__file__
+).resolve()
+repository_root = Path(__file__).resolve().parents[1]
+environment_root = Path(sys.prefix).resolve()
+
+assert not package_path.is_relative_to(repository_root), (
+    f"package imported from repository: {package_path}"
 )
-assert "/tmp/pda-clean-venv/" in package_path, (
-    package_path
+assert package_path.is_relative_to(environment_root), (
+    f"package not imported from active environment: "
+    f"{package_path}; sys.prefix={environment_root}"
 )
 
 print(
