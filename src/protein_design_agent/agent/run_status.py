@@ -403,6 +403,10 @@ def inspect_run_status(
                 explanation_status = str(
                     explanation["status"]
                 )
+        elif manifest.get("explanation_status"):
+            explanation_status = str(
+                manifest["explanation_status"]
+            )
 
         attempts.append(
             AnalysisAttempt(
@@ -453,7 +457,11 @@ def inspect_run_status(
         find_explanation_files(bundle)
     )
 
-    explanation_statuses: list[str] = []
+    explanation_statuses: list[str] = [
+        attempt.explanation_status
+        for attempt in attempts
+        if attempt.explanation_status
+    ]
 
     for path in explanation_files:
         record = load_json_object(
@@ -468,7 +476,11 @@ def inspect_run_status(
 
     explanation_status = aggregate_status(
         explanation_statuses,
-        ("EXPLAINED", "FAILED"),
+        (
+            "EXPLAINED",
+            "FAILED",
+            "UNAVAILABLE",
+        ),
     )
 
     summary_paths = [
