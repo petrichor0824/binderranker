@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "protein-design-agent"
-version = "0.1.0"
-description = "Configuration-driven protein design and BinderRanker workflow"
+version = "0.2.0"
+description = "Evidence-driven backbone ranking and conversational triage for protein design"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
@@ -49,5 +49,7 @@ protein-design-agent = "protein_design_agent.cli:app"
 
 [tool.setuptools.package-data]
 protein_design_agent = [
-    "resources/binderranker/v0.1-expert/*"
+    "resources/binderranker/v0.1-expert/*",
+    "resources/samples/3c98_small/*.pdb",
+    "resources/samples/3c98_small/README.md",
 ]

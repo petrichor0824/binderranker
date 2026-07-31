@@ -37,8 +37,15 @@ from protein_design_agent.agent.chat_dialogue import (
     ChatDialogueError,
     process_dialogue_message,
 )
+from protein_design_agent.cli_defaults import (
+    resolve_chat_target,
+    resolve_local_approved_by,
+)
 from protein_design_agent.agent.chat_session import (
     ChatSessionError,
+)
+from protein_design_agent.agent.error_guidance import (
+    format_error_guidance,
 )
 
 from protein_design_agent.agent.run_status import (
@@ -87,6 +94,11 @@ from protein_design_agent.agent.providers.base import (
 )
 from protein_design_agent.agent.providers.mock import (
     MockProvider,
+)
+from protein_design_agent.agent.model_readiness import (
+    assess_model_readiness,
+    format_model_readiness,
+    resolve_model_config_path,
 )
 from protein_design_agent.schemas.provider_config import (
     load_model_provider_config,
@@ -643,20 +655,29 @@ def materialize_plan_command(
 
 @app.command("chat")
 def chat_command(
-    bundle_dir: Path = typer.Option(
-        ...,
+    bundle_dir: Path | None = typer.Option(
+        None,
         "--bundle-dir",
         help=(
-            "本次任务的 Bundle 目录；"
-            "新任务目录可以尚不存在。"
+            "本次任务的 Bundle 目录。"
+            "未提供时使用当前目录下的安全默认工作空间。"
         ),
     ),
-    approved_by: str = typer.Option(
-        ...,
+    task_name: str | None = typer.Option(
+        None,
+        "--task",
+        help=(
+            "默认工作空间中的任务名称。"
+            "每个任务拥有独立计划、批准、执行和结果。"
+        ),
+    ),
+    approved_by: str | None = typer.Option(
+        None,
         "--approved-by",
         help=(
             "本地批准者标识。"
-            "当前版本不进行身份认证。"
+            "未提供时使用当前系统用户名；"
+            "该标识不代表身份认证。"
         ),
     ),
     model_config: Path | None = typer.Option(
@@ -669,7 +690,9 @@ def chat_command(
         resolve_path=True,
         help=(
             "模型 Provider YAML 配置。"
-            "创建任务、补充信息或生成模型解释时需要。"
+            "默认工作空间未提供时会自动使用 "
+            "configs/models/deepseek.local.yaml；"
+            "外部 Bundle 需要显式提供。"
         ),
     ),
     profile: str | None = typer.Option(
@@ -689,75 +712,128 @@ def chat_command(
     """
     启动 Protein Design Agent 安全自然语言会话。
 
-    大模型只解析数据，不生成或执行 Shell。
-    批准、执行和分析只接受固定确认短语。
+    大模型负责理解自然语言和生成受控解释，
+    不生成或执行 Shell。
+    批准与执行由确定性安全控制器校验，
+    并在产生副作用前要求用户明确确认。
     """
-    resolved_bundle = bundle_dir.resolve()
+    try:
+        chat_target = resolve_chat_target(
+            bundle_dir=bundle_dir,
+            task_name=task_name,
+        )
+    except ValueError as exc:
+        typer.echo(
+            f"ERROR：任务选择无效：{exc}",
+            err=True,
+        )
+        raise typer.Exit(code=2) from exc
 
-    provider = None
-    resolved_model_config = None
+    resolved_bundle = chat_target.bundle_dir
+    resolved_task_name = chat_target.task_name
 
-    if allow_network:
-        if model_config is None:
-            typer.echo(
-                "ERROR：使用 --allow-network 时，"
-                "必须同时提供 --model-config。",
-                err=True,
+    resolved_approved_by = (
+        resolve_local_approved_by(
+            approved_by
+        )
+    )
+
+    workspace_report = None
+    workspace_root = None
+
+    if chat_target.uses_default_workspace:
+        from protein_design_agent.agent.workspace_init import (
+            WorkspaceInitError,
+            ensure_workspace,
+        )
+
+        workspace_root = (
+            chat_target.workspace_dir
+        )
+
+        if workspace_root is None:
+            raise RuntimeError(
+                "默认工作空间解析结果缺少根目录"
             )
-            raise typer.Exit(code=2)
 
         try:
-            resolved_model_config = (
-                model_config.resolve()
+            workspace_report = ensure_workspace(
+                workspace_root
             )
-
-            config = load_model_provider_config(
-                resolved_model_config
+            resolved_bundle.mkdir(
+                parents=True,
+                exist_ok=True,
             )
-
-            selected_name, selected_profile = (
-                resolve_provider_profile(
-                    config,
-                    profile_name=profile,
-                )
-            )
-
-            provider = (
-                build_request_parser_provider(
-                    config,
-                    profile_name=profile,
-                )
-            )
-
-        except Exception as exc:
+        except (
+            WorkspaceInitError,
+            OSError,
+        ) as exc:
             typer.echo(
-                f"ERROR：模型 Provider 初始化失败：{exc}",
+                "ERROR：默认工作空间初始化失败："
+                f"{exc}",
                 err=True,
             )
-            raise typer.Exit(code=2) from exc
+            raise typer.Exit(
+                code=2
+            ) from exc
 
-        typer.echo(
-            f"模型 Profile：{selected_name}"
-        )
-        typer.echo(
-            f"模型：{selected_profile.model}"
-        )
-        typer.echo(
-            "网络权限：已显式允许"
-        )
+    resolved_model_config = resolve_model_config_path(
+        explicit_path=model_config,
+        workspace_root=workspace_root,
+    )
 
-    else:
-        typer.echo(
-            "网络权限：未允许；"
-            "状态查看、批准、执行和确定性分析仍可使用。"
+    model_readiness = assess_model_readiness(
+        allow_network=allow_network,
+        config_path=resolved_model_config,
+        profile_name=profile,
+    )
+
+    provider = model_readiness.provider
+    model_calls_enabled = (
+        model_readiness.status == "READY"
+    )
+
+    typer.echo(
+        format_model_readiness(
+            model_readiness,
+            workspace_root=workspace_root,
         )
+    )
 
     typer.echo("")
     typer.echo("=" * 72)
     typer.echo("Protein Design Agent Chat")
     typer.echo("=" * 72)
+    if workspace_root is not None:
+        typer.echo(
+            f"工作空间：{workspace_root}"
+        )
+
+        workspace_status_text = {
+            "CREATED": "已自动创建",
+            "REUSED": "已存在，安全复用",
+            "REUSED_LEGACY": (
+                "已识别旧版工作空间，安全复用"
+            ),
+        }.get(
+            workspace_report.status,
+            workspace_report.status,
+        )
+
+        typer.echo(
+            "工作空间状态："
+            f"{workspace_status_text}"
+        )
+
+    typer.echo(
+        f"当前任务：{resolved_task_name}"
+    )
     typer.echo(
         f"Bundle：{resolved_bundle}"
+    )
+    typer.echo(
+        "本地审计标识："
+        f"{resolved_approved_by}"
     )
     typer.echo(
         "输入“帮助”查看操作；"
@@ -804,31 +880,53 @@ def chat_command(
                 message=clean,
                 bundle_dir=resolved_bundle,
                 provider=provider,
-                approved_by=approved_by,
+                approved_by=(
+                    resolved_approved_by
+                ),
                 model_config_path=(
                     resolved_model_config
                 ),
                 profile_name=profile,
-                allow_network=allow_network,
+                allow_network=model_calls_enabled,
+            )
+
+            resolved_bundle = (
+                result.bundle_dir.resolve()
             )
 
         except (
             ChatDialogueError,
             ChatSessionError,
         ) as exc:
-            typer.echo("")
-            typer.echo(
-                f"Agent 拒绝：{exc}",
-                err=True,
+            guidance = format_error_guidance(
+                kind="REJECTED",
+                error=exc,
+                bundle_dir=resolved_bundle,
+                provider=(
+                    provider
+                    if allow_network
+                    else None
+                ),
             )
+            typer.echo("")
+            typer.echo("Agent >")
+            typer.echo(guidance, err=True)
             continue
 
         except Exception as exc:
-            typer.echo("")
-            typer.echo(
-                f"Agent 错误：{exc}",
-                err=True,
+            guidance = format_error_guidance(
+                kind="FAILED",
+                error=exc,
+                bundle_dir=resolved_bundle,
+                provider=(
+                    provider
+                    if allow_network
+                    else None
+                ),
             )
+            typer.echo("")
+            typer.echo("Agent >")
+            typer.echo(guidance, err=True)
             continue
 
         typer.echo("")
@@ -1338,6 +1436,47 @@ def explain_run_command(
         "Markdown 报告："
         f"{result.explanation_markdown_path}"
     )
+
+
+@app.command("extract-sample")
+def extract_sample_command(
+    destination: Path = typer.Option(
+        Path("sample_data/3c98_small"),
+        "--destination",
+        "-d",
+        file_okay=False,
+        dir_okay=True,
+        help="提取目录；默认当前目录下 sample_data/3c98_small。",
+    ),
+    sample_name: str = typer.Option(
+        "3c98_small",
+        "--sample",
+        help="要提取的内置样例名称。",
+    ),
+) -> None:
+    """安全提取随安装包发布的 smoke-test 样例。"""
+    from protein_design_agent.agent.sample_resources import (
+        PackagedSampleError,
+        extract_packaged_sample,
+    )
+
+    try:
+        result = extract_packaged_sample(
+            destination=destination,
+            sample_name=sample_name,
+        )
+    except (PackagedSampleError, OSError) as exc:
+        typer.echo(f"样例提取失败：{exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    typer.echo(f"样例：{result.sample_name}")
+    typer.echo(f"目录：{result.destination}")
+    typer.echo(f"PDB 数量：{len(result.pdb_files)}")
+    typer.echo(
+        "用途：仅用于安装和 smoke test，"
+        "不得作为正式筛选结论。"
+    )
+    typer.echo("下一步：在 Chat 中提供上述目录。")
 
 
 @app.command("init")

@@ -55,6 +55,10 @@ class AnalyzeRunManifest(BaseModel):
     explanation_json_path: Path | None = None
     explanation_markdown_path: Path | None = None
 
+    explanation_status: str | None = None
+    explanation_error_type: str | None = None
+    explanation_error_message: str | None = None
+
     error_type: str | None = None
     error_message: str | None = None
 
@@ -78,6 +82,10 @@ class AnalyzeRunResult(BaseModel):
     explanation_evidence_path: Path | None = None
     explanation_json_path: Path | None = None
     explanation_markdown_path: Path | None = None
+
+    explanation_status: str | None = None
+    explanation_error_type: str | None = None
+    explanation_error_message: str | None = None
 
 
 def write_manifest_atomic(
@@ -242,48 +250,63 @@ def run_analyze_run(
         explanation_json_path = None
         explanation_markdown_path = None
 
-        if with_model:
-            explanation_result = (
-                run_explain_run(
-                    bundle_dir=resolved_bundle,
-                    model_config_path=(
-                        resolved_model_config
-                    ),
-                    profile_name=profile_name,
-                    output_dir=(
-                        resolved_analysis_dir
-                        / "explanation"
-                    ),
-                    allow_network=True,
-                    result_summary_path=(
-                        written_summary
-                    ),
-                    failure_analysis_path=(
-                        written_failure
-                    ),
-                    max_output_tokens=(
-                        max_output_tokens
-                    ),
-                    timeout_seconds=(
-                        timeout_seconds
-                    ),
-                )
-            )
+        explanation_status = "NOT_REQUESTED"
+        explanation_error_type = None
+        explanation_error_message = None
 
-            provider_name = (
-                explanation_result.provider_name
-            )
-            explanation_evidence_path = (
-                explanation_result.evidence_path
-            )
-            explanation_json_path = (
-                explanation_result
-                .explanation_json_path
-            )
-            explanation_markdown_path = (
-                explanation_result
-                .explanation_markdown_path
-            )
+        if with_model:
+            try:
+                explanation_result = (
+                    run_explain_run(
+                        bundle_dir=resolved_bundle,
+                        model_config_path=(
+                            resolved_model_config
+                        ),
+                        profile_name=profile_name,
+                        output_dir=(
+                            resolved_analysis_dir
+                            / "explanation"
+                        ),
+                        allow_network=True,
+                        result_summary_path=(
+                            written_summary
+                        ),
+                        failure_analysis_path=(
+                            written_failure
+                        ),
+                        max_output_tokens=(
+                            max_output_tokens
+                        ),
+                        timeout_seconds=(
+                            timeout_seconds
+                        ),
+                    )
+                )
+            except Exception as exc:
+                # 模型解释是可选增强。
+                # 其失败不能覆盖已经成功生成的
+                # 确定性摘要和失败分析。
+                explanation_status = "UNAVAILABLE"
+                explanation_error_type = (
+                    type(exc).__name__
+                )
+                explanation_error_message = str(exc)
+            else:
+                explanation_status = "EXPLAINED"
+                provider_name = (
+                    explanation_result.provider_name
+                )
+                explanation_evidence_path = (
+                    explanation_result.evidence_path
+                )
+                explanation_json_path = (
+                    explanation_result
+                    .explanation_json_path
+                )
+                explanation_markdown_path = (
+                    explanation_result
+                    .explanation_markdown_path
+                )
 
         completed_manifest = (
             running_manifest.model_copy(
@@ -304,6 +327,15 @@ def run_analyze_run(
                         "explanation_"
                         "markdown_path"
                     ): explanation_markdown_path,
+                    "explanation_status": (
+                        explanation_status
+                    ),
+                    "explanation_error_type": (
+                        explanation_error_type
+                    ),
+                    "explanation_error_message": (
+                        explanation_error_message
+                    ),
                 }
             )
         )
@@ -335,6 +367,15 @@ def run_analyze_run(
             ),
             explanation_markdown_path=(
                 explanation_markdown_path
+            ),
+            explanation_status=(
+                explanation_status
+            ),
+            explanation_error_type=(
+                explanation_error_type
+            ),
+            explanation_error_message=(
+                explanation_error_message
             ),
         )
 

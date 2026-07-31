@@ -233,3 +233,80 @@ def test_existing_analysis_directory_rejected(
             ),
             with_model=False,
         )
+
+
+def test_model_failure_preserves_deterministic_analysis(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = make_bundle(tmp_path)
+
+    config = tmp_path / "models.yaml"
+    config.write_text(
+        "profiles: {}",
+        encoding="utf-8",
+    )
+
+    install_fake_deterministic_writers(
+        monkeypatch
+    )
+
+    def fail_explanation(**kwargs):
+        raise RuntimeError(
+            "model explanation unavailable"
+        )
+
+    monkeypatch.setattr(
+        module,
+        "run_explain_run",
+        fail_explanation,
+    )
+
+    result = run_analyze_run(
+        bundle_dir=bundle,
+        analysis_dir=Path(
+            "analyses/model_fallback"
+        ),
+        with_model=True,
+        model_config_path=config,
+        profile_name="fake",
+        allow_network=True,
+    )
+
+    assert result.status == "COMPLETED"
+    assert result.explanation_status == (
+        "UNAVAILABLE"
+    )
+    assert result.explanation_error_type == (
+        "RuntimeError"
+    )
+    assert (
+        "model explanation unavailable"
+        in result.explanation_error_message
+    )
+
+    assert result.result_summary_path.is_file()
+    assert result.failure_analysis_path.is_file()
+
+    assert (
+        result.explanation_evidence_path
+        is None
+    )
+    assert (
+        result.explanation_json_path
+        is None
+    )
+    assert (
+        result.explanation_markdown_path
+        is None
+    )
+
+    manifest = result.manifest_path.read_text(
+        encoding="utf-8"
+    )
+
+    assert '"status": "COMPLETED"' in manifest
+    assert (
+        '"explanation_status": "UNAVAILABLE"'
+        in manifest
+    )

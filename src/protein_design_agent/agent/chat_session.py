@@ -38,6 +38,10 @@ from protein_design_agent.agent.local_executor import (
 from protein_design_agent.agent.natural_language_prepare import (
     prepare_from_natural_language,
 )
+from protein_design_agent.agent.ranker_result_parser import (
+    RankerResultSummary,
+    parse_completed_ranker_run,
+)
 from protein_design_agent.agent.providers.base import (
     RequestParserProvider,
     StructuredJSONProvider,
@@ -48,11 +52,15 @@ from protein_design_agent.agent.resume_planning import (
 from protein_design_agent.agent.run_status import (
     inspect_run_status,
 )
+from protein_design_agent.agent.status_narration import (
+    format_status_narration,
+)
 
 
 ChatAction = Literal[
     "HELP",
     "STATUS",
+    "VIEW_PLAN",
     "PREPARE",
     "RESUME",
     "APPROVE",
@@ -61,7 +69,295 @@ ChatAction = Literal[
     "EXPLAIN",
     "INSPECT_DATASET",
     "ADOPT_DATASET_ADVICE",
+    "LIST_TASKS",
+    "SWITCH_TASK",
 ]
+
+
+RESULT_PREVIEW_LIMIT = 5
+
+COMPONENT_SCORE_LABELS = {
+    "score_line": "线性界面适配",
+    "score_plane": "平面界面适配",
+    "score_compact": "紧凑界面适配",
+    "score_roughness": "表面平滑性",
+    "score_microfit": "局部微环境适配",
+    "score_safety": "几何安全性",
+    "score_region": "目标区域匹配",
+    "score_hotspot": "热点覆盖",
+}
+
+
+def format_component_strengths(
+    component_scores: dict[str, float],
+    *,
+    limit: int = 2,
+) -> str:
+    """
+    展示已经统一为“越高越好”的组件高分。
+
+    这里只读取 Ranker 已计算的组件分数，
+    不重新计算，也不根据指标名称猜测方向。
+    """
+    ranked: list[tuple[str, float]] = []
+
+    for name, value in component_scores.items():
+        try:
+            numeric = float(value)
+        except (
+            TypeError,
+            ValueError,
+        ):
+            continue
+
+        if (
+            numeric != numeric
+            or numeric == float("inf")
+            or numeric == float("-inf")
+        ):
+            continue
+
+        ranked.append((name, numeric))
+
+    ranked.sort(
+        key=lambda item: (
+            -item[1],
+            item[0],
+        )
+    )
+
+    selected = ranked[:limit]
+
+    if not selected:
+        return "未提供"
+
+    return "、".join(
+        (
+            f"{COMPONENT_SCORE_LABELS.get(name, name)} "
+            f"{value:.3f}"
+        )
+        for name, value in selected
+    )
+
+
+def format_pool_summary(
+    summary: RankerResultSummary,
+) -> str:
+    """按照既有发布政策展示候选池。"""
+    view = getattr(
+        summary,
+        "pool_reporting",
+        None,
+    )
+    policy = getattr(view, "policy", None)
+    mode = str(
+        getattr(
+            policy,
+            "reporting_mode",
+            "UNKNOWN",
+        )
+    )
+
+    if mode == "SUPPRESSED":
+        return (
+            "候选池：按 SMOKE_TEST_ONLY "
+            "发布政策隐藏"
+        )
+
+    counts = (
+        getattr(
+            view,
+            "public_pool_counts",
+            {},
+        )
+        or {}
+    )
+    candidates = sorted(
+        getattr(
+            summary,
+            "candidates_by_engineering_rank",
+            [],
+        ),
+        key=lambda item: item.engineering_rank,
+    )
+
+    definitions = (
+        ("broad", "宽松", "broad_pass"),
+        ("medium", "中等", "medium_pass"),
+        ("strict", "严格", "strict_pass"),
+    )
+
+    lines = ["候选池摘要："]
+
+    for key, label, flag in definitions:
+        count = counts.get(key)
+
+        if count is None:
+            lines.append(
+                f"{label}：按发布政策隐藏"
+            )
+            continue
+
+        if mode != "STANDARD":
+            lines.append(
+                f"{label}：{count} 个"
+            )
+            continue
+
+        members = [
+            item.pdb_name
+            for item in candidates
+            if bool(getattr(item, flag, False))
+        ]
+        shown = members[:5]
+
+        if not shown:
+            member_display = "无"
+        else:
+            member_display = "、".join(shown)
+            if len(members) > len(shown):
+                member_display += " 等"
+
+        lines.append(
+            f"{label}：{count} 个；"
+            f"排名靠前成员：{member_display}"
+        )
+
+    if mode == "EXPLORATORY":
+        lines.append(
+            "说明：以上池数量仅为批内探索结果，"
+            "不能单独支持正式候选推荐。"
+        )
+
+    return "\n".join(lines)
+
+
+def format_result_provenance(
+    summary: RankerResultSummary,
+) -> str:
+    """展示结构化结果的确定性证据标识。"""
+    provenance = getattr(
+        summary,
+        "result_provenance",
+        None,
+    )
+
+    if provenance is None:
+        return "确定性证据：当前摘要未提供"
+
+    execution = getattr(
+        provenance,
+        "execution_manifest",
+        None,
+    )
+    digest = str(
+        getattr(execution, "sha256", "")
+    )
+    outputs = (
+        getattr(
+            provenance,
+            "verified_output_files",
+            {},
+        )
+        or {}
+    )
+
+    return (
+        "确定性证据：执行清单 SHA256 "
+        f"{digest}；"
+        f"已验证原始输出 {len(outputs)} 个"
+    )
+
+
+def format_execution_result_preview(
+    summary: RankerResultSummary,
+) -> str:
+    """生成不依赖大模型的执行结果预览。"""
+    candidates = sorted(
+        summary.candidates_by_engineering_rank,
+        key=lambda item: item.engineering_rank,
+    )[:RESULT_PREVIEW_LIMIT]
+
+    scope_level = str(
+        summary.analysis_scope.get(
+            "level",
+            "UNKNOWN",
+        )
+    )
+
+    lines = [
+        "",
+        (
+            "结果预览："
+            f"共 {summary.candidate_count} 个候选，"
+            f"显示前 {len(candidates)} 名"
+        ),
+        f"分析范围：{scope_level}",
+        format_pool_summary(summary),
+        format_result_provenance(summary),
+        "",
+    ]
+
+    for candidate in candidates:
+        filter_display = (
+            candidate.public_filter_level
+            or candidate.public_filter_status
+        )
+
+        if (
+            candidate
+            .filter_reasons_formally_interpretable
+        ):
+            reasons = (
+                candidate.strict_reasons
+                or candidate.medium_reasons
+                or candidate.broad_reasons
+            )
+            reason_display = (
+                "、".join(reasons[:3])
+                if reasons
+                else "未记录过滤拖累"
+            )
+        else:
+            reason_display = (
+                "当前样本范围不展示阈值拖累"
+            )
+
+        strength_display = (
+            format_component_strengths(
+                getattr(
+                    candidate,
+                    "component_scores",
+                    {},
+                )
+            )
+        )
+
+        lines.append(
+            f"{candidate.engineering_rank}. "
+            f"{candidate.pdb_name} | "
+            f"总分 {candidate.final_score_v4:.4f} | "
+            f"过滤 {filter_display} | "
+            "主要优势（高分组件） "
+            f"{strength_display} | "
+            f"主要拖累 {reason_display}"
+        )
+
+    if not (
+        summary
+        .formal_candidate_recommendation_allowed
+    ):
+        lines.extend(
+            [
+                "",
+                (
+                    "注意：当前范围不允许把该排序"
+                    "作为正式候选推荐或科研结论。"
+                ),
+            ]
+        )
+
+    return "\n".join(lines)
 
 
 class ChatSessionError(RuntimeError):
@@ -330,12 +626,21 @@ def process_chat_message(
                 f"任务目录尚不存在：{bundle}"
             )
 
+        try:
+            status_message = format_status_narration(
+                bundle_dir=bundle,
+                provider=provider,
+                allow_model=allow_network,
+            )
+        except Exception as exc:
+            raise ChatSessionError(
+                f"无法检查任务状态：{exc}"
+            ) from exc
+
         return ChatTurnResult(
             action="STATUS",
             status="STATUS",
-            message=format_status_message(
-                bundle
-            ),
+            message=status_message,
             bundle_dir=bundle,
         )
 
@@ -432,6 +737,35 @@ def process_chat_message(
                 f"BinderRanker 执行失败：{exc}"
             ) from exc
 
+        try:
+            parsed_summary = (
+                parse_completed_ranker_run(
+                    bundle
+                )
+            )
+            result_preview = (
+                format_execution_result_preview(
+                    parsed_summary
+                )
+            )
+        except Exception as exc:
+            # BinderRanker 已经成功完成。
+            # 预览失败不得把执行结果改成失败。
+            result_preview = "\n".join(
+                [
+                    "",
+                    "结果预览暂不可用。",
+                    (
+                        "这不影响已经完成的 "
+                        "BinderRanker 执行及原始输出。"
+                    ),
+                    (
+                        "预览错误："
+                        f"{type(exc).__name__}: {exc}"
+                    ),
+                ]
+            )
+
         return ChatTurnResult(
             action="EXECUTE",
             status=result.status,
@@ -442,6 +776,7 @@ def process_chat_message(
                         "输出文件数量："
                         f"{len(result.output_files)}"
                     ),
+                    result_preview,
                     (
                         "一次性批准已经消耗，"
                         "不能再次使用。"
@@ -548,6 +883,58 @@ def process_chat_message(
                 result.explanation_markdown_path
             )
 
+        explanation_status = getattr(
+            result,
+            "explanation_status",
+            None,
+        )
+
+        if (
+            with_model
+            and explanation_status == "UNAVAILABLE"
+        ):
+            error_type = (
+                getattr(
+                    result,
+                    "explanation_error_type",
+                    None,
+                )
+                or "模型解释错误"
+            )
+            error_message = (
+                getattr(
+                    result,
+                    "explanation_error_message",
+                    None,
+                )
+                or "未提供详细错误信息"
+            )
+
+            completion_message = "\n".join(
+                [
+                    (
+                        "确定性分析完成，"
+                        "但模型解释暂不可用。"
+                    ),
+                    (
+                        "结果摘要和失败分析"
+                        "已经完整保留。"
+                    ),
+                    (
+                        f"解释错误：{error_type}: "
+                        f"{error_message}"
+                    ),
+                ]
+            )
+        elif with_model:
+            completion_message = (
+                "分析与模型解释完成。"
+            )
+        else:
+            completion_message = (
+                "确定性分析完成。"
+            )
+
         return ChatTurnResult(
             action=(
                 "EXPLAIN"
@@ -557,11 +944,7 @@ def process_chat_message(
             status=result.status,
             message="\n".join(
                 [
-                    (
-                        "分析与模型解释完成。"
-                        if with_model
-                        else "确定性分析完成。"
-                    ),
+                    completion_message,
                     (
                         "分析目录："
                         f"{result.analysis_dir}"

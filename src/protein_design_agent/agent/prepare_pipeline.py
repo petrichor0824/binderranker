@@ -81,7 +81,7 @@ class PreparedAgentRun(BaseModel):
 
     prepare_manifest: Path
 
-    scientific_workflow_executed: bool = True
+    scientific_workflow_executed: bool = False
     binderranker_executed: bool = False
     remote_backend_used: bool = False
 
@@ -421,7 +421,7 @@ def prepare_agent_run(
         "stdout_log": str(stdout_log),
         "stderr_log": str(stderr_log),
         "command": command,
-        "scientific_workflow_executed": True,
+        "scientific_workflow_executed": False,
         "binderranker_executed": False,
         "remote_backend_used": False,
     }
@@ -443,7 +443,7 @@ def prepare_agent_run(
         stdout_log=stdout_log,
         stderr_log=stderr_log,
         prepare_manifest=prepare_manifest,
-        scientific_workflow_executed=True,
+        scientific_workflow_executed=False,
         binderranker_executed=False,
         remote_backend_used=False,
     )

@@ -61,6 +61,7 @@ from protein_design_agent.agent.run_status import (
 DialogueIntent = Literal[
     "HELP",
     "VIEW_STATUS",
+    "VIEW_PLAN",
     "PROVIDE_INFORMATION",
     "REQUEST_DATASET_INSPECTION",
     "REQUEST_APPROVAL",
@@ -70,6 +71,8 @@ DialogueIntent = Literal[
     "CONFIRM",
     "CANCEL",
     "GENERAL_QUESTION",
+    "LIST_TASKS",
+    "SWITCH_TASK",
 ]
 
 
@@ -79,6 +82,7 @@ PendingActionName = Literal[
     "ANALYZE",
     "EXPLAIN",
     "ADOPT_DATASET_ADVICE",
+    "CREATE_DATASET_GROUP_TASKS",
 ]
 
 
@@ -278,6 +282,7 @@ def bundle_state_digest(
         "planning_session.json",
         "agent_prepare_manifest.json",
         "chat/dataset_advice.json",
+        "chat/dataset_grouping_proposal.json",
         "approval.json",
         "execution_*.json",
         "agent_result_summary.json",
@@ -567,6 +572,372 @@ def load_dialogue_context(
     }
 
 
+
+MAX_DIALOGUE_RESULT_CANDIDATES = 50
+
+
+
+def load_current_plan_evidence(
+    bundle_dir: Path,
+) -> dict[str, Any] | None:
+    """
+    只读加载当前计划的真实参数。
+
+    不调用模型，不执行工作流，不修改 Bundle。
+    """
+    bundle = bundle_dir.resolve()
+    session_path = bundle / "planning_session.json"
+
+    if not session_path.is_file():
+        return None
+
+    try:
+        session = load_planning_session(
+            session_path
+        )
+    except Exception as exc:
+        raise ChatDialogueError(
+            f"无法读取当前计划：{exc}"
+        ) from exc
+
+    workflow_manifest = None
+    workflow_path = (
+        bundle
+        / "workflow"
+        / "workflow_manifest.json"
+    )
+    if workflow_path.is_file():
+        try:
+            value = json.loads(
+                workflow_path.read_text(
+                    encoding="utf-8"
+                )
+            )
+            if isinstance(value, dict):
+                workflow_manifest = value
+        except (
+            OSError,
+            json.JSONDecodeError,
+        ):
+            workflow_manifest = None
+
+    ranker_plan = None
+    ranker_path = (
+        bundle
+        / "workflow"
+        / "ranker"
+        / "ranker_execution_plan.json"
+    )
+    if ranker_path.is_file():
+        try:
+            value = json.loads(
+                ranker_path.read_text(
+                    encoding="utf-8"
+                )
+            )
+            if isinstance(value, dict):
+                ranker_plan = value
+        except (
+            OSError,
+            json.JSONDecodeError,
+        ):
+            ranker_plan = None
+
+    return {
+        "status": session.plan.status,
+        "request": session.request.model_dump(
+            mode="json"
+        ),
+        "missing_information": (
+            session.plan.missing_information
+        ),
+        "warnings": session.plan.warnings,
+        "steps": [
+            step.model_dump(mode="json")
+            for step in session.plan.steps
+        ],
+        "config_preview": (
+            session.plan.config_preview
+        ),
+        "execution_allowed": (
+            session.plan.execution_allowed
+        ),
+        "workflow_manifest": workflow_manifest,
+        "ranker_plan": ranker_plan,
+    }
+
+
+def format_current_plan(
+    bundle_dir: Path,
+) -> str:
+    """
+    将真实计划转换为适合用户审阅的摘要。
+    """
+    evidence = load_current_plan_evidence(
+        bundle_dir
+    )
+
+    if evidence is None:
+        return (
+            "当前 Bundle 还没有生成任务计划。"
+            "你可以先描述希望分析的 PDB 数据和目标。"
+        )
+
+    config = (
+        evidence.get("config_preview")
+        or {}
+    )
+    input_config = config.get("input") or {}
+    regions = config.get("regions") or {}
+    ranking = config.get("ranking") or {}
+
+    workflow = (
+        evidence.get("workflow_manifest")
+        or {}
+    )
+    scope = (
+        workflow.get("analysis_scope")
+        or {}
+    )
+
+    ranker = (
+        evidence.get("ranker_plan")
+        or {}
+    )
+    input_summary = (
+        ranker.get("input_summary")
+        or {}
+    )
+
+    desired = regions.get("desired") or []
+    undesired = (
+        regions.get("undesired") or []
+    )
+    hotspots = regions.get("hotspots") or []
+
+    def show_list(value: list[Any]) -> str:
+        if not value:
+            return "未设置"
+        return ", ".join(str(item) for item in value)
+
+    lines = [
+        "当前任务计划",
+        "",
+        f"项目：{config.get('project_name', '未命名')}",
+        f"计划状态：{evidence.get('status')}",
+        (
+            "输入目录："
+            f"{input_config.get('pdb_dir', '未设置')}"
+        ),
+        (
+            "候选数量："
+            f"{input_summary.get('pdb_count', '尚未确定')}"
+        ),
+        (
+            "原始链布局："
+            f"{input_config.get('layout', '未设置')}"
+        ),
+        (
+            "源链："
+            f"{input_config.get('source_chain', '不适用')}"
+        ),
+        (
+            "target 起始位置："
+            f"{input_config.get('target_start_residue', '未设置')}"
+        ),
+        (
+            "target 残基数量："
+            f"{input_config.get('target_residue_count', '未设置')}"
+        ),
+        (
+            "标准化 target 链："
+            f"{input_config.get('normalized_target_chain', '未设置')}"
+        ),
+        (
+            "标准化 binder 链："
+            f"{input_config.get('normalized_binder_chain', '未设置')}"
+        ),
+        f"目标区域：{show_list(desired)}",
+        f"排除区域：{show_list(undesired)}",
+        f"hotspot：{show_list(hotspots)}",
+        (
+            "区域评分模式："
+            f"{ranking.get('region_policy', '未设置')}"
+        ),
+        (
+            "区域过滤："
+            f"{ranking.get('region_filter', '未设置')}"
+        ),
+        (
+            "Ranker 版本："
+            f"{ranking.get('ranker_version', '未设置')}"
+        ),
+        (
+            "报告 Top K："
+            f"{ranking.get('top_k_report', '未设置')}"
+        ),
+        (
+            "分析范围："
+            f"{scope.get('level', '尚未确定')}"
+        ),
+        (
+            "允许正式科研解释："
+            f"{scope.get('workflow_allows_formal_interpretation', '尚未确定')}"
+        ),
+        (
+            "当前允许直接执行："
+            f"{evidence.get('execution_allowed')}"
+        ),
+        "",
+        "计划步骤：",
+    ]
+
+    for index, step in enumerate(
+        evidence.get("steps") or [],
+        start=1,
+    ):
+        approval = (
+            "需要批准"
+            if step.get("requires_approval")
+            else "只读/准备步骤"
+        )
+        lines.append(
+            f"{index}. {step.get('description', step.get('step_id'))}"
+            f"（{approval}）"
+        )
+
+    warnings = evidence.get("warnings") or []
+    if warnings:
+        lines.extend(["", "注意事项："])
+        for warning in warnings:
+            lines.append(f"- {warning}")
+
+    return "\n".join(lines)
+
+def load_latest_result_evidence(
+    bundle_dir: Path,
+) -> dict[str, Any] | None:
+    """
+    读取当前 Bundle 最新的确定性结果摘要。
+
+    只提取对解释和筛选有用的受控字段，
+    不执行分析，也不修改任何文件。
+    """
+    bundle = bundle_dir.resolve()
+
+    paths = sorted(
+        (
+            path.resolve()
+            for path in bundle.glob(
+                "analyses/*/agent_result_summary.json"
+            )
+            if path.is_file()
+        ),
+        key=lambda item: str(item),
+    )
+
+    root_summary = (
+        bundle / "agent_result_summary.json"
+    )
+    if root_summary.is_file():
+        paths.append(root_summary.resolve())
+        paths.sort(key=lambda item: str(item))
+
+    if not paths:
+        return None
+
+    summary_path = paths[-1]
+
+    try:
+        raw = json.loads(
+            summary_path.read_text(
+                encoding="utf-8"
+            )
+        )
+    except (
+        OSError,
+        json.JSONDecodeError,
+    ) as exc:
+        return {
+            "status": "UNAVAILABLE",
+            "source_path": str(
+                summary_path.relative_to(bundle)
+            ),
+            "reason": (
+                "确定性结果摘要无法读取："
+                f"{exc}"
+            ),
+        }
+
+    if not isinstance(raw, dict):
+        return {
+            "status": "UNAVAILABLE",
+            "source_path": str(
+                summary_path.relative_to(bundle)
+            ),
+            "reason": "确定性结果摘要不是 JSON 对象",
+        }
+
+    rows = raw.get(
+        "candidates_by_engineering_rank",
+        [],
+    )
+    if not isinstance(rows, list):
+        rows = []
+
+    allowed_fields = (
+        "pdb_name",
+        "engineering_rank",
+        "final_score_v4",
+        "raw_filter_level",
+        "public_filter_level",
+        "public_filter_status",
+        "broad_pass",
+        "medium_pass",
+        "strict_pass",
+        "broad_reasons",
+        "medium_reasons",
+        "strict_reasons",
+        "filter_reasons_formally_interpretable",
+        "component_scores",
+        "key_metrics",
+        "row_error",
+    )
+
+    candidates = []
+    for row in rows[
+        :MAX_DIALOGUE_RESULT_CANDIDATES
+    ]:
+        if not isinstance(row, dict):
+            continue
+
+        candidates.append(
+            {
+                field: row.get(field)
+                for field in allowed_fields
+            }
+        )
+
+    return {
+        "status": "AVAILABLE",
+        "source_path": str(
+            summary_path.relative_to(bundle)
+        ),
+        "analysis_scope": raw.get(
+            "analysis_scope"
+        ),
+        "candidate_count": raw.get(
+            "candidate_count"
+        ),
+        "candidates_by_engineering_rank": (
+            candidates
+        ),
+        "truncated": (
+            len(rows)
+            > MAX_DIALOGUE_RESULT_CANDIDATES
+        ),
+    }
+
 def classify_dialogue_intent(
     *,
     provider: StructuredJSONProvider,
@@ -582,6 +953,11 @@ def classify_dialogue_intent(
     schema = DialogueDecision.model_json_schema()
 
     dialogue_context = load_dialogue_context(
+        bundle_dir
+    )
+    dialogue_context[
+        "latest_result_evidence"
+    ] = load_latest_result_evidence(
         bundle_dir
     )
 
@@ -600,6 +976,9 @@ def classify_dialogue_intent(
         "allowed_intents": [
             "HELP",
             "VIEW_STATUS",
+            "VIEW_PLAN",
+            "LIST_TASKS",
+            "SWITCH_TASK",
             "PROVIDE_INFORMATION",
             "REQUEST_DATASET_INSPECTION",
             "REQUEST_APPROVAL",
@@ -628,14 +1007,32 @@ def classify_dialogue_intent(
                 "受控对话意图分类器。"
                 "你只能判断用户意图，不能执行任何动作，"
                 "不能输出 Shell 命令，也不能修改科研参数。"
+                "在 EMPTY 阶段，只有用户明确要求分析、"
+                "排名或处理 PDB，或者主动提供目录、链、"
+                "残基边界等任务信息时，"
+                "才选择 PROVIDE_INFORMATION。"
+                "问候、模型连接测试、程序介绍、使用方法、"
+                "原理、能力、局限和安全机制等内容，"
+                "必须选择 GENERAL_QUESTION 并自然回答。"
                 "当用户在补充链、残基、目录、区域等参数时，"
                 "选择 PROVIDE_INFORMATION。"
+                "当用户用任何自然表达希望查看、核对、"
+                "复述或解释当前任务方案、参数、步骤、"
+                "输入设置或执行前配置时，选择 VIEW_PLAN。"
+                "不要要求用户使用固定口令，也不要把"
+                "查看计划误判为批准、执行或普通状态查询。"
                 "当用户表达‘同意方案、按这个方案来’时，"
                 "选择 REQUEST_APPROVAL。"
                 "当用户表达‘开始跑、开始计算、执行吧’时，"
                 "选择 REQUEST_EXECUTION。"
-                "当已有 pending_action 且用户表达同意时，"
-                "选择 CONFIRM；表达拒绝时选择 CANCEL。"
+                "当已有 pending_action 且用户明确同意"
+                "当前提案时，选择 CONFIRM；"
+                "明确放弃当前提案时选择 CANCEL。"
+                "如果用户补充参数、纠正事实、"
+                "表示刚才说错了或要求修改方案，"
+                "必须选择 PROVIDE_INFORMATION。"
+                "不能仅因句中出现不、不要、不是，"
+                "就判断用户要取消整个动作。"
 
                 "用户在确认前仍然可以询问动作影响。"
                 "此时选择 GENERAL_QUESTION，"
@@ -656,7 +1053,14 @@ def classify_dialogue_intent(
                 "配置冻结或科研解释权限。"
                 "最终安全答案由确定性控制器生成。"
 
+                "当用户询问当前有哪些任务、任务列表或"
+                "所有分组状态时，选择 LIST_TASKS。"
+                "当用户要求进入、切换或继续某个已存在任务时，"
+                "选择 SWITCH_TASK。任务名由后续确定性导航器"
+                "根据真实任务列表验证。"
+
                 "当用户明确要求查看、检查、读取 PDB 文件，"
+                "要求识别多个目录、按目录分组或分别排序，"
                 "或者说自己无法判断并要求 Agent 根据文件分析时，"
                 "选择 REQUEST_DATASET_INSPECTION。"
 
@@ -683,6 +1087,16 @@ def classify_dialogue_intent(
                 "拼在同一条 A 链中，随后问‘源链是什么’，"
                 "应解释源链是标准化前的原始链，"
                 "并指出根据他刚才的话，源链应是 A。"
+
+                "conversation_context 中的 "
+                "latest_result_evidence 来自当前 Bundle "
+                "已经生成的确定性结果摘要。"
+                "当用户询问刚才的排名、候选优缺点、"
+                "筛选结果或为什么靠前靠后时，"
+                "必须优先使用其中的证据回答，"
+                "不能要求用户再次粘贴 JSON。"
+                "不得声称未提供的相关性、因果关系、"
+                "统计显著性或正式科研结论。"
 
                 "输出必须严格符合 JSON Schema。"
             ),
@@ -762,13 +1176,26 @@ def determine_intent(
             report,
         )
 
-    # 新任务的第一句话直接交给正式请求解析器，
-    # 不额外消耗一次意图分类调用。
-    if current_stage == "EMPTY":
+    # 空 Bundle 中不能假定用户已经开始科研任务。
+    # 已启用模型时，先判断用户是在普通交流、
+    # 了解程序，还是明确提出了新的排名任务。
+    if (
+        current_stage == "EMPTY"
+        and not (
+            allow_network
+            and isinstance(
+                provider,
+                StructuredJSONProvider,
+            )
+        )
+    ):
         return (
             DialogueDecision(
-                intent="PROVIDE_INFORMATION",
-                reason="空 Bundle 中的首条任务描述",
+                intent="GENERAL_QUESTION",
+                reason=(
+                    "空 Bundle 且没有可用的"
+                    "自然语言意图模型"
+                ),
             ),
             pending,
             current_stage,
@@ -812,12 +1239,16 @@ def determine_intent(
             report,
         )
 
-    if prepare_status == "NEEDS_INFORMATION":
+    if (
+        prepare_status == "NEEDS_INFORMATION"
+        and provider is not None
+    ):
         return (
             DialogueDecision(
                 intent="PROVIDE_INFORMATION",
                 reason=(
-                    "当前任务正在等待补充参数"
+                    "当前任务正在等待补充参数，"
+                    "且存在显式请求解析器"
                 ),
             ),
             pending,
@@ -934,6 +1365,8 @@ def format_dataset_advice(
 def inspect_dataset_and_propose_adoption(
     *,
     bundle_dir: Path,
+    provider: Any | None = None,
+    user_message: str = "",
 ) -> ChatTurnResult:
     """
     只读检查当前规划的输入目录。
@@ -977,6 +1410,115 @@ def inspect_dataset_and_propose_adoption(
             "目前还不知道 PDB 输入目录。"
             "请先告诉我文件位于哪个目录，"
             "然后我才能进行只读检查。"
+        )
+
+    from protein_design_agent.agent.dataset_discovery import (
+        discover_dataset_groups,
+    )
+    from protein_design_agent.agent.dataset_grouping import (
+        DatasetGroupingError,
+        format_dataset_grouping_preview,
+        propose_dataset_grouping,
+    )
+
+    try:
+        discovery = discover_dataset_groups(
+            input_dir
+        )
+    except Exception as exc:
+        raise ChatDialogueError(
+            f"PDB 目录只读发现失败：{exc}"
+        ) from exc
+
+    if discovery.layout in {
+        "CHILD_DATASETS",
+        "MIXED_LAYOUT",
+    }:
+        if (
+            provider is None
+            or not hasattr(
+                provider,
+                "generate_json",
+            )
+        ):
+            candidates = "\n".join(
+                (
+                    f"- {group.relative_path}："
+                    f"{group.pdb_count} 个顶层 PDB"
+                )
+                for group in discovery.groups
+            )
+
+            return ChatTurnResult(
+                action="INSPECT_DATASET",
+                status="MODEL_REQUIRED",
+                message=(
+                    "检测到多个可能独立的数据集：\n"
+                    f"{candidates}\n\n"
+                    "需要启用结构化模型，才能结合你的"
+                    "自然语言说明提出分组方案。"
+                    "当前没有创建、批准或执行任何任务。"
+                ),
+                bundle_dir=bundle,
+            )
+
+        try:
+            grouping = propose_dataset_grouping(
+                provider=provider,
+                user_description=user_message,
+                report=discovery,
+            )
+        except DatasetGroupingError as exc:
+            raise ChatDialogueError(
+                f"无法生成可靠的多数据集分组建议：{exc}"
+            ) from exc
+
+        if load_pending_action(bundle) is not None:
+            raise ChatDialogueError(
+                "当前已有动作等待确认，"
+                "请先确认或取消旧动作"
+            )
+
+        from protein_design_agent.agent.dataset_group_tasks import (
+            save_grouping_proposal,
+        )
+
+        preview = format_dataset_grouping_preview(
+            grouping=grouping,
+            report=discovery,
+        )
+
+        proposal_path = save_grouping_proposal(
+            bundle_dir=bundle,
+            report=discovery,
+            grouping=grouping,
+            user_description=user_message,
+        )
+
+        save_pending_action(
+            bundle_dir=bundle,
+            action="CREATE_DATASET_GROUP_TASKS",
+            summary=preview,
+        )
+
+        return ChatTurnResult(
+            action="INSPECT_DATASET",
+            status="AWAITING_CONFIRMATION",
+            message=(
+                preview
+                + "\n\n确认后只会创建相互隔离的任务 "
+                "Bundle，不会批准或执行。"
+                "\n请回答“确认”或“取消”。"
+            ),
+            bundle_dir=bundle,
+            artifact_paths={
+                "dataset_grouping_proposal": (
+                    proposal_path
+                ),
+                "pending_action": (
+                    pending_action_path(bundle)
+                ),
+            },
         )
 
     try:
@@ -1027,6 +1569,50 @@ def inspect_dataset_and_propose_adoption(
                 pending_action_path(bundle)
             ),
         },
+    )
+
+
+def maybe_auto_inspect_after_information(
+    *,
+    result: ChatTurnResult,
+    bundle_dir: Path,
+    provider: Any | None,
+    user_message: str,
+) -> ChatTurnResult | None:
+    """
+    参数写入规划会话后，自动衔接只读数据检查。
+
+    这里只读取文件并提出建议，不批准、不执行，
+    也不会覆盖已经存在的待确认动作。
+    """
+    if result.status != "NEEDS_INFORMATION":
+        return None
+
+    bundle = bundle_dir.resolve()
+    session_path = bundle / "planning_session.json"
+
+    if not session_path.is_file():
+        return None
+
+    if load_pending_action(bundle) is not None:
+        return None
+
+    try:
+        session = load_planning_session(
+            session_path
+        )
+    except Exception as exc:
+        raise ChatDialogueError(
+            f"无法读取刚更新的规划会话：{exc}"
+        ) from exc
+
+    if session.request.input_dir is None:
+        return None
+
+    return inspect_dataset_and_propose_adoption(
+        bundle_dir=bundle,
+        provider=provider,
+        user_message=user_message,
     )
 
 
@@ -1129,6 +1715,11 @@ def deterministic_pending_safety_answer(
                 "采用文件建议时不会调用大模型决定参数。"
                 "参数来自只读 PDB 检查、文件 SHA256"
                 "和你的明确确认。"
+            )
+        elif pending.action == "CREATE_DATASET_GROUP_TASKS":
+            lines.append(
+                "确认后只创建相互隔离的任务 Bundle"
+                "和数据来源记录。不会批准、执行或生成排名。"
             )
         else:
             lines.append(
@@ -1255,6 +1846,15 @@ def create_action_proposal(
         report=report,
     )
 
+    display_message = summary
+
+    if action == "APPROVE":
+        display_message = (
+            format_current_plan(bundle_dir)
+            + "\n\n"
+            + summary
+        )
+
     save_pending_action(
         bundle_dir=bundle_dir,
         action=action,
@@ -1271,7 +1871,7 @@ def create_action_proposal(
     return ChatTurnResult(
         action=action_mapping[action],
         status="AWAITING_CONFIRMATION",
-        message=summary,
+        message=display_message,
         bundle_dir=bundle_dir.resolve(),
         artifact_paths={
             "pending_action": (
@@ -1316,6 +1916,43 @@ def confirm_pending_action(
     _, report = inspect_bundle(
         bundle_dir
     )
+
+    if pending.action == "CREATE_DATASET_GROUP_TASKS":
+        from protein_design_agent.agent.dataset_group_tasks import (
+            DatasetGroupTaskError,
+            create_group_task_bundles,
+        )
+
+        try:
+            created = create_group_task_bundles(
+                source_bundle=bundle_dir
+            )
+        except DatasetGroupTaskError as exc:
+            clear_pending_action(bundle_dir)
+            raise ChatDialogueError(
+                f"无法创建分组任务：{exc}"
+            ) from exc
+
+        clear_pending_action(bundle_dir)
+
+        task_lines = "\n".join(
+            f"- {name}：{bundle}"
+            for name, bundle in zip(
+                created.task_names,
+                created.created_bundles,
+            )
+        )
+
+        return ChatTurnResult(
+            action="INSPECT_DATASET",
+            status="TASKS_CREATED",
+            message=(
+                "已创建相互隔离的任务 Bundle：\n"
+                f"{task_lines}\n\n"
+                "尚未批准或执行任何任务。"
+            ),
+            bundle_dir=bundle_dir.resolve(),
+        )
 
     if pending.action == "ADOPT_DATASET_ADVICE":
         try:
@@ -1482,6 +2119,55 @@ def stage_guidance(
     )
 
 
+def list_tasks_for_chat(
+    *,
+    bundle_dir: Path,
+) -> ChatTurnResult:
+    from protein_design_agent.agent.task_navigation import (
+        format_workspace_tasks,
+        list_workspace_tasks,
+    )
+
+    tasks = list_workspace_tasks(
+        bundle_dir
+    )
+
+    return ChatTurnResult(
+        action="LIST_TASKS",
+        status="TASKS_LISTED",
+        message=format_workspace_tasks(tasks),
+        bundle_dir=bundle_dir.resolve(),
+    )
+
+
+def switch_task_for_chat(
+    *,
+    bundle_dir: Path,
+    message: str,
+    provider: Any | None,
+) -> ChatTurnResult:
+    from protein_design_agent.agent.task_navigation import (
+        resolve_task_reference,
+    )
+
+    target = resolve_task_reference(
+        current_bundle=bundle_dir,
+        message=message,
+        provider=provider,
+    )
+
+    return ChatTurnResult(
+        action="SWITCH_TASK",
+        status="TASK_SWITCHED",
+        message=(
+            f"已切换到任务：{target.name}\n"
+            f"Bundle：{target}\n"
+            "后续消息只读取和修改该任务。"
+        ),
+        bundle_dir=target,
+    )
+
+
 def process_dialogue_message(
     *,
     message: str,
@@ -1501,6 +2187,26 @@ def process_dialogue_message(
 
     大模型只能提出意图，不得直接执行有副作用动作。
     """
+    navigation_message = message.strip()
+
+    if navigation_message.casefold() in {
+        "/tasks",
+        "任务列表",
+        "列出任务",
+        "有哪些任务",
+    }:
+        return list_tasks_for_chat(
+            bundle_dir=bundle_dir
+        )
+
+    if navigation_message.casefold().startswith(
+        "/task "
+    ):
+        return switch_task_for_chat(
+            bundle_dir=bundle_dir,
+            message=navigation_message[6:].strip(),
+            provider=provider,
+        )
     (
         decision,
         pending,
@@ -1559,6 +2265,31 @@ def process_dialogue_message(
         )
 
     if pending is not None:
+        if intent == "PROVIDE_INFORMATION":
+            old_action = pending.action
+            clear_pending_action(bundle_dir)
+
+            updated = process_chat_message(
+                message=message.strip(),
+                bundle_dir=bundle_dir,
+                provider=provider,
+                approved_by=approved_by,
+                model_config_path=model_config_path,
+                profile_name=profile_name,
+                allow_network=allow_network,
+            )
+
+            return updated.model_copy(
+                update={
+                    "message": (
+                        "已收到你的补充或纠正。"
+                        f"原待确认动作 {old_action} 已取消，"
+                        "任务已经按新信息重新处理。\n\n"
+                        + updated.message
+                    )
+                }
+            )
+
         pending_reminder = (
             "\n\n当前待确认动作仍然保留。"
             "了解清楚后，你可以回答“确认”继续，"
@@ -1629,6 +2360,26 @@ def process_dialogue_message(
                 bundle_dir=(
                     bundle_dir.resolve()
                 ),
+                artifact_paths={
+                    "pending_action": (
+                        pending_action_path(
+                            bundle_dir
+                        )
+                    )
+                },
+            )
+
+        if intent == "VIEW_PLAN":
+            return ChatTurnResult(
+                action="VIEW_PLAN",
+                status="PLAN_AVAILABLE",
+                message=(
+                    format_current_plan(
+                        bundle_dir
+                    )
+                    + pending_reminder
+                ),
+                bundle_dir=bundle_dir.resolve(),
                 artifact_paths={
                     "pending_action": (
                         pending_action_path(
@@ -1720,6 +2471,22 @@ def process_dialogue_message(
             allow_network=allow_network,
         )
 
+    if intent == "VIEW_PLAN":
+        return ChatTurnResult(
+            action="VIEW_PLAN",
+            status="PLAN_AVAILABLE",
+            message=format_current_plan(
+                bundle_dir
+            ),
+            bundle_dir=bundle_dir.resolve(),
+            artifact_paths={
+                "planning_session": (
+                    bundle_dir.resolve()
+                    / "planning_session.json"
+                )
+            },
+        )
+
     if intent == "VIEW_STATUS":
         return process_chat_message(
             message="状态",
@@ -1731,9 +2498,23 @@ def process_dialogue_message(
             allow_network=allow_network,
         )
 
+    if intent == "LIST_TASKS":
+        return list_tasks_for_chat(
+            bundle_dir=bundle_dir
+        )
+
+    if intent == "SWITCH_TASK":
+        return switch_task_for_chat(
+            bundle_dir=bundle_dir,
+            message=message,
+            provider=provider,
+        )
+
     if intent == "REQUEST_DATASET_INSPECTION":
         return inspect_dataset_and_propose_adoption(
-            bundle_dir=bundle_dir
+            bundle_dir=bundle_dir,
+            provider=provider,
+            user_message=message,
         )
 
     if intent == "REQUEST_APPROVAL":
@@ -1751,10 +2532,26 @@ def process_dialogue_message(
         )
 
     if intent == "REQUEST_ANALYSIS":
-        return create_action_proposal(
-            action="ANALYZE",
+        if (
+            report is None
+            or report.execution_status != "COMPLETED"
+        ):
+            raise ChatDialogueError(
+                "只有 BinderRanker 执行完成后"
+                "才能分析结果。"
+            )
+
+        # 确定性分析是只读操作：
+        # 不调用模型、不修改 Ranker 原始输出，
+        # 因此不需要额外确认。
+        return process_chat_message(
+            message="分析结果",
             bundle_dir=bundle_dir,
-            report=report,
+            provider=None,
+            approved_by=approved_by,
+            model_config_path=None,
+            profile_name=None,
+            allow_network=False,
         )
 
     if intent == "REQUEST_EXPLANATION":
@@ -1781,6 +2578,18 @@ def process_dialogue_message(
             allow_network=allow_network,
         )
 
+        automatic_inspection = (
+            maybe_auto_inspect_after_information(
+                result=result,
+                bundle_dir=bundle_dir,
+                provider=provider,
+                user_message=message,
+            )
+        )
+
+        if automatic_inspection is not None:
+            return automatic_inspection
+
         if result.status == "NEEDS_INFORMATION":
             return result.model_copy(
                 update={
@@ -1794,15 +2603,38 @@ def process_dialogue_message(
 
         return result
 
-    if (
-        intent == "GENERAL_QUESTION"
-        and decision.reply
-        and decision.reply.strip()
-    ):
+    if intent == "GENERAL_QUESTION":
+        if (
+            decision.reply
+            and decision.reply.strip()
+        ):
+            return ChatTurnResult(
+                action="HELP",
+                status="ANSWER",
+                message=decision.reply.strip(),
+                bundle_dir=bundle_dir.resolve(),
+            )
+
+        if not allow_network:
+            guidance = (
+                "当前处于离线只读模式，"
+                "没有可用的自然语言模型回答这个问题。"
+                "为避免误解，我不会把这句话当作科研参数，"
+                "也不会修改当前任务。"
+                "你仍可使用“帮助”“状态”“查看计划”"
+                "和“任务列表”等确定性功能。"
+            )
+        else:
+            guidance = stage_guidance(
+                bundle_dir=bundle_dir,
+                current_stage=current_stage,
+                report=report,
+            )
+
         return ChatTurnResult(
             action="HELP",
-            status="ANSWER",
-            message=decision.reply.strip(),
+            status="GUIDANCE",
+            message=guidance,
             bundle_dir=bundle_dir.resolve(),
         )
 

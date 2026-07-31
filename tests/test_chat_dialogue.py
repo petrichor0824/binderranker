@@ -30,6 +30,7 @@ class FakeDialogueProvider:
         self.safety_topics = (
             safety_topics or []
         )
+        self.last_messages = None
 
     @property
     def name(self) -> str:
@@ -41,6 +42,7 @@ class FakeDialogueProvider:
         )
 
     def generate_json(self, messages):
+        self.last_messages = messages
         payload = {
             "intent": self.intent,
             "reason": "test",
@@ -954,3 +956,484 @@ def test_pending_smoke_limit_answer_uses_run_status(
     assert "SMOKE_TEST_ONLY" in result.message
     assert "不能把本次排名" in result.message
     assert "可以正式选最优候选" not in result.message
+
+
+def test_empty_bundle_general_question_does_not_start_task(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "empty_bundle"
+    bundle.mkdir()
+
+    answer = (
+        "你好。我可以先介绍程序的用途、原理、"
+        "安全边界和完整使用流程。"
+    )
+
+    result = process_dialogue_message(
+        message="你好，先介绍一下这个程序",
+        bundle_dir=bundle,
+        provider=FakeDialogueProvider(
+            "GENERAL_QUESTION",
+            reply=answer,
+        ),
+        approved_by="tester",
+        model_config_path=None,
+        profile_name=None,
+        allow_network=True,
+    )
+
+    assert result.status == "ANSWER"
+    assert result.message == answer
+    assert not (
+        bundle / "planning_session.json"
+    ).exists()
+    assert not (
+        bundle / "agent_prepare_manifest.json"
+    ).exists()
+
+
+
+def test_latest_result_summary_is_injected_into_model_context(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = prepared_bundle(tmp_path)
+
+    summary_path = (
+        bundle
+        / "analyses"
+        / "chat_deterministic_0001"
+        / "agent_result_summary.json"
+    )
+    write_json(
+        summary_path,
+        {
+            "analysis_scope": {
+                "level": "SMOKE_TEST_ONLY",
+            },
+            "candidate_count": 2,
+            "candidates_by_engineering_rank": [
+                {
+                    "pdb_name": "_2577",
+                    "engineering_rank": 1,
+                    "final_score_v4": 0.6141,
+                    "raw_filter_level": "FAIL",
+                    "strict_reasons": [
+                        "low_score_safety",
+                    ],
+                    "component_scores": {
+                        "score_safety": 0.444,
+                    },
+                    "key_metrics": {},
+                },
+                {
+                    "pdb_name": "_498",
+                    "engineering_rank": 2,
+                    "final_score_v4": 0.5977,
+                    "raw_filter_level": "MEDIUM",
+                    "strict_reasons": [
+                        (
+                            "low_contact_map_"
+                            "continuity_score"
+                        ),
+                    ],
+                    "component_scores": {},
+                    "key_metrics": {},
+                },
+            ],
+        },
+    )
+
+    monkeypatch.setattr(
+        module,
+        "inspect_run_status",
+        lambda path: SimpleNamespace(
+            current_stage="ANALYZED",
+            project_name="demo",
+            prepare_status=(
+                "READY_FOR_REVIEW"
+            ),
+            approval_status="APPROVED",
+            execution_status="COMPLETED",
+            analysis_status="COMPLETED",
+            explanation_status=None,
+            analysis_scope_level=(
+                "SMOKE_TEST_ONLY"
+            ),
+            candidate_count=2,
+            approval_consumed=True,
+        ),
+    )
+
+    provider = FakeDialogueProvider(
+        "GENERAL_QUESTION",
+        reply="我已经读取当前结果。",
+    )
+
+    result = process_dialogue_message(
+        message="解释一下刚才的排名",
+        bundle_dir=bundle,
+        provider=provider,
+        approved_by="tester",
+        model_config_path=None,
+        profile_name=None,
+        allow_network=True,
+    )
+
+    assert result.status == "ANSWER"
+    assert provider.last_messages is not None
+
+    model_context = json.loads(
+        provider.last_messages[1]["content"]
+    )
+    evidence = model_context[
+        "conversation_context"
+    ]["latest_result_evidence"]
+
+    assert evidence["status"] == "AVAILABLE"
+    assert evidence["candidate_count"] == 2
+    assert (
+        evidence[
+            "candidates_by_engineering_rank"
+        ][0]["pdb_name"]
+        == "_2577"
+    )
+    assert (
+        evidence[
+            "candidates_by_engineering_rank"
+        ][1]["raw_filter_level"]
+        == "MEDIUM"
+    )
+
+
+def test_information_correction_replaces_pending_action(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = prepared_bundle(tmp_path)
+
+    report = SimpleNamespace(
+        current_stage="PREPARED",
+        project_name="demo",
+        prepare_status="READY_FOR_REVIEW",
+        approval_status=None,
+        execution_status=None,
+        analysis_status=None,
+        explanation_status=None,
+        analysis_scope_level="EXPLORATORY",
+        candidate_count=20,
+        approval_consumed=None,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "inspect_run_status",
+        lambda path: report,
+    )
+
+    module.save_pending_action(
+        bundle_dir=bundle,
+        action="APPROVE",
+        summary="是否批准当前计划？",
+    )
+
+    captured = {}
+
+    def fake_engine(**kwargs):
+        captured.update(kwargs)
+        return ChatTurnResult(
+            action="PREPARE",
+            status="NEEDS_INFORMATION",
+            message="已记录 binder 为 B 链。",
+            bundle_dir=bundle,
+        )
+
+    monkeypatch.setattr(
+        module,
+        "process_chat_message",
+        fake_engine,
+    )
+
+    result = process_dialogue_message(
+        message=(
+            "我刚才说错了，"
+            "target 是 A 链，binder 是 B 链。"
+        ),
+        bundle_dir=bundle,
+        provider=FakeDialogueProvider(
+            "PROVIDE_INFORMATION"
+        ),
+        approved_by="tester",
+        model_config_path=None,
+        profile_name=None,
+        allow_network=True,
+    )
+
+    assert result.status == "NEEDS_INFORMATION"
+    assert captured["message"] == (
+        "我刚才说错了，"
+        "target 是 A 链，binder 是 B 链。"
+    )
+    assert "原待确认动作 APPROVE" in result.message
+    assert "取消" in result.message
+    assert "已记录 binder 为 B 链" in result.message
+    assert load_pending_action(bundle) is None
+
+
+def test_semantic_view_plan_returns_real_plan(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = create_incomplete_inspection_bundle(tmp_path)
+
+    monkeypatch.setattr(
+        module,
+        "inspect_run_status",
+        lambda path: SimpleNamespace(
+            current_stage="PREPARED",
+            project_name="demo",
+            prepare_status="READY_FOR_REVIEW",
+            approval_status=None,
+            execution_status=None,
+            analysis_status=None,
+            explanation_status=None,
+            analysis_scope_level="EXPLORATORY",
+            candidate_count=20,
+            approval_consumed=None,
+        ),
+    )
+
+    result = process_dialogue_message(
+        message=(
+            "执行之前把你准备采用的方案"
+            "完整过一遍，我想检查有没有设错。"
+        ),
+        bundle_dir=bundle,
+        provider=FakeDialogueProvider(
+            "VIEW_PLAN"
+        ),
+        approved_by="tester",
+        model_config_path=None,
+        profile_name=None,
+        allow_network=True,
+    )
+
+    assert result.action == "VIEW_PLAN"
+    assert result.status == "PLAN_AVAILABLE"
+    assert "当前任务计划" in result.message
+    assert "输入目录：" in result.message
+    assert "计划步骤：" in result.message
+
+
+def test_view_plan_does_not_cancel_pending_action(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = prepared_bundle(tmp_path)
+
+    monkeypatch.setattr(
+        module,
+        "inspect_run_status",
+        lambda path: SimpleNamespace(
+            current_stage="PREPARED",
+            project_name="demo",
+            prepare_status="READY_FOR_REVIEW",
+            approval_status=None,
+            execution_status=None,
+            analysis_status=None,
+            explanation_status=None,
+            analysis_scope_level="EXPLORATORY",
+            candidate_count=20,
+            approval_consumed=None,
+        ),
+    )
+
+    module.save_pending_action(
+        bundle_dir=bundle,
+        action="APPROVE",
+        summary="是否批准当前计划？",
+    )
+
+    result = process_dialogue_message(
+        message=(
+            "我先不确认，把完整参数和"
+            "处理步骤再讲一遍。"
+        ),
+        bundle_dir=bundle,
+        provider=FakeDialogueProvider(
+            "VIEW_PLAN"
+        ),
+        approved_by="tester",
+        model_config_path=None,
+        profile_name=None,
+        allow_network=True,
+    )
+
+    assert result.action == "VIEW_PLAN"
+    assert load_pending_action(bundle) is not None
+    assert "待确认动作仍然保留" in result.message
+
+
+
+def test_view_plan_reports_when_no_plan_exists(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = prepared_bundle(tmp_path)
+
+    monkeypatch.setattr(
+        module,
+        "inspect_run_status",
+        lambda path: SimpleNamespace(
+            current_stage="PREPARED",
+            project_name="demo",
+            prepare_status="READY_FOR_REVIEW",
+            approval_status=None,
+            execution_status=None,
+            analysis_status=None,
+            explanation_status=None,
+            analysis_scope_level="EXPLORATORY",
+            candidate_count=20,
+            approval_consumed=None,
+        ),
+    )
+
+    result = process_dialogue_message(
+        message="把当前方案给我看看。",
+        bundle_dir=bundle,
+        provider=FakeDialogueProvider(
+            "VIEW_PLAN"
+        ),
+        approved_by="tester",
+        model_config_path=None,
+        profile_name=None,
+        allow_network=True,
+    )
+
+    assert result.action == "VIEW_PLAN"
+    assert result.status == "PLAN_AVAILABLE"
+    assert "还没有生成任务计划" in result.message
+
+
+def test_approval_proposal_displays_plan_before_confirmation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = prepared_bundle(tmp_path)
+
+    monkeypatch.setattr(
+        module,
+        "format_current_plan",
+        lambda path: (
+            "当前任务计划\n"
+            "项目：demo\n"
+            "输入目录：/data/pdbs\n"
+            "标准化 target 链：A\n"
+            "标准化 binder 链：B"
+        ),
+    )
+
+    report = SimpleNamespace(
+        project_name="demo",
+        analysis_scope_level="EXPLORATORY",
+        approval_status=None,
+    )
+
+    result = module.create_action_proposal(
+        action="APPROVE",
+        bundle_dir=bundle,
+        report=report,
+    )
+
+    assert result.status == "AWAITING_CONFIRMATION"
+    assert result.message.startswith("当前任务计划")
+    assert "标准化 target 链：A" in result.message
+    assert "批准会冻结配置" in result.message
+    assert "请回答“确认”" in result.message
+
+    pending = load_pending_action(bundle)
+
+    assert pending is not None
+    assert "你正在请求批准项目：demo" in (
+        pending.summary
+    )
+    assert "当前任务计划" not in pending.summary
+
+
+def test_deterministic_analysis_runs_without_confirmation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = prepared_bundle(tmp_path)
+
+    report = SimpleNamespace(
+        current_stage="EXECUTED",
+        project_name="demo",
+        prepare_status="READY_FOR_REVIEW",
+        approval_status="APPROVED",
+        execution_status="COMPLETED",
+        analysis_status=None,
+        explanation_status=None,
+        analysis_scope_level="EXPLORATORY",
+        candidate_count=20,
+        approval_consumed=True,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "inspect_run_status",
+        lambda path: report,
+    )
+
+    captured = {}
+
+    def fake_engine(**kwargs):
+        captured.update(kwargs)
+
+        return ChatTurnResult(
+            action="ANALYZE",
+            status="COMPLETED",
+            message="确定性分析完成。",
+            bundle_dir=bundle,
+        )
+
+    monkeypatch.setattr(
+        module,
+        "process_chat_message",
+        fake_engine,
+    )
+
+    def fail_proposal(**kwargs):
+        raise AssertionError(
+            "确定性分析不应创建待确认动作"
+        )
+
+    monkeypatch.setattr(
+        module,
+        "create_action_proposal",
+        fail_proposal,
+    )
+
+    result = process_dialogue_message(
+        message=(
+            "帮我总结这批结果，"
+            "看看哪些指标拖了后腿。"
+        ),
+        bundle_dir=bundle,
+        provider=FakeDialogueProvider(
+            "REQUEST_ANALYSIS"
+        ),
+        approved_by="tester",
+        model_config_path=Path("model.yaml"),
+        profile_name="deepseek_flash",
+        allow_network=True,
+    )
+
+    assert result.action == "ANALYZE"
+    assert result.status == "COMPLETED"
+    assert captured["message"] == "分析结果"
+    assert captured["provider"] is None
+    assert captured["model_config_path"] is None
+    assert captured["profile_name"] is None
+    assert captured["allow_network"] is False
+    assert load_pending_action(bundle) is None

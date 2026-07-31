@@ -201,3 +201,50 @@ def test_explained_stage(
         is False
     )
     assert len(report.analysis_attempts) == 1
+
+
+def test_unavailable_explanation_keeps_analyzed_stage(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    write_json(
+        bundle / "execution_apr_demo.json",
+        {
+            "status": "COMPLETED",
+            "approval_id": "apr_demo",
+        },
+    )
+
+    write_json(
+        bundle
+        / "analyses"
+        / "model_failed"
+        / "analyze_run_manifest.json",
+        {
+            "status": "COMPLETED",
+            "with_model": True,
+            "provider_name": None,
+            "explanation_status": "UNAVAILABLE",
+            "explanation_error_type": "TimeoutError",
+            "explanation_error_message": (
+                "model request timed out"
+            ),
+        },
+    )
+
+    report = inspect_run_status(bundle)
+
+    assert report.current_stage == "ANALYZED"
+    assert report.analysis_status == "COMPLETED"
+    assert (
+        report.explanation_status
+        == "UNAVAILABLE"
+    )
+    assert len(report.analysis_attempts) == 1
+    assert (
+        report.analysis_attempts[0]
+        .explanation_status
+        == "UNAVAILABLE"
+    )
