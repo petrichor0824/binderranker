@@ -6,7 +6,7 @@ Protein Design Agent uses an interpretable BinderRanker to prioritize large coll
 
 The scientific core is multi-metric backbone ranking and layered candidate screening. The conversational Agent is the product layer that makes this workflow easier to configure, review, execute, explain, and reproduce.
 
-Current release: **0.1.0 Public Beta**
+Current package version: **0.2.0 Public Beta**
 
 ## What this project does
 
@@ -73,7 +73,7 @@ Download the wheel file from the GitHub Release page, then create an isolated Py
 
 Install the downloaded wheel using its actual filename:
 
-    python -m pip install ./protein_design_agent-VERSION-py3-none-any.whl
+    python -m pip install ./protein_design_agent-0.2.0-py3-none-any.whl
 
 Do not type angle-bracket placeholders such as `<version>` into the Shell.
 
@@ -312,7 +312,7 @@ Completed or consumed bundles should be treated as immutable audit records.
 
 ## Current limitations
 
-Version 0.1.0 currently focuses on a tested local BinderRanker workflow.
+Version 0.2.0 focuses on a tested local BinderRanker workflow.
 
 Not yet included:
 
