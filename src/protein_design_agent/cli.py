@@ -95,6 +95,10 @@ from protein_design_agent.agent.providers.base import (
 from protein_design_agent.agent.providers.mock import (
     MockProvider,
 )
+from protein_design_agent.agent.model_readiness import (
+    assess_model_readiness,
+    format_model_readiness,
+)
 from protein_design_agent.schemas.provider_config import (
     load_model_provider_config,
 )
@@ -768,63 +772,28 @@ def chat_command(
                 code=2
             ) from exc
 
-    provider = None
-    resolved_model_config = None
+    resolved_model_config = (
+        model_config.expanduser().resolve()
+        if model_config is not None
+        else None
+    )
 
-    if allow_network:
-        if model_config is None:
-            typer.echo(
-                "ERROR：使用 --allow-network 时，"
-                "必须同时提供 --model-config。",
-                err=True,
-            )
-            raise typer.Exit(code=2)
+    model_readiness = assess_model_readiness(
+        allow_network=allow_network,
+        config_path=resolved_model_config,
+        profile_name=profile,
+    )
 
-        try:
-            resolved_model_config = (
-                model_config.resolve()
-            )
+    provider = model_readiness.provider
+    model_calls_enabled = (
+        model_readiness.status == "READY"
+    )
 
-            config = load_model_provider_config(
-                resolved_model_config
-            )
-
-            selected_name, selected_profile = (
-                resolve_provider_profile(
-                    config,
-                    profile_name=profile,
-                )
-            )
-
-            provider = (
-                build_request_parser_provider(
-                    config,
-                    profile_name=profile,
-                )
-            )
-
-        except Exception as exc:
-            typer.echo(
-                f"ERROR：模型 Provider 初始化失败：{exc}",
-                err=True,
-            )
-            raise typer.Exit(code=2) from exc
-
-        typer.echo(
-            f"模型 Profile：{selected_name}"
+    typer.echo(
+        format_model_readiness(
+            model_readiness
         )
-        typer.echo(
-            f"模型：{selected_profile.model}"
-        )
-        typer.echo(
-            "网络权限：已显式允许"
-        )
-
-    else:
-        typer.echo(
-            "网络权限：未允许；"
-            "状态查看、批准、执行和确定性分析仍可使用。"
-        )
+    )
 
     typer.echo("")
     typer.echo("=" * 72)
@@ -913,7 +882,7 @@ def chat_command(
                     resolved_model_config
                 ),
                 profile_name=profile,
-                allow_network=allow_network,
+                allow_network=model_calls_enabled,
             )
 
             resolved_bundle = (

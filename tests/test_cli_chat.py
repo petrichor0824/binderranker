@@ -13,7 +13,8 @@ from typer.testing import CliRunner
 runner = CliRunner()
 
 
-def test_chat_requires_model_config_when_network_enabled(
+
+def test_chat_continues_without_model_config_when_network_enabled(
     tmp_path: Path,
 ) -> None:
     result = runner.invoke(
@@ -26,10 +27,19 @@ def test_chat_requires_model_config_when_network_enabled(
             "tester",
             "--allow-network",
         ],
+        input="退出\n",
     )
 
-    assert result.exit_code == 2
-    assert "--model-config" in result.output
+    assert result.exit_code == 0
+    assert (
+        "模型状态：NOT_CONFIGURED"
+        in result.output
+    )
+    assert (
+        "没有指定模型配置文件"
+        in result.output
+    )
+
 
 
 def test_chat_status_then_exit(
@@ -131,10 +141,15 @@ def test_chat_error_does_not_terminate_session(
     assert calls == 2
 
 
+
 def test_chat_builds_provider_only_with_network(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    from protein_design_agent.agent.model_readiness import (
+        ModelReadinessReport,
+    )
+
     bundle = tmp_path / "bundle"
 
     model_config = tmp_path / "models.yaml"
@@ -144,34 +159,29 @@ def test_chat_builds_provider_only_with_network(
     )
 
     fake_provider = object()
+    readiness_call = {}
+
+    def fake_assess_model_readiness(**kwargs):
+        readiness_call.update(kwargs)
+
+        return ModelReadinessReport(
+            status="READY",
+            message=(
+                "本地模型初始化条件已经通过；"
+                "尚未发送网络请求。"
+            ),
+            network_allowed=True,
+            config_path=model_config.resolve(),
+            profile_name="fake-profile",
+            model_name="fake-model",
+            api_key_env="FAKE_API_KEY",
+            provider=fake_provider,
+        )
 
     monkeypatch.setattr(
         cli_module,
-        "load_model_provider_config",
-        lambda path: object(),
-    )
-
-    monkeypatch.setattr(
-        cli_module,
-        "resolve_provider_profile",
-        lambda config, profile_name=None: (
-            "fake-profile",
-            type(
-                "Profile",
-                (),
-                {
-                    "model": "fake-model",
-                },
-            )(),
-        ),
-    )
-
-    monkeypatch.setattr(
-        cli_module,
-        "build_request_parser_provider",
-        lambda config, profile_name=None: (
-            fake_provider
-        ),
+        "assess_model_readiness",
+        fake_assess_model_readiness,
     )
 
     captured = {}
@@ -210,14 +220,31 @@ def test_chat_builds_provider_only_with_network(
     )
 
     assert result.exit_code == 0
+
+    assert "模型状态：READY" in result.output
     assert "fake-profile" in result.output
     assert "fake-model" in result.output
+
+    assert (
+        readiness_call["allow_network"]
+        is True
+    )
+    assert readiness_call["config_path"] == (
+        model_config.resolve()
+    )
+    assert readiness_call["profile_name"] == (
+        "fake-profile"
+    )
+
     assert captured["provider"] is fake_provider
     assert captured["allow_network"] is True
-    assert (
-        captured["model_config_path"]
-        == model_config.resolve()
+    assert captured["model_config_path"] == (
+        model_config.resolve()
     )
+    assert captured["profile_name"] == (
+        "fake-profile"
+    )
+
 
 
 def test_chat_routes_natural_language_through_dialogue(
