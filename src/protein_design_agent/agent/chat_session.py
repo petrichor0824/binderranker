@@ -73,6 +73,69 @@ ChatAction = Literal[
 
 RESULT_PREVIEW_LIMIT = 5
 
+COMPONENT_SCORE_LABELS = {
+    "score_line": "线性界面适配",
+    "score_plane": "平面界面适配",
+    "score_compact": "紧凑界面适配",
+    "score_roughness": "表面平滑性",
+    "score_microfit": "局部微环境适配",
+    "score_safety": "几何安全性",
+    "score_region": "目标区域匹配",
+    "score_hotspot": "热点覆盖",
+}
+
+
+def format_component_strengths(
+    component_scores: dict[str, float],
+    *,
+    limit: int = 2,
+) -> str:
+    """
+    展示已经统一为“越高越好”的组件高分。
+
+    这里只读取 Ranker 已计算的组件分数，
+    不重新计算，也不根据指标名称猜测方向。
+    """
+    ranked: list[tuple[str, float]] = []
+
+    for name, value in component_scores.items():
+        try:
+            numeric = float(value)
+        except (
+            TypeError,
+            ValueError,
+        ):
+            continue
+
+        if (
+            numeric != numeric
+            or numeric == float("inf")
+            or numeric == float("-inf")
+        ):
+            continue
+
+        ranked.append((name, numeric))
+
+    ranked.sort(
+        key=lambda item: (
+            -item[1],
+            item[0],
+        )
+    )
+
+    selected = ranked[:limit]
+
+    if not selected:
+        return "未提供"
+
+    return "、".join(
+        (
+            f"{COMPONENT_SCORE_LABELS.get(name, name)} "
+            f"{value:.3f}"
+        )
+        for name, value in selected
+    )
+
 
 def format_execution_result_preview(
     summary: RankerResultSummary,
@@ -126,12 +189,24 @@ def format_execution_result_preview(
                 "当前样本范围不展示阈值拖累"
             )
 
+        strength_display = (
+            format_component_strengths(
+                getattr(
+                    candidate,
+                    "component_scores",
+                    {},
+                )
+            )
+        )
+
         lines.append(
             f"{candidate.engineering_rank}. "
             f"{candidate.pdb_name} | "
             f"总分 {candidate.final_score_v4:.4f} | "
             f"过滤 {filter_display} | "
-            f"{reason_display}"
+            "主要优势（高分组件） "
+            f"{strength_display} | "
+            f"主要拖累 {reason_display}"
         )
 
     if not (
