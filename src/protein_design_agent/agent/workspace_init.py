@@ -78,48 +78,91 @@ Thumbs.db
 
 QUICKSTART_TEMPLATE = '''# Protein Design Agent 工作区
 
-本目录由 protein-design-agent init 创建。
+本目录由 `protein-design-agent init` 创建。
 
-目录说明：
+## 目录说明
 
-- configs/models：模型 Provider 配置
-- data：输入 PDB 数据
-- runs：计划、审批、执行和分析结果
+- `configs/models`：模型 Provider 配置
+- `data`：输入 PDB 数据
+- `runs`：计划、批准、执行和分析结果
 
-第一步：设置 API Key
+## 1. 检查安装和工作区
 
-在 Linux、WSL 或 macOS 中运行：
+以下命令不会访问网络，也不会显示 API Key：
 
-    export DEEPSEEK_API_KEY="你的真实 API Key"
+    protein-design-agent doctor \
+      --model-config configs/models/deepseek.local.yaml \
+      --profile deepseek_flash
 
-不要把真实 API Key 写入 YAML 或提交到 Git。
+## 2. 可选：启用自然语言模型
 
-第二步：检查安装
+自然语言任务理解和模型解释需要配置 Provider。
 
-    protein-design-agent doctor --model-config configs/models/deepseek.local.yaml --profile deepseek_flash
+在 Linux、WSL 或 macOS 中安全输入 DeepSeek API Key：
 
-Doctor 默认不会访问网络，也不会显示 API Key。
+    read -rsp 'DeepSeek API Key: ' DEEPSEEK_API_KEY
+    echo
+    export DEEPSEEK_API_KEY
 
-第三步：放入输入数据
+不要把真实 API Key 写入 YAML、Git、截图、日志或共享 Bundle。
 
-把待分析的 PDB 文件复制到 data 目录。
+未配置模型时，`doctor`、样例提取、状态查看和确定性结果分析仍可使用，但不能可靠地把新的自由文本科研需求转换成完整计划。
 
-例如：
+## 3. 提取内置 smoke 数据
 
-    cp /path/to/pdb_files/*.pdb data/
+    protein-design-agent extract-sample \
+      --destination data/3c98_small
 
-第四步：查看交互式 Agent 用法
+该样例包含 5 个 PDB，只用于安装和工程 smoke test，不能作为正式候选推荐。
 
-    protein-design-agent chat --help
+## 4. 启动对话式 Agent
 
-安全边界：
+    protein-design-agent chat
 
-- 模型只负责自然语言理解和受控解释。
-- 确定性 Planner 负责生成结构化计划。
-- 执行前必须完成人工审批。
-- 审批会冻结配置和关键文件摘要。
-- 一次审批只能消费一次。
-- 模型不会直接生成任意 Shell 命令并自动执行。
+模型可用时，可以输入：
+
+    分析 data/3c98_small，binder 是 B 链。
+    这是五个候选的 smoke test，不启用 design region 和 hotspot。
+
+Agent 应先检查 PDB、报告链布局并生成可审查计划，不会立即执行 BinderRanker。
+
+## 5. 查看并批准计划
+
+以下兼容命令已经过测试：
+
+    状态
+    查看计划
+    批准计划并确认小样本限制
+
+批准会冻结已审查的配置，但不会自动开始执行。
+
+## 6. 执行已批准任务
+
+    确认执行
+
+执行会消费一次性批准。成功后会立即展示紧凑排名预览、主要优势和记录的拖累。
+
+## 7. 分析和查看结果
+
+不调用模型的确定性分析：
+
+    分析结果
+
+查看当前阶段、有效产物和下一步：
+
+    状态
+
+模型可用时，可以另外请求受证据约束的解释：
+
+    分析并解释结果
+
+## 安全边界
+
+- 计划、批准和执行是不同阶段。
+- 大模型不能自行批准或执行任务。
+- 一次批准只能消费一次。
+- 模型不能改写 BinderRanker 分数或确定性 provenance。
+- 小样本结果不得作为正式实验候选推荐。
 '''
 
 
