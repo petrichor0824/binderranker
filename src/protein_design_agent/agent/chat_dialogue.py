@@ -1572,6 +1572,50 @@ def inspect_dataset_and_propose_adoption(
     )
 
 
+def maybe_auto_inspect_after_information(
+    *,
+    result: ChatTurnResult,
+    bundle_dir: Path,
+    provider: Any | None,
+    user_message: str,
+) -> ChatTurnResult | None:
+    """
+    参数写入规划会话后，自动衔接只读数据检查。
+
+    这里只读取文件并提出建议，不批准、不执行，
+    也不会覆盖已经存在的待确认动作。
+    """
+    if result.status != "NEEDS_INFORMATION":
+        return None
+
+    bundle = bundle_dir.resolve()
+    session_path = bundle / "planning_session.json"
+
+    if not session_path.is_file():
+        return None
+
+    if load_pending_action(bundle) is not None:
+        return None
+
+    try:
+        session = load_planning_session(
+            session_path
+        )
+    except Exception as exc:
+        raise ChatDialogueError(
+            f"无法读取刚更新的规划会话：{exc}"
+        ) from exc
+
+    if session.request.input_dir is None:
+        return None
+
+    return inspect_dataset_and_propose_adoption(
+        bundle_dir=bundle,
+        provider=provider,
+        user_message=user_message,
+    )
+
+
 def deterministic_pending_safety_answer(
     *,
     pending: PendingChatAction,
@@ -2533,6 +2577,18 @@ def process_dialogue_message(
             profile_name=profile_name,
             allow_network=allow_network,
         )
+
+        automatic_inspection = (
+            maybe_auto_inspect_after_information(
+                result=result,
+                bundle_dir=bundle_dir,
+                provider=provider,
+                user_message=message,
+            )
+        )
+
+        if automatic_inspection is not None:
+            return automatic_inspection
 
         if result.status == "NEEDS_INFORMATION":
             return result.model_copy(
