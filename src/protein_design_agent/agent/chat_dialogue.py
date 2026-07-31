@@ -71,6 +71,8 @@ DialogueIntent = Literal[
     "CONFIRM",
     "CANCEL",
     "GENERAL_QUESTION",
+    "LIST_TASKS",
+    "SWITCH_TASK",
 ]
 
 
@@ -975,6 +977,8 @@ def classify_dialogue_intent(
             "HELP",
             "VIEW_STATUS",
             "VIEW_PLAN",
+            "LIST_TASKS",
+            "SWITCH_TASK",
             "PROVIDE_INFORMATION",
             "REQUEST_DATASET_INSPECTION",
             "REQUEST_APPROVAL",
@@ -1048,6 +1052,12 @@ def classify_dialogue_intent(
                 "不要在 reply 中自行断言批准、执行、"
                 "配置冻结或科研解释权限。"
                 "最终安全答案由确定性控制器生成。"
+
+                "当用户询问当前有哪些任务、任务列表或"
+                "所有分组状态时，选择 LIST_TASKS。"
+                "当用户要求进入、切换或继续某个已存在任务时，"
+                "选择 SWITCH_TASK。任务名由后续确定性导航器"
+                "根据真实任务列表验证。"
 
                 "当用户明确要求查看、检查、读取 PDB 文件，"
                 "要求识别多个目录、按目录分组或分别排序，"
@@ -2061,6 +2071,55 @@ def stage_guidance(
     )
 
 
+def list_tasks_for_chat(
+    *,
+    bundle_dir: Path,
+) -> ChatTurnResult:
+    from protein_design_agent.agent.task_navigation import (
+        format_workspace_tasks,
+        list_workspace_tasks,
+    )
+
+    tasks = list_workspace_tasks(
+        bundle_dir
+    )
+
+    return ChatTurnResult(
+        action="LIST_TASKS",
+        status="TASKS_LISTED",
+        message=format_workspace_tasks(tasks),
+        bundle_dir=bundle_dir.resolve(),
+    )
+
+
+def switch_task_for_chat(
+    *,
+    bundle_dir: Path,
+    message: str,
+    provider: Any | None,
+) -> ChatTurnResult:
+    from protein_design_agent.agent.task_navigation import (
+        resolve_task_reference,
+    )
+
+    target = resolve_task_reference(
+        current_bundle=bundle_dir,
+        message=message,
+        provider=provider,
+    )
+
+    return ChatTurnResult(
+        action="SWITCH_TASK",
+        status="TASK_SWITCHED",
+        message=(
+            f"已切换到任务：{target.name}\n"
+            f"Bundle：{target}\n"
+            "后续消息只读取和修改该任务。"
+        ),
+        bundle_dir=target,
+    )
+
+
 def process_dialogue_message(
     *,
     message: str,
@@ -2080,6 +2139,26 @@ def process_dialogue_message(
 
     大模型只能提出意图，不得直接执行有副作用动作。
     """
+    navigation_message = message.strip()
+
+    if navigation_message.casefold() in {
+        "/tasks",
+        "任务列表",
+        "列出任务",
+        "有哪些任务",
+    }:
+        return list_tasks_for_chat(
+            bundle_dir=bundle_dir
+        )
+
+    if navigation_message.casefold().startswith(
+        "/task "
+    ):
+        return switch_task_for_chat(
+            bundle_dir=bundle_dir,
+            message=navigation_message[6:].strip(),
+            provider=provider,
+        )
     (
         decision,
         pending,
@@ -2369,6 +2448,18 @@ def process_dialogue_message(
             model_config_path=model_config_path,
             profile_name=profile_name,
             allow_network=allow_network,
+        )
+
+    if intent == "LIST_TASKS":
+        return list_tasks_for_chat(
+            bundle_dir=bundle_dir
+        )
+
+    if intent == "SWITCH_TASK":
+        return switch_task_for_chat(
+            bundle_dir=bundle_dir,
+            message=message,
+            provider=provider,
         )
 
     if intent == "REQUEST_DATASET_INSPECTION":

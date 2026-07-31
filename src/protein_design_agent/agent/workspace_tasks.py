@@ -165,3 +165,82 @@ def resolve_task_bundle(
     )
 
     return bundle
+
+
+def resolve_workspace_from_bundle(
+    bundle_dir: Path,
+) -> Path:
+    """
+    从受管 Bundle 解析所属工作空间。
+
+    Bundle 必须位于 <workspace>/runs/<task>。
+    """
+    bundle = bundle_dir.expanduser().resolve()
+    runs_root = bundle.parent
+    workspace = runs_root.parent
+
+    if (
+        runs_root.name != "runs"
+        or not (
+            workspace / ".pda-workspace.json"
+        ).is_file()
+    ):
+        raise TaskPathError(
+            "当前任务不属于可导航的受管工作空间"
+        )
+
+    ensure_path_within(
+        child=bundle,
+        parent=runs_root.resolve(),
+        description="任务 Bundle",
+    )
+
+    return workspace
+
+
+def list_task_bundles(
+    workspace_dir: Path,
+) -> tuple[Path, ...]:
+    """只读列出工作空间中所有合法任务 Bundle。"""
+    workspace = (
+        workspace_dir.expanduser().resolve()
+    )
+    runs_root = (workspace / "runs").resolve()
+
+    ensure_path_within(
+        child=runs_root,
+        parent=workspace,
+        description="任务根目录",
+    )
+
+    if not runs_root.is_dir():
+        return ()
+
+    bundles: list[Path] = []
+
+    for child in sorted(
+        runs_root.iterdir(),
+        key=lambda item: item.name.casefold(),
+    ):
+        if (
+            child.is_symlink()
+            or not child.is_dir()
+        ):
+            continue
+
+        try:
+            validate_task_name(child.name)
+        except TaskPathError:
+            continue
+
+        resolved = child.resolve()
+
+        ensure_path_within(
+            child=resolved,
+            parent=runs_root,
+            description="任务 Bundle",
+        )
+
+        bundles.append(resolved)
+
+    return tuple(bundles)

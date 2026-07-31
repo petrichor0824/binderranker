@@ -916,6 +916,10 @@ def chat_command(
                 allow_network=allow_network,
             )
 
+            resolved_bundle = (
+                result.bundle_dir.resolve()
+            )
+
         except (
             ChatDialogueError,
             ChatSessionError,
