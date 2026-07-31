@@ -105,9 +105,25 @@ jobs:
                   for name in names
               ), suffix
 
+          # WHEEL_SAMPLE_AUDIT_V2
+          sample_pdbs = sorted(
+              name
+              for name in names
+              if (
+                  "/resources/samples/"
+                  "3c98_small/" in name
+                  and name.endswith(".pdb")
+              )
+          )
+
+          assert len(sample_pdbs) == 5, (
+              sample_pdbs
+          )
+
           print(
               "PASS: wheel contains Ranker, "
-              "SHA256 manifest, and LICENSE"
+              "SHA256 manifest, LICENSE, "
+              "and five packaged sample PDBs"
           )
           PY
 
@@ -152,6 +168,29 @@ jobs:
               "load the frozen Ranker"
           )
           PY
+
+      - name: Run installed wheel smoke outside repository
+        working-directory: /tmp
+        run: |
+          /tmp/pda-clean-venv/bin/python \
+            "$GITHUB_WORKSPACE/scripts/verify_installed_wheel_smoke.py"
+
+      - name: Verify no-argument chat from clean wheel
+        working-directory: /tmp
+        run: |
+          rm -rf /tmp/pda-noarg-chat
+          mkdir -p /tmp/pda-noarg-chat
+          cd /tmp/pda-noarg-chat
+
+          printf '退出\n' | \
+            env -u DEEPSEEK_API_KEY \
+            /tmp/pda-clean-venv/bin/protein-design-agent chat \
+            > chat-output.txt
+
+          grep -F '模型状态：OFFLINE' chat-output.txt
+          test -f .protein-design-agent/.pda-workspace.json
+          test -f \
+            .protein-design-agent/configs/models/deepseek.local.yaml
 
       - name: Initialize clean workspace
         working-directory: /tmp
