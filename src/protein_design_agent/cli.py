@@ -1438,6 +1438,47 @@ def explain_run_command(
     )
 
 
+@app.command("extract-sample")
+def extract_sample_command(
+    destination: Path = typer.Option(
+        Path("sample_data/3c98_small"),
+        "--destination",
+        "-d",
+        file_okay=False,
+        dir_okay=True,
+        help="提取目录；默认当前目录下 sample_data/3c98_small。",
+    ),
+    sample_name: str = typer.Option(
+        "3c98_small",
+        "--sample",
+        help="要提取的内置样例名称。",
+    ),
+) -> None:
+    """安全提取随安装包发布的 smoke-test 样例。"""
+    from protein_design_agent.agent.sample_resources import (
+        PackagedSampleError,
+        extract_packaged_sample,
+    )
+
+    try:
+        result = extract_packaged_sample(
+            destination=destination,
+            sample_name=sample_name,
+        )
+    except (PackagedSampleError, OSError) as exc:
+        typer.echo(f"样例提取失败：{exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    typer.echo(f"样例：{result.sample_name}")
+    typer.echo(f"目录：{result.destination}")
+    typer.echo(f"PDB 数量：{len(result.pdb_files)}")
+    typer.echo(
+        "用途：仅用于安装和 smoke test，"
+        "不得作为正式筛选结论。"
+    )
+    typer.echo("下一步：在 Chat 中提供上述目录。")
+
+
 @app.command("init")
 def init_command(
     destination: Path = typer.Option(

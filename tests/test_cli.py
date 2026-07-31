@@ -75,6 +75,7 @@ def test_cli_has_expected_commands() -> None:
 
     expected_commands = {
         "init",
+        "extract-sample",
         "doctor",
         "chat",
         "plan",

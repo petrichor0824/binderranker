@@ -51,4 +51,5 @@ protein-design-agent = "protein_design_agent.cli:app"
 protein_design_agent = [
     "resources/binderranker/v0.1-expert/*",
     "resources/samples/3c98_small/*.pdb",
+    "resources/samples/3c98_small/README.md",
 ]

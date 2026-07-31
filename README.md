@@ -178,11 +178,25 @@ The repository-level `algorithms/` copy remains the human-auditable source. The 
 
 ## Example data
 
-The repository includes a five-candidate real PDB dataset:
+The wheel and GitHub Source ZIP include the same five-PDB
+`3c98_small` smoke-test fixture. Extract it without depending
+on the source repository layout:
 
-    sample_data/real/3c98_small/
+    protein-design-agent extract-sample
 
-It is intentionally a smoke-test dataset. Results from this dataset must not be presented as formal screening conclusions or final design recommendations.
+The default destination is:
+
+    ./sample_data/3c98_small/
+
+A custom destination can be selected with:
+
+    protein-design-agent extract-sample --destination ./my-smoke-data
+
+The fixture version follows the installed Protein Design Agent
+release. It is provided only for installation, packaging, and
+end-to-end BinderRanker smoke testing. Its results must not be
+presented as formal screening conclusions or final design
+recommendations.
 
 ## Run bundles and auditability
 
