@@ -62,6 +62,7 @@ DialogueIntent = Literal[
     "HELP",
     "VIEW_STATUS",
     "VIEW_PLAN",
+    "START_TASK",
     "PROVIDE_INFORMATION",
     "REQUEST_DATASET_INSPECTION",
     "REQUEST_APPROVAL",
@@ -979,6 +980,7 @@ def classify_dialogue_intent(
             "VIEW_PLAN",
             "LIST_TASKS",
             "SWITCH_TASK",
+              "START_TASK",
             "PROVIDE_INFORMATION",
             "REQUEST_DATASET_INSPECTION",
             "REQUEST_APPROVAL",
@@ -1010,7 +1012,7 @@ def classify_dialogue_intent(
                 "在 EMPTY 阶段，只有用户明确要求分析、"
                 "排名或处理 PDB，或者主动提供目录、链、"
                 "残基边界等任务信息时，"
-                "才选择 PROVIDE_INFORMATION。"
+                "才选择 START_TASK。"
                 "问候、模型连接测试、程序介绍、使用方法、"
                 "原理、能力、局限和安全机制等内容，"
                 "必须选择 GENERAL_QUESTION 并自然回答。"
@@ -1059,7 +1061,7 @@ def classify_dialogue_intent(
                 "选择 SWITCH_TASK。任务名由后续确定性导航器"
                 "根据真实任务列表验证。"
 
-                "当用户明确要求查看、检查、读取 PDB 文件，"
+                "当已有 NEEDS_INFORMATION 计划，且用户明确要求查看、检查、读取 PDB 文件，"
                 "要求识别多个目录、按目录分组或分别排序，"
                 "或者说自己无法判断并要求 Agent 根据文件分析时，"
                 "选择 REQUEST_DATASET_INSPECTION。"
@@ -2567,7 +2569,7 @@ def process_dialogue_message(
             report=report,
         )
 
-    if intent == "PROVIDE_INFORMATION":
+    if intent in {"START_TASK", "PROVIDE_INFORMATION"}:
         result = process_chat_message(
             message=message,
             bundle_dir=bundle_dir,

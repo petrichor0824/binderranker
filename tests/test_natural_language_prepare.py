@@ -87,6 +87,7 @@ def test_incomplete_request_stops_before_workflow(
     provider = MockProvider({})
 
     bundle = tmp_path / "incomplete_bundle"
+    bundle.mkdir()
 
     result = prepare_from_natural_language(
         raw_text="帮我检查并排名这批骨架",

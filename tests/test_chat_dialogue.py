@@ -1437,3 +1437,61 @@ def test_deterministic_analysis_runs_without_confirmation(
     assert captured["profile_name"] is None
     assert captured["allow_network"] is False
     assert load_pending_action(bundle) is None
+
+def test_empty_start_task_routes_to_prepare(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = tmp_path / "runs" / "default"
+    bundle.mkdir(parents=True)
+
+    monkeypatch.setattr(
+        module,
+        "determine_intent",
+        lambda **_kwargs: (
+            module.DialogueDecision(
+                intent="START_TASK",
+                reason="test",
+            ),
+            None,
+            "EMPTY",
+            None,
+        ),
+    )
+
+    prepared = module.ChatTurnResult(
+        action="PREPARE",
+        status="NEEDS_INFORMATION",
+        message="raw missing message",
+        bundle_dir=bundle,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "process_chat_message",
+        lambda **_kwargs: prepared,
+    )
+    monkeypatch.setattr(
+        module,
+        "maybe_auto_inspect_after_information",
+        lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        module,
+        "natural_missing_message",
+        lambda _bundle: "任务信息尚不完整。",
+    )
+
+    result = module.process_dialogue_message(
+        message="帮我检查并排名一批蛋白骨架",
+        bundle_dir=bundle,
+        provider=object(),
+        approved_by="tester",
+        model_config_path=None,
+        profile_name=None,
+        allow_network=True,
+    )
+
+    assert result.action == "PREPARE"
+    assert result.status == "NEEDS_INFORMATION"
+    assert result.message == "任务信息尚不完整。"

@@ -128,9 +128,10 @@ def save_incomplete_session(
 
     不生成项目 YAML，不检查 PDB，也不启动科学工作流。
     """
+    check_bundle_is_available(bundle_dir)
     bundle_dir.mkdir(
         parents=True,
-        exist_ok=False,
+        exist_ok=True,
     )
 
     session_path = (
