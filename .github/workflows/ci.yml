@@ -187,7 +187,9 @@ jobs:
             /tmp/pda-clean-venv/bin/protein-design-agent chat \
             > chat-output.txt
 
-          grep -F '模型状态：OFFLINE' chat-output.txt
+          grep -F '模型状态：MISSING_CREDENTIAL' chat-output.txt
+          grep -F '网络权限：未允许' chat-output.txt
+          grep -F '缺少环境变量：DEEPSEEK_API_KEY' chat-output.txt
           test -f .protein-design-agent/.pda-workspace.json
           test -f \
             .protein-design-agent/configs/models/deepseek.local.yaml
