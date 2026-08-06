@@ -96,15 +96,22 @@ QUICKSTART_TEMPLATE = '''# Protein Design Agent 工作区
 
 ## 2. 可选：启用自然语言模型
 
-自然语言任务理解和模型解释需要配置 Provider。
+自然语言任务理解和模型解释需要配置 Provider 和 API Key。
 
-在 Linux、WSL 或 macOS 中安全输入 DeepSeek API Key：
+在 Linux、WSL 或 macOS 终端中，复制并运行下面的整行命令：
 
-    read -rsp 'DeepSeek API Key: ' DEEPSEEK_API_KEY
-    echo
-    export DEEPSEEK_API_KEY
+    read -rsp '请粘贴真实 DeepSeek API Key，然后按回车（输入不会显示）：' DEEPSEEK_API_KEY && echo && export DEEPSEEK_API_KEY
 
-不要把真实 API Key 写入 YAML、Git、截图、日志或共享 Bundle。
+操作说明：
+
+1. 先复制上面的整行命令并按回车。
+2. 终端出现提示后，粘贴真实 DeepSeek API Key。
+3. 再按一次回车即可，不需要继续输入其他命令。
+4. 粘贴 Key 时，屏幕不会显示星号或其他字符，这是正常的安全行为。
+
+不要修改命令末尾的 `DEEPSEEK_API_KEY`。它是模型配置要求的环境变量名，不是填写 API Key 的位置。
+
+不要把真实 API Key 写入 YAML、Git、截图、日志、共享 Bundle，或直接写入可能被 Shell 历史记录的命令。
 
 未配置模型时，`doctor`、样例提取、状态查看和确定性结果分析仍可使用，但不能可靠地把新的自由文本科研需求转换成完整计划。
 
@@ -119,7 +126,13 @@ QUICKSTART_TEMPLATE = '''# Protein Design Agent 工作区
 
     protein-design-agent chat
 
-模型可用时，可以输入：
+配置和 API Key 已就绪时，Agent 会询问本次 Chat 是否允许调用模型 API。
+
+选择 `yes` 才会启用模型，并可能产生网络请求和 API 费用；选择 `no` 仍可使用离线确定性功能。
+
+高级用户和自动化脚本可以使用 `--allow-network` 跳过询问，普通用户无需记忆该参数。
+
+模型可用且本次已经授权时，可以输入：
 
     分析 data/3c98_small，binder 是 B 链。
     这是五个候选的 smoke test，不启用 design region 和 hotspot。
@@ -466,10 +479,24 @@ def render_workspace_init_report(
             "",
             "下一步：",
             f"  cd {report.destination}",
+            "",
+            "  设置 DeepSeek API Key：",
             (
-                "  export "
-                'DEEPSEEK_API_KEY="你的真实 API Key"'
+                "  复制并运行下一整行命令；"
+                "出现提示后粘贴真实 Key 并按回车。"
             ),
+            (
+                "  输入时不会显示字符；"
+                "命令末尾的 DEEPSEEK_API_KEY 不要修改。"
+            ),
+            (
+                "  read -rsp "
+                "'请粘贴真实 DeepSeek API Key，"
+                "然后按回车（输入不会显示）：' "
+                "DEEPSEEK_API_KEY && echo && "
+                "export DEEPSEEK_API_KEY"
+            ),
+            "",
             (
                 "  protein-design-agent doctor "
                 "--model-config "
@@ -477,6 +504,10 @@ def render_workspace_init_report(
                 "--profile deepseek_flash"
             ),
             "  protein-design-agent chat",
+            (
+                "  Chat 启动后会询问本次会话"
+                "是否允许调用模型 API。"
+            ),
         ]
     )
 

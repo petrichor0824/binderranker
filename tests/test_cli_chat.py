@@ -147,7 +147,7 @@ def test_chat_builds_provider_only_with_network(
     monkeypatch,
 ) -> None:
     from protein_design_agent.agent.model_readiness import (
-        ModelReadinessReport,
+        ModelSetupReport,
     )
 
     bundle = tmp_path / "bundle"
@@ -161,16 +161,15 @@ def test_chat_builds_provider_only_with_network(
     fake_provider = object()
     readiness_call = {}
 
-    def fake_assess_model_readiness(**kwargs):
+    def fake_assess_model_setup(**kwargs):
         readiness_call.update(kwargs)
 
-        return ModelReadinessReport(
-            status="READY",
+        return ModelSetupReport(
+            status="AVAILABLE",
             message=(
                 "本地模型初始化条件已经通过；"
                 "尚未发送网络请求。"
             ),
-            network_allowed=True,
             config_path=model_config.resolve(),
             profile_name="fake-profile",
             model_name="fake-model",
@@ -180,8 +179,8 @@ def test_chat_builds_provider_only_with_network(
 
     monkeypatch.setattr(
         cli_module,
-        "assess_model_readiness",
-        fake_assess_model_readiness,
+        "assess_model_setup",
+        fake_assess_model_setup,
     )
 
     captured = {}
@@ -225,10 +224,7 @@ def test_chat_builds_provider_only_with_network(
     assert "fake-profile" in result.output
     assert "fake-model" in result.output
 
-    assert (
-        readiness_call["allow_network"]
-        is True
-    )
+    assert "allow_network" not in readiness_call
     assert readiness_call["config_path"] == (
         model_config.resolve()
     )
@@ -238,6 +234,7 @@ def test_chat_builds_provider_only_with_network(
 
     assert captured["provider"] is fake_provider
     assert captured["allow_network"] is True
+    assert "是否允许本次 Chat 调用模型 API" not in result.output
     assert captured["model_config_path"] == (
         model_config.resolve()
     )
@@ -555,3 +552,233 @@ def test_chat_rejects_task_with_explicit_bundle(
 
     assert result.exit_code == 2
     assert "不能同时使用" in result.output
+
+
+def test_interactive_chat_enables_model_after_yes(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from protein_design_agent.agent.model_readiness import (
+        ModelSetupReport,
+    )
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    model_config = tmp_path / "models.yaml"
+    model_config.write_text(
+        "placeholder",
+        encoding="utf-8",
+    )
+
+    fake_provider = object()
+    captured = {}
+
+    monkeypatch.setattr(
+        cli_module,
+        "assess_model_setup",
+        lambda **_kwargs: ModelSetupReport(
+            status="AVAILABLE",
+            message="local setup ready",
+            config_path=model_config.resolve(),
+            profile_name="fake-profile",
+            model_name="fake-model",
+            api_key_env="FAKE_API_KEY",
+            provider=fake_provider,
+        ),
+    )
+
+    monkeypatch.setattr(
+        cli_module,
+        "stdin_is_interactive",
+        lambda: True,
+    )
+
+    def fake_process(**kwargs):
+        captured.update(kwargs)
+
+        return ChatTurnResult(
+            action="HELP",
+            status="HELP",
+            message="帮助内容",
+            bundle_dir=bundle,
+        )
+
+    monkeypatch.setattr(
+        cli_module,
+        "process_dialogue_message",
+        fake_process,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "chat",
+            "--bundle-dir",
+            str(bundle),
+            "--approved-by",
+            "tester",
+            "--model-config",
+            str(model_config),
+        ],
+        input="y\n帮助\n退出\n",
+    )
+
+    assert result.exit_code == 0
+    assert "是否允许本次 Chat 调用模型 API" in result.output
+    assert "模型状态：READY" in result.output
+    assert captured["provider"] is fake_provider
+    assert captured["allow_network"] is True
+
+
+def test_interactive_chat_stays_offline_after_no(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from protein_design_agent.agent.model_readiness import (
+        ModelSetupReport,
+    )
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    model_config = tmp_path / "models.yaml"
+    model_config.write_text(
+        "placeholder",
+        encoding="utf-8",
+    )
+
+    fake_provider = object()
+    captured = {}
+
+    monkeypatch.setattr(
+        cli_module,
+        "assess_model_setup",
+        lambda **_kwargs: ModelSetupReport(
+            status="AVAILABLE",
+            message="local setup ready",
+            config_path=model_config.resolve(),
+            profile_name="fake-profile",
+            model_name="fake-model",
+            api_key_env="FAKE_API_KEY",
+            provider=fake_provider,
+        ),
+    )
+
+    monkeypatch.setattr(
+        cli_module,
+        "stdin_is_interactive",
+        lambda: True,
+    )
+
+    def fake_process(**kwargs):
+        captured.update(kwargs)
+
+        return ChatTurnResult(
+            action="HELP",
+            status="HELP",
+            message="帮助内容",
+            bundle_dir=bundle,
+        )
+
+    monkeypatch.setattr(
+        cli_module,
+        "process_dialogue_message",
+        fake_process,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "chat",
+            "--bundle-dir",
+            str(bundle),
+            "--approved-by",
+            "tester",
+            "--model-config",
+            str(model_config),
+        ],
+        input="n\n帮助\n退出\n",
+    )
+
+    assert result.exit_code == 0
+    assert "是否允许本次 Chat 调用模型 API" in result.output
+    assert "模型状态：OFFLINE" in result.output
+    assert captured["provider"] is None
+    assert captured["allow_network"] is False
+
+
+def test_interactive_chat_defaults_offline_after_enter(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from protein_design_agent.agent.model_readiness import (
+        ModelSetupReport,
+    )
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    model_config = tmp_path / "models.yaml"
+    model_config.write_text(
+        "placeholder",
+        encoding="utf-8",
+    )
+
+    captured = {}
+
+    monkeypatch.setattr(
+        cli_module,
+        "assess_model_setup",
+        lambda **_kwargs: ModelSetupReport(
+            status="AVAILABLE",
+            message="local setup ready",
+            config_path=model_config.resolve(),
+            profile_name="fake-profile",
+            model_name="fake-model",
+            api_key_env="FAKE_API_KEY",
+            provider=object(),
+        ),
+    )
+
+    monkeypatch.setattr(
+        cli_module,
+        "stdin_is_interactive",
+        lambda: True,
+    )
+
+    def fake_process(**kwargs):
+        captured.update(kwargs)
+
+        return ChatTurnResult(
+            action="HELP",
+            status="HELP",
+            message="帮助内容",
+            bundle_dir=bundle,
+        )
+
+    monkeypatch.setattr(
+        cli_module,
+        "process_dialogue_message",
+        fake_process,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "chat",
+            "--bundle-dir",
+            str(bundle),
+            "--approved-by",
+            "tester",
+            "--model-config",
+            str(model_config),
+        ],
+        input="\n帮助\n退出\n",
+    )
+
+    assert result.exit_code == 0
+    assert "是否允许本次 Chat 调用模型 API" in result.output
+    assert "模型状态：OFFLINE" in result.output
+    assert captured["provider"] is None
+    assert captured["allow_network"] is False

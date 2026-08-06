@@ -27,6 +27,7 @@ Protein Design Agent 公开命令行入口。
 from __future__ import annotations
 
 import json
+import sys
 import os
 from pathlib import Path
 from typing import Any, Optional
@@ -96,7 +97,8 @@ from protein_design_agent.agent.providers.mock import (
     MockProvider,
 )
 from protein_design_agent.agent.model_readiness import (
-    assess_model_readiness,
+    assess_model_setup,
+    finalize_model_readiness,
     format_model_readiness,
     resolve_model_config_path,
 )
@@ -652,6 +654,48 @@ def materialize_plan_command(
 
 
 
+def stdin_is_interactive() -> bool:
+    """判断当前标准输入是否支持交互式授权。"""
+    try:
+        return bool(sys.stdin.isatty())
+    except (
+        AttributeError,
+        OSError,
+        ValueError,
+    ):
+        return False
+
+
+def resolve_chat_network_permission(
+    *,
+    explicit_allow_network: bool,
+    setup_status: str,
+) -> bool:
+    """
+    决定本次 Chat 会话是否允许调用模型。
+
+    --allow-network 表示已由高级用户显式授权；
+    普通交互式启动则在本地模型就绪后询问一次。
+    """
+    if explicit_allow_network:
+        return True
+
+    if setup_status != "AVAILABLE":
+        return False
+
+    if not stdin_is_interactive():
+        return False
+
+    return typer.confirm(
+        (
+            "检测到模型配置和 API Key 已就绪。"
+            "是否允许本次 Chat 调用模型 API？"
+            "这可能产生网络请求和 API 费用"
+        ),
+        default=False,
+        abort=False,
+    )
+
 
 @app.command("chat")
 def chat_command(
@@ -782,11 +826,23 @@ def chat_command(
         workspace_root=workspace_root,
     )
 
-    model_readiness = assess_model_readiness(
-        allow_network=allow_network,
+    model_setup = assess_model_setup(
         config_path=resolved_model_config,
         profile_name=profile,
     )
+
+    session_network_allowed = (
+        resolve_chat_network_permission(
+            explicit_allow_network=allow_network,
+            setup_status=model_setup.status,
+        )
+    )
+
+    model_readiness = finalize_model_readiness(
+        model_setup,
+        network_allowed=session_network_allowed,
+    )
+
 
     provider = model_readiness.provider
     model_calls_enabled = (
@@ -904,7 +960,7 @@ def chat_command(
                 bundle_dir=resolved_bundle,
                 provider=(
                     provider
-                    if allow_network
+                    if model_calls_enabled
                     else None
                 ),
             )
@@ -920,7 +976,7 @@ def chat_command(
                 bundle_dir=resolved_bundle,
                 provider=(
                     provider
-                    if allow_network
+                    if model_calls_enabled
                     else None
                 ),
             )

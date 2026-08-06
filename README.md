@@ -126,11 +126,17 @@ Existing managed files are never overwritten.
 
 The generated profile uses an OpenAI-compatible DeepSeek endpoint.
 
-Set the API key in the current shell:
+In a Linux or WSL Bash terminal, copy and run this entire line:
 
-    export DEEPSEEK_API_KEY="your-api-key"
+    read -rsp 'Paste your real DeepSeek API Key, then press Enter (input is hidden): ' DEEPSEEK_API_KEY && echo && export DEEPSEEK_API_KEY
 
-Do not place the real key in YAML, Git, screenshots, logs, or shared run bundles.
+Run the whole command first. When the prompt appears, paste the real API Key and press Enter. The terminal will not display characters or asterisks while the key is being entered; this is normal.
+
+Do not replace `DEEPSEEK_API_KEY` at the end of the command. It is the required environment-variable name, not the position where the real key should be written.
+
+The key is available only in the current terminal session. After opening a new terminal, run the secure input command again before using model features.
+
+Do not place the real key in YAML, Git, screenshots, logs, shared run bundles, or commands that directly expose it to Shell history.
 
 Validate the model profile without contacting the network:
 
@@ -164,9 +170,13 @@ The sample contains five PDB candidates and is intended only for installation an
 
 ### 3. Configure a model Provider
 
-Conversational task understanding requires a configured model Provider. For the generated DeepSeek profile:
+Conversational task understanding requires a configured model Provider. In the same Linux or WSL Bash terminal, copy and run this entire line:
 
-    export DEEPSEEK_API_KEY="your-api-key"
+    read -rsp 'Paste your real DeepSeek API Key, then press Enter (input is hidden): ' DEEPSEEK_API_KEY && echo && export DEEPSEEK_API_KEY
+
+Run the command first, then paste the real key when the terminal prompt appears and press Enter. Input is intentionally hidden.
+
+Do not replace `DEEPSEEK_API_KEY` at the end of the command. It is the environment-variable name, not the place where the real key should be written.
 
 Validate the local configuration without making a network request:
 
@@ -179,6 +189,12 @@ The API key is optional for deterministic commands such as `doctor`, `extract-sa
 ### 4. Start the Agent
 
     protein-design-agent chat
+
+When the model configuration and API key are ready, Chat asks whether this session may call the model API.
+
+Answer `y` to enable model calls for this session. This may create network requests and API charges. Answer `n`, or press Enter to accept the default, to continue in offline deterministic mode.
+
+Ordinary users do not need to remember `--allow-network`. It remains available for advanced users, tests, and non-interactive automation that need to authorize model access explicitly.
 
 Describe the smoke task in natural language:
 

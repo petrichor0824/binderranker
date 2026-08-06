@@ -298,3 +298,34 @@ def test_invalid_workspace_marker_is_not_accepted(
     assert marker.read_text(
         encoding="utf-8"
     ) == '{"workspace_type":"other"}'
+
+
+def test_quickstart_explains_secure_api_key_input(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "workspace"
+    initialize_workspace(destination)
+
+    quickstart = (
+        destination / "QUICKSTART.md"
+    ).read_text(encoding="utf-8")
+
+    assert "read -rsp" in quickstart
+    assert (
+        "DEEPSEEK_API_KEY && echo && "
+        "export DEEPSEEK_API_KEY"
+        in quickstart
+    )
+    assert (
+        "终端出现提示后，粘贴真实 DeepSeek API Key"
+        in quickstart
+    )
+    assert (
+        "不要修改命令末尾的 `DEEPSEEK_API_KEY`"
+        in quickstart
+    )
+    assert (
+        'export DEEPSEEK_API_KEY="你的真实 API Key"'
+        not in quickstart
+    )
+    assert "protein-design-agent chat" in quickstart

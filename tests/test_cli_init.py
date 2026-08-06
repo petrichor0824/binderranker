@@ -89,3 +89,43 @@ def test_cli_init_refuses_overwrite(
     assert not (
         destination / "QUICKSTART.md"
     ).exists()
+
+
+def test_cli_init_shows_secure_api_key_guidance(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "workspace"
+
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            "--destination",
+            str(destination),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "设置 DeepSeek API Key" in result.output
+    assert "read -rsp" in result.output
+    assert (
+        "DEEPSEEK_API_KEY && echo && "
+        "export DEEPSEEK_API_KEY"
+        in result.output
+    )
+    assert (
+        "出现提示后粘贴真实 Key"
+        in result.output
+    )
+    assert (
+        "DEEPSEEK_API_KEY 不要修改"
+        in result.output
+    )
+    assert (
+        'export DEEPSEEK_API_KEY="你的真实 API Key"'
+        not in result.output
+    )
+    assert (
+        "protein-design-agent chat"
+        in result.output
+    )
