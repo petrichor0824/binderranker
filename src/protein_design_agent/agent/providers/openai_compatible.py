@@ -42,11 +42,46 @@ from protein_design_agent.schemas.agent_models import (
 )
 
 
-# URL、请求头、请求体、超时时间 -> 原始响应字节
+class HTTPTransportResponse(BaseModel):
+    """HTTP transport 的最小响应封装。"""
+
+    body: bytes
+    status_code: int | None = None
+
+
+# 兼容旧 transport：
+# - 旧实现仍可直接返回 bytes；
+# - 新实现可同时返回响应体和 HTTP 状态码。
 HTTPTransport = Callable[
     [str, dict[str, str], bytes, float],
-    bytes,
+    bytes | HTTPTransportResponse,
 ]
+
+
+def normalize_http_transport_response(
+    response: bytes | HTTPTransportResponse,
+) -> HTTPTransportResponse:
+    """
+    统一新旧 HTTP transport 返回值。
+
+    旧 transport 返回 bytes 时保持兼容，
+    但 HTTP 状态码记为未知。
+    """
+    if isinstance(
+        response,
+        HTTPTransportResponse,
+    ):
+        return response
+
+    if isinstance(response, bytes):
+        return HTTPTransportResponse(
+            body=response,
+            status_code=None,
+        )
+
+    raise ProviderOutputError(
+        "HTTP transport 返回了不支持的类型"
+    )
 
 
 class OpenAICompatibleSettings(BaseModel):
@@ -131,7 +166,7 @@ def default_http_transport(
     headers: dict[str, str],
     body: bytes,
     timeout: float,
-) -> bytes:
+) -> HTTPTransportResponse:
     """使用 Python 标准库发送 POST 请求。"""
     request = Request(
         url=url,
@@ -145,7 +180,19 @@ def default_http_transport(
             request,
             timeout=timeout,
         ) as response:
-            return response.read()
+            status_code = response.getcode()
+
+            return HTTPTransportResponse(
+                body=response.read(),
+                status_code=(
+                    status_code
+                    if isinstance(
+                        status_code,
+                        int,
+                    )
+                    else None
+                ),
+            )
 
     except HTTPError as exc:
         try:
@@ -175,8 +222,150 @@ def default_http_transport(
         ) from exc
 
 
+def format_safe_response_diagnostics(
+    response_payload: Mapping[str, Any],
+    *,
+    provider_name: str,
+    model: str,
+    http_status: int | None = None,
+) -> str:
+    """
+    生成脱敏的 Chat Completions 响应诊断。
+
+    只记录响应结构、类型、长度和已知 token 计数；
+    不记录 message/reasoning 正文或任意响应字段值。
+    """
+    top_level_keys = sorted(
+        str(key)
+        for key in response_payload.keys()
+    )
+
+    choices = response_payload.get("choices")
+    choices_count = (
+        len(choices)
+        if isinstance(choices, list)
+        else 0
+    )
+
+    first_choice: Mapping[str, Any] = {}
+    if (
+        isinstance(choices, list)
+        and choices
+        and isinstance(choices[0], Mapping)
+    ):
+        first_choice = choices[0]
+
+    raw_finish_reason = first_choice.get(
+        "finish_reason"
+    )
+    finish_reason = (
+        raw_finish_reason
+        if isinstance(raw_finish_reason, str)
+        and len(raw_finish_reason) <= 64
+        and raw_finish_reason.replace(
+            "_", ""
+        ).replace("-", "").isalnum()
+        else type(raw_finish_reason).__name__
+        if raw_finish_reason is not None
+        else "missing"
+    )
+
+    raw_message = first_choice.get("message")
+    message = (
+        raw_message
+        if isinstance(raw_message, Mapping)
+        else {}
+    )
+
+    message_keys = sorted(
+        str(key)
+        for key in message.keys()
+    )
+
+    content_present = "content" in message
+    content = message.get("content")
+    content_type = (
+        type(content).__name__
+        if content_present
+        else "missing"
+    )
+    content_length = (
+        len(content.strip())
+        if isinstance(content, str)
+        else 0
+    )
+
+    reasoning_present = (
+        "reasoning_content" in message
+    )
+    reasoning = message.get(
+        "reasoning_content"
+    )
+    reasoning_type = (
+        type(reasoning).__name__
+        if reasoning_present
+        else "missing"
+    )
+    reasoning_length = (
+        len(reasoning.strip())
+        if isinstance(reasoning, str)
+        else 0
+    )
+
+    parts = [
+        f"provider={provider_name}",
+        f"model={model}",
+        (
+            f"http_status={http_status}"
+            if http_status is not None
+            else "http_status=unknown"
+        ),
+        f"top_level_keys={top_level_keys}",
+        f"choices_count={choices_count}",
+        f"finish_reason={finish_reason}",
+        f"message_keys={message_keys}",
+        f"content_present={content_present}",
+        f"content_type={content_type}",
+        f"content_length={content_length}",
+        (
+            "reasoning_content_present="
+            f"{reasoning_present}"
+        ),
+        (
+            "reasoning_content_type="
+            f"{reasoning_type}"
+        ),
+        (
+            "reasoning_content_length="
+            f"{reasoning_length}"
+        ),
+    ]
+
+    usage = response_payload.get("usage")
+    if isinstance(usage, Mapping):
+        for field in (
+            "prompt_tokens",
+            "completion_tokens",
+            "total_tokens",
+        ):
+            value = usage.get(field)
+            if (
+                isinstance(value, int)
+                and not isinstance(value, bool)
+            ):
+                parts.append(
+                    f"{field}={value}"
+                )
+
+    return "; ".join(parts)
+
+
 def extract_assistant_content(
     response_payload: Mapping[str, Any],
+    *,
+    provider_name: str = "unknown",
+    model: str = "unknown",
+    http_status: int | None = None,
 ) -> str:
     """从 Chat Completions 响应提取 assistant 文本。"""
     choices = response_payload.get("choices")
@@ -210,8 +399,17 @@ def extract_assistant_content(
     content = content.strip()
 
     if not content:
+        diagnostics = (
+            format_safe_response_diagnostics(
+                response_payload,
+                provider_name=provider_name,
+                model=model,
+                http_status=http_status,
+            )
+        )
         raise ProviderOutputError(
-            "模型返回了空内容"
+            "模型返回了空内容；"
+            f"{diagnostics}"
         )
 
     return content
@@ -348,7 +546,7 @@ class OpenAICompatibleProvider:
     def _call_api(
         self,
         raw_text: str,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], int | None]:
         endpoint = build_chat_completions_url(
             self.settings.base_url
         )
@@ -363,12 +561,17 @@ class OpenAICompatibleProvider:
             ensure_ascii=False,
         ).encode("utf-8")
 
-        raw_response = self._transport(
-            endpoint,
-            headers,
-            encoded_body,
-            self.settings.timeout_seconds,
+        transport_response = (
+            normalize_http_transport_response(
+                self._transport(
+                    endpoint,
+                    headers,
+                    encoded_body,
+                    self.settings.timeout_seconds,
+                )
+            )
         )
+        raw_response = transport_response.body
 
         try:
             decoded_response = raw_response.decode(
@@ -397,7 +600,10 @@ class OpenAICompatibleProvider:
                 f"{payload['error']}"
             )
 
-        return payload
+        return (
+            payload,
+            transport_response.status_code,
+        )
 
     def generate_json(
         self,
@@ -500,15 +706,20 @@ class OpenAICompatibleProvider:
             self.settings.base_url
         )
 
-        raw_response = self._transport(
-            endpoint,
-            self._build_headers(),
-            json.dumps(
-                request_body,
-                ensure_ascii=False,
-            ).encode("utf-8"),
-            self.settings.timeout_seconds,
+        transport_response = (
+            normalize_http_transport_response(
+                self._transport(
+                    endpoint,
+                    self._build_headers(),
+                    json.dumps(
+                        request_body,
+                        ensure_ascii=False,
+                    ).encode("utf-8"),
+                    self.settings.timeout_seconds,
+                )
+            )
         )
+        raw_response = transport_response.body
 
         try:
             response_payload = json.loads(
@@ -535,7 +746,14 @@ class OpenAICompatibleProvider:
 
         assistant_content = (
             extract_assistant_content(
-                response_payload
+                response_payload,
+                provider_name=(
+                    self.settings.provider_name
+                ),
+                model=self.settings.model,
+                http_status=(
+                    transport_response.status_code
+                ),
             )
         )
 
@@ -553,12 +771,20 @@ class OpenAICompatibleProvider:
         if not clean_text:
             raise ValueError("用户请求不能为空")
 
-        response_payload = self._call_api(
+        (
+            response_payload,
+            http_status,
+        ) = self._call_api(
             clean_text
         )
 
         assistant_content = extract_assistant_content(
-            response_payload
+            response_payload,
+            provider_name=(
+                self.settings.provider_name
+            ),
+            model=self.settings.model,
+            http_status=http_status,
         )
 
         provider_payload = parse_json_object_text(

@@ -2,6 +2,7 @@ import json
 from typing import Any
 
 import pytest
+import protein_design_agent.agent.providers.openai_compatible as openai_module
 
 from protein_design_agent.agent.orchestrator import (
     LocalAgentOrchestrator,
@@ -14,6 +15,7 @@ from protein_design_agent.agent.providers.openai_compatible import (
     OpenAICompatibleProvider,
     OpenAICompatibleSettings,
     build_chat_completions_url,
+    format_safe_response_diagnostics,
 )
 
 
@@ -319,3 +321,317 @@ def test_unknown_provider_field_is_rejected() -> None:
         provider.parse_user_request(
             "测试未知字段"
         )
+
+
+def test_empty_model_content_reports_safe_diagnostics() -> None:
+    reasoning = (
+        "PRIVATE_REASONING_SHOULD_NOT_LEAK"
+    )
+    api_secret = (
+        "SECRET_API_KEY_SHOULD_NOT_LEAK"
+    )
+    sensitive_value = (
+        "TOP_LEVEL_VALUE_SHOULD_NOT_LEAK"
+    )
+
+    response_payload = {
+        "id": "test-response",
+        "object": "chat.completion",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "   ",
+                    "reasoning_content": reasoning,
+                },
+                "finish_reason": "length",
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 11,
+            "completion_tokens": 64,
+            "total_tokens": 75,
+        },
+        "sensitive_probe": sensitive_value,
+    }
+
+    provider = OpenAICompatibleProvider(
+        OpenAICompatibleSettings(
+            provider_name="test-provider",
+            base_url="https://api.example.com/v1",
+            model="test-model",
+            api_key_env="TEST_API_KEY",
+            require_api_key=True,
+        ),
+        transport=RecordingTransport(
+            response_payload
+        ),
+        environ={
+            "TEST_API_KEY": api_secret
+        },
+    )
+
+    with pytest.raises(
+        ProviderOutputError
+    ) as exc_info:
+        provider.parse_user_request(
+            "测试空模型响应"
+        )
+
+    message = str(exc_info.value)
+
+    assert "模型返回了空内容" in message
+
+    assert "provider=test-provider" in message
+    assert "model=test-model" in message
+
+    assert "top_level_keys" in message
+    assert "sensitive_probe" in message
+
+    assert "choices_count=1" in message
+    assert "finish_reason=length" in message
+
+    assert "content_present=True" in message
+    assert "content_type=str" in message
+    assert "content_length=0" in message
+
+    assert (
+        "reasoning_content_present=True"
+        in message
+    )
+    assert (
+        "reasoning_content_type=str"
+        in message
+    )
+    assert (
+        f"reasoning_content_length="
+        f"{len(reasoning)}"
+        in message
+    )
+
+    assert "prompt_tokens=11" in message
+    assert "completion_tokens=64" in message
+    assert "total_tokens=75" in message
+
+    # 只能暴露结构和长度，绝不能暴露正文。
+    assert reasoning not in message
+    assert sensitive_value not in message
+
+    # API Key 更不能进入诊断信息。
+    assert api_secret not in message
+
+
+def test_generate_json_empty_content_reports_safe_diagnostics() -> None:
+    reasoning = "PRIVATE_GENERATE_JSON_REASONING"
+
+    response_payload = {
+        "id": "generate-json-empty",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "reasoning_content": reasoning,
+                },
+                "finish_reason": "length",
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 20,
+            "completion_tokens": 128,
+            "total_tokens": 148,
+        },
+    }
+
+    provider = OpenAICompatibleProvider(
+        OpenAICompatibleSettings(
+            provider_name="explain-provider",
+            base_url="https://api.example.com/v1",
+            model="explain-model",
+            api_key_env=None,
+            require_api_key=False,
+        ),
+        transport=RecordingTransport(
+            response_payload
+        ),
+        environ={},
+    )
+
+    with pytest.raises(
+        ProviderOutputError
+    ) as exc_info:
+        provider.generate_json(
+            [
+                {
+                    "role": "system",
+                    "content": "只根据证据输出 JSON。",
+                },
+                {
+                    "role": "user",
+                    "content": '{"project":"3c98"}',
+                },
+            ]
+        )
+
+    message = str(exc_info.value)
+
+    assert "模型返回了空内容" in message
+    assert "provider=explain-provider" in message
+    assert "model=explain-model" in message
+
+    assert "choices_count=1" in message
+    assert "finish_reason=length" in message
+    assert "content_length=0" in message
+
+    assert (
+        "reasoning_content_present=True"
+        in message
+    )
+    assert (
+        f"reasoning_content_length="
+        f"{len(reasoning)}"
+        in message
+    )
+
+    assert "prompt_tokens=20" in message
+    assert "completion_tokens=128" in message
+    assert "total_tokens=148" in message
+
+    # reasoning 正文不能泄露。
+    assert reasoning not in message
+
+
+def test_safe_response_diagnostics_reports_http_status() -> None:
+    payload = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                },
+                "finish_reason": "stop",
+            }
+        ]
+    }
+
+    diagnostics = format_safe_response_diagnostics(
+        payload,
+        provider_name="test-provider",
+        model="test-model",
+        http_status=200,
+    )
+
+    assert "http_status=200" in diagnostics
+
+
+def test_generate_json_reports_http_status_from_transport_response() -> None:
+    response_payload = {
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                },
+                "finish_reason": "stop",
+            }
+        ]
+    }
+
+    def status_transport(
+        url: str,
+        headers: dict[str, str],
+        body: bytes,
+        timeout: float,
+    ):
+        return openai_module.HTTPTransportResponse(
+            body=json.dumps(
+                response_payload
+            ).encode("utf-8"),
+            status_code=200,
+        )
+
+    provider = OpenAICompatibleProvider(
+        OpenAICompatibleSettings(
+            provider_name="status-provider",
+            base_url="https://api.example.com/v1",
+            model="status-model",
+            api_key_env=None,
+            require_api_key=False,
+        ),
+        transport=status_transport,
+        environ={},
+    )
+
+    with pytest.raises(
+        ProviderOutputError
+    ) as exc_info:
+        provider.generate_json(
+            [
+                {
+                    "role": "user",
+                    "content": "返回 JSON。",
+                }
+            ]
+        )
+
+    message = str(exc_info.value)
+
+    assert "模型返回了空内容" in message
+    assert "http_status=200" in message
+
+
+def test_parse_user_request_reports_http_status_from_transport_response() -> None:
+    response_payload = {
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                },
+                "finish_reason": "stop",
+            }
+        ]
+    }
+
+    def status_transport(
+        url: str,
+        headers: dict[str, str],
+        body: bytes,
+        timeout: float,
+    ):
+        return openai_module.HTTPTransportResponse(
+            body=json.dumps(
+                response_payload
+            ).encode("utf-8"),
+            status_code=200,
+        )
+
+    provider = OpenAICompatibleProvider(
+        OpenAICompatibleSettings(
+            provider_name="parse-provider",
+            base_url="https://api.example.com/v1",
+            model="parse-model",
+            api_key_env=None,
+            require_api_key=False,
+        ),
+        transport=status_transport,
+        environ={},
+    )
+
+    with pytest.raises(
+        ProviderOutputError
+    ) as exc_info:
+        provider.parse_user_request(
+            "测试 HTTP 状态码"
+        )
+
+    message = str(exc_info.value)
+
+    assert "模型返回了空内容" in message
+    assert "provider=parse-provider" in message
+    assert "model=parse-model" in message
+    assert "http_status=200" in message
