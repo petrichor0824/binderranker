@@ -19,6 +19,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from pydantic import BaseModel, Field
+from protein_design_agent.agent.analysis_artifacts import (
+    AnalysisArtifactError,
+    resolve_analysis_artifacts,
+)
 
 from protein_design_agent.agent.provider_factory import (
     build_request_parser_provider,
@@ -54,6 +58,10 @@ class ExplainRunResult(BaseModel):
 
     result_summary_path: Path
     failure_analysis_path: Path
+
+    analysis_artifact_source: str
+    analysis_provenance_status: str
+    analysis_manifest_path: Path | None = None
 
     evidence_path: Path
     explanation_json_path: Path
@@ -133,33 +141,25 @@ def run_explain_run(
             f"{resolved_model_config}"
         )
 
+    try:
+        artifacts = resolve_analysis_artifacts(
+            bundle_dir=resolved_bundle,
+            result_summary_path=result_summary_path,
+            failure_analysis_path=(
+                failure_analysis_path
+            ),
+        )
+    except AnalysisArtifactError as exc:
+        raise ExplainRunError(
+            f"无法确定结果解释输入：{exc}"
+        ) from exc
+
     resolved_result_summary_path = (
-        result_summary_path.resolve()
-        if result_summary_path is not None
-        else (
-            resolved_bundle
-            / "agent_result_summary.json"
-        )
+        artifacts.result_summary_path
     )
-
     resolved_failure_analysis_path = (
-        failure_analysis_path.resolve()
-        if failure_analysis_path is not None
-        else (
-            resolved_bundle
-            / "agent_failure_analysis_v2.json"
-        )
+        artifacts.failure_analysis_path
     )
-
-    for required_path in (
-        resolved_result_summary_path,
-        resolved_failure_analysis_path,
-    ):
-        if not required_path.is_file():
-            raise ExplainRunError(
-                "结果解释缺少必要输入："
-                f"{required_path}"
-            )
 
     resolved_output_dir = (
         resolve_explanation_output_dir(
@@ -273,6 +273,15 @@ def run_explain_run(
         ),
         failure_analysis_path=(
             resolved_failure_analysis_path
+        ),
+        analysis_artifact_source=(
+            artifacts.source
+        ),
+        analysis_provenance_status=(
+            artifacts.provenance_status
+        ),
+        analysis_manifest_path=(
+            artifacts.analysis_manifest_path
         ),
         evidence_path=(
             expected_paths["evidence"]

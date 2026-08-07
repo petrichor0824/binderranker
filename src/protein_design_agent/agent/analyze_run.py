@@ -20,6 +20,9 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
+from protein_design_agent.agent.analysis_artifacts import (
+    build_analysis_provenance_seal,
+)
 
 from protein_design_agent.agent.explain_run import (
     run_explain_run,
@@ -39,7 +42,7 @@ class AnalyzeRunError(RuntimeError):
 class AnalyzeRunManifest(BaseModel):
     """一次 analyze-run 的审计清单。"""
 
-    schema_version: str = "0.1"
+    schema_version: str = "0.2"
     status: str
 
     bundle_dir: Path
@@ -50,6 +53,12 @@ class AnalyzeRunManifest(BaseModel):
 
     result_summary_path: Path | None = None
     failure_analysis_path: Path | None = None
+
+    completed_at_utc: str | None = None
+    result_summary_sha256: str | None = None
+    failure_analysis_sha256: str | None = None
+    execution_manifest_path: Path | None = None
+    execution_manifest_sha256: str | None = None
 
     explanation_evidence_path: Path | None = None
     explanation_json_path: Path | None = None
@@ -308,10 +317,25 @@ def run_analyze_run(
                     .explanation_markdown_path
                 )
 
+        provenance_seal = (
+            build_analysis_provenance_seal(
+                bundle_dir=resolved_bundle,
+                result_summary_path=(
+                    written_summary
+                ),
+                failure_analysis_path=(
+                    written_failure
+                ),
+            )
+        )
+
         completed_manifest = (
             running_manifest.model_copy(
                 update={
                     "status": "COMPLETED",
+                    **provenance_seal.model_dump(
+                        mode="python"
+                    ),
                     "provider_name": (
                         provider_name
                     ),
