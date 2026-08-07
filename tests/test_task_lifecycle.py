@@ -231,3 +231,47 @@ def test_unknown_nonempty_file_is_protected(
         TaskLifecycleState.VALID_WITH_EVIDENCE
     )
     assert report.has_protected_evidence is True
+
+
+def test_chat_pending_action_is_incomplete(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "pending"
+    chat = bundle / "chat"
+    chat.mkdir(parents=True)
+
+    (
+        chat / "pending_action.json"
+    ).write_text(
+        '{"action":"RESET_TASK"}',
+        encoding="utf-8",
+    )
+
+    report = inspect_task_lifecycle(bundle)
+
+    assert report.state == (
+        TaskLifecycleState.INCOMPLETE
+    )
+    assert report.has_protected_evidence is False
+
+
+def test_unknown_chat_content_is_protected(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "unknown_chat"
+    chat = bundle / "chat"
+    chat.mkdir(parents=True)
+
+    (
+        chat / "important-user-file.txt"
+    ).write_text(
+        "do not delete",
+        encoding="utf-8",
+    )
+
+    report = inspect_task_lifecycle(bundle)
+
+    assert report.state == (
+        TaskLifecycleState.VALID_WITH_EVIDENCE
+    )
+    assert report.has_protected_evidence is True

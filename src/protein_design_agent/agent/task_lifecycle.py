@@ -39,7 +39,14 @@ class TaskLifecycleReport:
 
 INCOMPLETE_TOP_LEVEL_NAMES = {
     "planning_session.json",
+    # 兼容早期可能出现的顶层 pending action。
     "pending_action.json",
+}
+
+INCOMPLETE_CHAT_NAMES = {
+    "pending_action.json",
+    "dataset_advice.json",
+    "dataset_grouping_proposal.json",
 }
 
 PROTECTED_TOP_LEVEL_NAMES = {
@@ -172,10 +179,41 @@ def inspect_task_lifecycle(
             "workflow_evidence_present"
         )
 
+    chat_dir = bundle / "chat"
+
+    if chat_dir.exists():
+        if not chat_dir.is_dir():
+            protected = True
+            reasons.append(
+                "chat_path_is_not_directory"
+            )
+        else:
+            for chat_item in chat_dir.iterdir():
+                if (
+                    chat_item.is_file()
+                    and chat_item.name
+                    in INCOMPLETE_CHAT_NAMES
+                ):
+                    reasons.append(
+                        "incomplete_chat_file:"
+                        f"{chat_item.name}"
+                    )
+                    continue
+
+                # chat/ 中无法识别的内容也不能默认删除。
+                protected = True
+                reasons.append(
+                    "unknown_chat_item:"
+                    f"{chat_item.name}"
+                )
+
     recognized_names = (
         INCOMPLETE_TOP_LEVEL_NAMES
         | PROTECTED_TOP_LEVEL_NAMES
-        | {"agent_prepare_manifest.json"}
+        | {
+            "agent_prepare_manifest.json",
+            "chat",
+        }
     )
 
     for item in items:
