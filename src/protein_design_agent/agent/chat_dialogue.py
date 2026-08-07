@@ -69,6 +69,8 @@ DialogueIntent = Literal[
     "REQUEST_EXECUTION",
     "REQUEST_ANALYSIS",
     "REQUEST_EXPLANATION",
+    "REQUEST_RESET_TASK",
+    "REQUEST_ARCHIVE_TASK",
     "CONFIRM",
     "CANCEL",
     "GENERAL_QUESTION",
@@ -84,6 +86,8 @@ PendingActionName = Literal[
     "EXPLAIN",
     "ADOPT_DATASET_ADVICE",
     "CREATE_DATASET_GROUP_TASKS",
+    "RESET_TASK",
+    "ARCHIVE_TASK",
 ]
 
 
@@ -192,6 +196,17 @@ EXACT_INTENTS: dict[str, DialogueIntent] = {
     "取消": "CANCEL",
     "算了": "CANCEL",
     "不做了": "CANCEL",
+
+    # 故障恢复必须保留确定性入口：
+    # 即使规划记录损坏，也应允许用户请求恢复。
+    "/reset": "REQUEST_RESET_TASK",
+    "重新开始这个任务": "REQUEST_RESET_TASK",
+    "清空这个任务重新开始": "REQUEST_RESET_TASK",
+    "/archive": "REQUEST_ARCHIVE_TASK",
+    "归档当前任务": "REQUEST_ARCHIVE_TASK",
+    "归档当前任务然后重新开始": (
+        "REQUEST_ARCHIVE_TASK"
+    ),
 
     # 兼容旧命令，但这些词现在只会生成待确认提案。
     "批准计划": "REQUEST_APPROVAL",
@@ -500,7 +515,14 @@ def inspect_bundle(
             f"Bundle 路径不是目录：{bundle}"
         )
 
-    if not any(bundle.iterdir()):
+    # chat/ 只保存对话控制状态，不代表已经形成科研任务。
+    non_chat_items = [
+        item
+        for item in bundle.iterdir()
+        if item.name != "chat"
+    ]
+
+    if not non_chat_items:
         return "EMPTY", None
 
     try:
@@ -987,6 +1009,8 @@ def classify_dialogue_intent(
             "REQUEST_EXECUTION",
             "REQUEST_ANALYSIS",
             "REQUEST_EXPLANATION",
+            "REQUEST_RESET_TASK",
+            "REQUEST_ARCHIVE_TASK",
             "CONFIRM",
             "CANCEL",
             "GENERAL_QUESTION",
@@ -1155,16 +1179,46 @@ def determine_intent(
         bundle_dir
     )
 
+    exact = EXACT_INTENTS.get(
+        clean.lower()
+    )
+
+    # 故障恢复入口必须能绕过损坏的科研任务状态。
+    # 否则 planning/manifest 损坏时，用户反而无法 reset/archive。
+    recovery_pending = (
+        pending is not None
+        and pending.action in {
+            "RESET_TASK",
+            "ARCHIVE_TASK",
+        }
+    )
+
+    if (
+        exact in {
+            "REQUEST_RESET_TASK",
+            "REQUEST_ARCHIVE_TASK",
+        }
+        or (
+            exact in {"CONFIRM", "CANCEL"}
+            and recovery_pending
+        )
+    ):
+        return (
+            DialogueDecision(
+                intent=exact,
+                reason="确定性任务恢复入口",
+            ),
+            pending,
+            "RECOVERY",
+            None,
+        )
+
     current_stage, report = inspect_bundle(
         bundle_dir
     )
 
     prepare_status = load_prepare_status(
         bundle_dir.resolve()
-    )
-
-    exact = EXACT_INTENTS.get(
-        clean.lower()
     )
 
     if exact is not None:
@@ -1798,6 +1852,80 @@ def proposal_summary(
     return "\n".join(lines)
 
 
+def create_task_recovery_proposal(
+    *,
+    action: PendingActionName,
+    bundle_dir: Path,
+) -> ChatTurnResult:
+    """为 reset/archive 创建受控确认提案。"""
+    from protein_design_agent.agent.task_lifecycle import (
+        TaskLifecycleState,
+        inspect_task_lifecycle,
+    )
+
+    lifecycle = inspect_task_lifecycle(
+        bundle_dir
+    )
+
+    if action == "RESET_TASK":
+        if (
+            lifecycle.state
+            == TaskLifecycleState.VALID_WITH_EVIDENCE
+        ):
+            raise ChatDialogueError(
+                "当前任务包含受保护证据，"
+                "不能直接重置。请改为归档当前任务。"
+            )
+
+        summary = (
+            "你正在请求重新开始当前任务。\n"
+            f"当前生命周期状态：{lifecycle.state.value}\n"
+            "确认后会清除当前 Bundle 中可安全重置的"
+            "不完整任务状态，并重新建立同名空 Bundle。\n"
+            "Bundle 外部的失败审计记录不会被删除。\n\n"
+            "请回答“确认”继续，或回答“取消”放弃。"
+        )
+
+    elif action == "ARCHIVE_TASK":
+        if lifecycle.state == TaskLifecycleState.EMPTY:
+            raise ChatDialogueError(
+                "当前任务为空，空任务无需归档。"
+            )
+
+        summary = (
+            "你正在请求归档当前任务并重新开始。\n"
+            f"当前生命周期状态：{lifecycle.state.value}\n"
+            "确认后会把当前 Bundle 完整移动到工作区"
+            " archives，并重新建立同名空 Bundle。\n"
+            "该操作不会运行 BinderRanker，"
+            "也不会修改已有科研结果。\n\n"
+            "请回答“确认”继续，或回答“取消”放弃。"
+        )
+
+    else:
+        raise ChatDialogueError(
+            f"不支持的任务恢复动作：{action}"
+        )
+
+    save_pending_action(
+        bundle_dir=bundle_dir,
+        action=action,
+        summary=summary,
+    )
+
+    return ChatTurnResult(
+        action=action,
+        status="AWAITING_CONFIRMATION",
+        message=summary,
+        bundle_dir=bundle_dir.resolve(),
+        artifact_paths={
+            "pending_action": (
+                pending_action_path(bundle_dir)
+            )
+        },
+    )
+
+
 def create_action_proposal(
     *,
     action: PendingActionName,
@@ -1914,6 +2042,70 @@ def confirm_pending_action(
             "任务状态在等待确认期间发生了变化。"
             "旧确认请求已经作废，请重新提出操作。"
         )
+
+    if pending.action in {
+        "RESET_TASK",
+        "ARCHIVE_TASK",
+    }:
+        from protein_design_agent.agent.task_recovery import (
+            TaskRecoveryError,
+            archive_task,
+            reset_task,
+        )
+
+        # pending_action 属于交互控制状态，
+        # 不应该被 reset/archive 当作科研证据保留。
+        clear_pending_action(bundle_dir)
+
+        try:
+            if pending.action == "RESET_TASK":
+                recovered = reset_task(
+                    bundle_dir
+                )
+
+                return ChatTurnResult(
+                    action="RESET_TASK",
+                    status="RESET",
+                    message=(
+                        "已收到确认。\n\n"
+                        "当前任务已安全重置。\n"
+                        "原生命周期状态："
+                        f"{recovered.previous_state}\n"
+                        "现在可以开始新的骨架排名任务。"
+                    ),
+                    bundle_dir=(
+                        recovered.bundle_dir
+                    ),
+                )
+
+            archived = archive_task(
+                bundle_dir
+            )
+
+            return ChatTurnResult(
+                action="ARCHIVE_TASK",
+                status="ARCHIVED",
+                message=(
+                    "已收到确认。\n\n"
+                    "当前任务已安全归档，"
+                    "并重新建立同名空 Bundle。\n"
+                    "原生命周期状态："
+                    f"{archived.previous_state}\n"
+                    "归档位置："
+                    f"{archived.archive_dir}"
+                ),
+                bundle_dir=archived.bundle_dir,
+                artifact_paths={
+                    "archive": (
+                        archived.archive_dir
+                    )
+                },
+            )
+
+        except TaskRecoveryError as exc:
+            raise ChatDialogueError(
+                f"任务恢复失败：{exc}"
+            ) from exc
 
     _, report = inspect_bundle(
         bundle_dir
@@ -2264,6 +2456,18 @@ def process_dialogue_message(
                 f"{pending.action}"
             ),
             bundle_dir=bundle_dir.resolve(),
+        )
+
+    if intent == "REQUEST_RESET_TASK":
+        return create_task_recovery_proposal(
+            action="RESET_TASK",
+            bundle_dir=bundle_dir,
+        )
+
+    if intent == "REQUEST_ARCHIVE_TASK":
+        return create_task_recovery_proposal(
+            action="ARCHIVE_TASK",
+            bundle_dir=bundle_dir,
         )
 
     if pending is not None:

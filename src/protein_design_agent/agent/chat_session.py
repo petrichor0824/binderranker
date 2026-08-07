@@ -71,6 +71,8 @@ ChatAction = Literal[
     "ADOPT_DATASET_ADVICE",
     "LIST_TASKS",
     "SWITCH_TASK",
+    "RESET_TASK",
+    "ARCHIVE_TASK",
 ]
 
 
