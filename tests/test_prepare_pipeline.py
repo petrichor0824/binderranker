@@ -250,12 +250,30 @@ def test_failed_workflow_is_recorded(
             runner=failing_runner,
         )
 
-    failure_manifest = (
-        bundle
-        / "agent_prepare_manifest.json"
+    # 正式 Bundle 不能被失败准备污染。
+    assert (
+        not bundle.exists()
+        or not any(bundle.iterdir())
     )
 
-    assert failure_manifest.exists()
+    audit_root = (
+        tmp_path
+        / ".pda-failures"
+        / "failed_bundle"
+    )
+
+    failure_dirs = list(
+        audit_root.glob("prepare-*")
+    )
+
+    assert len(failure_dirs) == 1
+
+    failure_manifest = (
+        failure_dirs[0]
+        / "failure_manifest.json"
+    )
+
+    assert failure_manifest.is_file()
 
     data = json.loads(
         failure_manifest.read_text(
@@ -265,6 +283,23 @@ def test_failed_workflow_is_recorded(
 
     assert data["status"] == "FAILED"
     assert data["return_code"] == 7
+    assert (
+        data["formal_bundle_published"]
+        is False
+    )
+    assert (
+        data["binderranker_executed"]
+        is False
+    )
+
+    stderr_copy = Path(
+        data["stderr_log"]
+    )
+
+    assert stderr_copy.is_file()
+    assert stderr_copy.read_text(
+        encoding="utf-8"
+    ) == "simulated failure\n"
 
 
 def test_unexpected_ranker_results_are_rejected(
@@ -314,3 +349,204 @@ def test_unexpected_ranker_results_are_rejected(
             bundle_dir=bundle,
             runner=unsafe_runner,
         )
+
+
+def test_failed_workflow_does_not_publish_partial_bundle(
+    tmp_path: Path,
+) -> None:
+    session_path = write_session(
+        tmp_path,
+        complete_payload(),
+    )
+    bundle = tmp_path / "rollback_failed_bundle"
+
+    def failing_runner(
+        command: list[str],
+        stdout_log: Path,
+        stderr_log: Path,
+    ) -> int:
+        stdout_log.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+        stdout_log.write_text(
+            "partial stdout\n",
+            encoding="utf-8",
+        )
+        stderr_log.write_text(
+            "simulated failure\n",
+            encoding="utf-8",
+        )
+        return 9
+
+    with pytest.raises(
+        AgentPreparationError,
+        match="退出码=9",
+    ):
+        prepare_agent_run(
+            session_path=session_path,
+            bundle_dir=bundle,
+            runner=failing_runner,
+        )
+
+    assert (
+        not bundle.exists()
+        or not any(bundle.iterdir())
+    )
+
+
+def test_unsafe_prepare_does_not_publish_partial_bundle(
+    tmp_path: Path,
+) -> None:
+    session_path = write_session(
+        tmp_path,
+        complete_payload(),
+    )
+    bundle = tmp_path / "rollback_unsafe_bundle"
+
+    def unsafe_runner(
+        command: list[str],
+        stdout_log: Path,
+        stderr_log: Path,
+    ) -> int:
+        result = fake_success_runner(
+            command,
+            stdout_log,
+            stderr_log,
+        )
+
+        workflow_dir = Path(
+            command[
+                command.index("--run-dir") + 1
+            ]
+        )
+
+        (
+            workflow_dir
+            / "ranker"
+            / "backbone_rank_scored.csv"
+        ).write_text(
+            "unexpected execution\n",
+            encoding="utf-8",
+        )
+
+        return result
+
+    with pytest.raises(
+        AgentPreparationError,
+        match="执行边界被破坏",
+    ):
+        prepare_agent_run(
+            session_path=session_path,
+            bundle_dir=bundle,
+            runner=unsafe_runner,
+        )
+
+    assert (
+        not bundle.exists()
+        or not any(bundle.iterdir())
+    )
+
+
+def test_successful_prepare_does_not_leak_staging_paths(
+    tmp_path: Path,
+) -> None:
+    session_path = write_session(
+        tmp_path,
+        complete_payload(),
+    )
+    bundle = tmp_path / "published_bundle"
+
+    result = prepare_agent_run(
+        session_path=session_path,
+        bundle_dir=bundle,
+        runner=fake_success_runner,
+    )
+
+    assert result.bundle_directory == bundle.resolve()
+    assert result.prepare_manifest.is_file()
+    assert result.workflow_manifest.is_file()
+
+    # 所有正式返回路径都必须位于发布后的 Bundle 中。
+    returned_paths = [
+        result.session_copy,
+        result.project_config,
+        result.project_provenance,
+        result.workflow_directory,
+        result.workflow_manifest,
+        result.stdout_log,
+        result.stderr_log,
+        result.prepare_manifest,
+    ]
+
+    for path in returned_paths:
+        assert path == bundle.resolve() or bundle.resolve() in path.parents
+        assert path.exists()
+
+    # 正式元数据不能继续引用已经被移走的 staging 目录。
+    metadata_files = [
+        result.project_provenance,
+        result.workflow_manifest,
+        result.prepare_manifest,
+        (
+            result.workflow_directory
+            / "ranker"
+            / "ranker_execution_plan.json"
+        ),
+    ]
+
+    for path in metadata_files:
+        content = path.read_text(
+            encoding="utf-8"
+        )
+        assert ".preparing-" not in content
+
+    # staging 目录在成功发布后也不应残留。
+    staging_dirs = list(
+        tmp_path.glob(
+            ".published_bundle.preparing-*"
+        )
+    )
+    assert staging_dirs == []
+
+
+def test_published_bundle_has_no_staging_paths_in_metadata(
+    tmp_path: Path,
+) -> None:
+    session_path = write_session(
+        tmp_path,
+        complete_payload(),
+    )
+    bundle = tmp_path / "metadata_bundle"
+
+    prepare_agent_run(
+        session_path=session_path,
+        bundle_dir=bundle,
+        runner=fake_success_runner,
+    )
+
+    text_suffixes = {
+        ".json",
+        ".yaml",
+        ".yml",
+        ".sh",
+    }
+
+    checked_files = []
+
+    for path in bundle.rglob("*"):
+        if (
+            path.is_file()
+            and path.suffix in text_suffixes
+        ):
+            checked_files.append(path)
+
+            content = path.read_text(
+                encoding="utf-8"
+            )
+
+            assert ".preparing-" not in content, (
+                f"正式产物仍包含 staging 路径：{path}"
+            )
+
+    assert checked_files
