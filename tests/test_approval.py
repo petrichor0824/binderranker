@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from protein_design_agent.agent.approval import (
+    ApprovalError,
     create_approval_record,
     snapshot_pdb_dataset,
 )
@@ -307,4 +308,262 @@ def test_dataset_snapshot_changes_after_pdb_change(
     assert (
         before.combined_sha256
         != after.combined_sha256
+    )
+
+
+def test_workflow_state_rejection_has_public_message(
+    tmp_path: Path,
+) -> None:
+    prepare_manifest, _, _ = (
+        build_fake_ready_bundle(tmp_path)
+    )
+
+    prepare_payload = json.loads(
+        prepare_manifest.read_text(
+            encoding="utf-8"
+        )
+    )
+
+    workflow_manifest = Path(
+        prepare_payload["workflow_manifest"]
+    )
+    if not workflow_manifest.is_absolute():
+        workflow_manifest = (
+            prepare_manifest.parent
+            / workflow_manifest
+        )
+
+    workflow_payload = json.loads(
+        workflow_manifest.read_text(
+            encoding="utf-8"
+        )
+    )
+    workflow_payload["status"] = "FAILED"
+
+    workflow_manifest.write_text(
+        json.dumps(workflow_payload),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ApprovalError
+    ) as exc_info:
+        create_approval_record(
+            prepare_manifest_path=(
+                prepare_manifest
+            ),
+            output_path=(
+                tmp_path / "approval.json"
+            ),
+            approved_by="test_operator",
+        )
+
+    assert (
+        "当前状态为 FAILED"
+        in str(exc_info.value)
+    )
+
+    assert (
+        exc_info.value.public_message
+        == (
+            "工作流不处于 READY_FOR_REVIEW，"
+            "不能批准。"
+        )
+    )
+
+
+def test_requested_ranker_execution_rejection_has_public_message(
+    tmp_path: Path,
+) -> None:
+    prepare_manifest, _, _ = (
+        build_fake_ready_bundle(tmp_path)
+    )
+
+    prepare_payload = json.loads(
+        prepare_manifest.read_text(
+            encoding="utf-8"
+        )
+    )
+
+    ranker_plan = Path(
+        prepare_payload["ranker_plan"]
+    )
+    if not ranker_plan.is_absolute():
+        ranker_plan = (
+            prepare_manifest.parent
+            / ranker_plan
+        )
+
+    ranker_payload = json.loads(
+        ranker_plan.read_text(
+            encoding="utf-8"
+        )
+    )
+    ranker_payload["execute_requested"] = True
+
+    ranker_plan.write_text(
+        json.dumps(ranker_payload),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ApprovalError
+    ) as exc_info:
+        create_approval_record(
+            prepare_manifest_path=(
+                prepare_manifest
+            ),
+            output_path=(
+                tmp_path / "approval.json"
+            ),
+            approved_by="test_operator",
+        )
+
+    assert (
+        "请求执行"
+        in str(exc_info.value)
+    )
+
+    assert (
+        exc_info.value.public_message
+        == (
+            "Ranker 计划已进入执行请求状态，"
+            "不符合审核前批准条件。"
+        )
+    )
+
+
+def test_changed_ranker_has_safe_public_message(
+    tmp_path: Path,
+) -> None:
+    prepare_manifest, _, _ = (
+        build_fake_ready_bundle(tmp_path)
+    )
+
+    prepare_payload = json.loads(
+        prepare_manifest.read_text(
+            encoding="utf-8"
+        )
+    )
+
+    ranker_plan = Path(
+        prepare_payload["ranker_plan"]
+    )
+    if not ranker_plan.is_absolute():
+        ranker_plan = (
+            prepare_manifest.parent
+            / ranker_plan
+        )
+
+    ranker_payload = json.loads(
+        ranker_plan.read_text(
+            encoding="utf-8"
+        )
+    )
+
+    ranker_path = Path(
+        ranker_payload["ranker_path"]
+    )
+
+    ranker_path.write_text(
+        "print('modified ranker')\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ApprovalError
+    ) as exc_info:
+        create_approval_record(
+            prepare_manifest_path=(
+                prepare_manifest
+            ),
+            output_path=(
+                tmp_path / "approval.json"
+            ),
+            approved_by="test_operator",
+        )
+
+    assert (
+        "计划记录："
+        in str(exc_info.value)
+    )
+    assert (
+        "当前文件："
+        in str(exc_info.value)
+    )
+
+    assert (
+        exc_info.value.public_message
+        == (
+            "冻结 BinderRanker 已发生变化，"
+            "因此拒绝批准。"
+        )
+    )
+
+
+def test_approval_write_failure_cleans_partial_output(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    prepare_manifest, _, _ = (
+        build_fake_ready_bundle(tmp_path)
+    )
+
+    output = tmp_path / "approval.json"
+
+    real_write_text = Path.write_text
+
+    def fail_output_write(
+        self: Path,
+        data: str,
+        *args,
+        **kwargs,
+    ):
+        if self == output:
+            real_write_text(
+                self,
+                "partial unreliable approval\n",
+                encoding="utf-8",
+            )
+            raise OSError(
+                "PRIVATE_APPROVAL_WRITE_DETAIL"
+            )
+
+        return real_write_text(
+            self,
+            data,
+            *args,
+            **kwargs,
+        )
+
+    monkeypatch.setattr(
+        Path,
+        "write_text",
+        fail_output_write,
+    )
+
+    with pytest.raises(
+        ApprovalError
+    ) as exc_info:
+        create_approval_record(
+            prepare_manifest_path=(
+                prepare_manifest
+            ),
+            output_path=output,
+            approved_by="test_operator",
+        )
+
+    assert not output.exists()
+
+    assert (
+        "PRIVATE_APPROVAL_WRITE_DETAIL"
+        in str(exc_info.value)
+    )
+
+    assert (
+        exc_info.value.public_message
+        == (
+            "批准记录写入失败；"
+            "已清理可能产生的不可靠输出。"
+        )
     )

@@ -107,7 +107,8 @@ def test_chat_error_does_not_terminate_session(
 
         if calls == 1:
             raise ChatSessionError(
-                "当前动作不允许"
+                "当前动作不允许",
+                public_message="当前动作不允许",
             )
 
         return ChatTurnResult(
@@ -782,3 +783,121 @@ def test_interactive_chat_defaults_offline_after_enter(
     assert "模型状态：OFFLINE" in result.output
     assert captured["provider"] is None
     assert captured["allow_network"] is False
+
+def test_chat_target_error_hides_internal_detail(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    def fail_target(**kwargs):
+        raise ValueError(
+            "PRIVATE_CHAT_TARGET_DETAIL"
+        )
+
+    monkeypatch.setattr(
+        cli_module,
+        "resolve_chat_target",
+        fail_target,
+    )
+
+    result = runner.invoke(
+        app,
+        ["chat"],
+    )
+
+    assert result.exit_code == 2
+
+    assert (
+        "Chat 任务选择参数无效"
+        in result.output
+    )
+
+    assert (
+        "PRIVATE_CHAT_TARGET_DETAIL"
+        not in result.output
+    )
+
+    assert (
+        "尚未进入模型 API 调用"
+        in result.output
+    )
+
+
+def test_chat_workspace_error_preserves_safe_public_message(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from protein_design_agent.agent.workspace_init import (
+        WorkspaceInitError,
+    )
+
+    monkeypatch.chdir(tmp_path)
+
+    def fail_workspace(destination):
+        raise WorkspaceInitError(
+            "PRIVATE_WORKSPACE_DETAIL",
+            public_message=(
+                "工作区存在不可安全覆盖的受管路径。"
+            ),
+        )
+
+    monkeypatch.setattr(
+        "protein_design_agent.agent.workspace_init.ensure_workspace",
+        fail_workspace,
+    )
+
+    result = runner.invoke(
+        app,
+        ["chat"],
+    )
+
+    assert result.exit_code == 2
+
+    assert (
+        "工作区存在不可安全覆盖的受管路径"
+        in result.output
+    )
+
+    assert (
+        "PRIVATE_WORKSPACE_DETAIL"
+        not in result.output
+    )
+
+    assert (
+        "BinderRanker 没有执行"
+        in result.output
+    )
+
+
+def test_chat_missing_workspace_root_is_safe(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = tmp_path / "bundle"
+
+    monkeypatch.setattr(
+        cli_module,
+        "resolve_chat_target",
+        lambda **kwargs: SimpleNamespace(
+            bundle_dir=bundle,
+            workspace_dir=None,
+            task_name="default",
+            uses_default_workspace=True,
+        ),
+    )
+
+    result = runner.invoke(
+        app,
+        ["chat"],
+    )
+
+    assert result.exit_code == 2
+
+    assert (
+        "默认工作空间没有成功初始化"
+        in result.output
+    )
+
+    assert (
+        "默认工作空间解析结果缺少根目录"
+        not in result.output
+    )

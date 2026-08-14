@@ -622,7 +622,15 @@ def test_chat_reports_model_explanation_fallback(
     )
     assert (
         "自动修正后仍未通过"
-        in result.message
+        not in result.message
+    )
+    assert (
+        "ResultExplanationError"
+        not in result.message
+    )
+    assert (
+        "解释错误："
+        not in result.message
     )
 
 def test_initial_message_reuses_precreated_empty_bundle(

@@ -550,3 +550,48 @@ def test_published_bundle_has_no_staging_paths_in_metadata(
             )
 
     assert checked_files
+
+
+def test_workflow_failure_has_safe_public_message(
+    tmp_path: Path,
+) -> None:
+    session_path = write_session(
+        tmp_path,
+        complete_payload(),
+    )
+    bundle = tmp_path / "public_error_bundle"
+
+    def failing_runner(
+        command: list[str],
+        stdout_log: Path,
+        stderr_log: Path,
+    ) -> int:
+        stdout_log.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+        stdout_log.write_text(
+            "",
+            encoding="utf-8",
+        )
+        stderr_log.write_text(
+            "private workflow detail\n",
+            encoding="utf-8",
+        )
+        return 7
+
+    with pytest.raises(
+        AgentPreparationError
+    ) as exc_info:
+        prepare_agent_run(
+            session_path=session_path,
+            bundle_dir=bundle,
+            runner=failing_runner,
+        )
+
+    assert "退出码=7" in str(exc_info.value)
+
+    assert (
+        exc_info.value.public_message
+        == "骨架排名准备工作流没有成功完成。"
+    )

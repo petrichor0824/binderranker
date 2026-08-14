@@ -43,6 +43,9 @@ from protein_design_agent.agent.execution_guard import (
     load_approval_record,
     verify_approval_for_local_execution,
 )
+from protein_design_agent.agent.user_errors import (
+    UserFacingError,
+)
 
 
 ExecutionRunner = Callable[
@@ -51,7 +54,7 @@ ExecutionRunner = Callable[
 ]
 
 
-class LocalExecutionError(RuntimeError):
+class LocalExecutionError(UserFacingError):
     """本地 BinderRanker 执行失败。"""
 
     def __init__(
@@ -59,8 +62,12 @@ class LocalExecutionError(RuntimeError):
         message: str,
         *,
         execution_manifest: Path,
+        public_message: str | None = None,
     ) -> None:
-        super().__init__(message)
+        super().__init__(
+            message,
+            public_message=public_message,
+        )
         self.execution_manifest = (
             execution_manifest
         )
@@ -450,6 +457,10 @@ def execute_approved_binderranker(
             execution_manifest=(
                 verified.execution_manifest
             ),
+            public_message=(
+                "BinderRanker 执行被中断；"
+                "本次批准已经使用，不能直接重试。"
+            ),
         ) from exc
 
     except Exception as exc:
@@ -471,6 +482,10 @@ def execute_approved_binderranker(
             f"{verified.execution_manifest}",
             execution_manifest=(
                 verified.execution_manifest
+            ),
+            public_message=(
+                "BinderRanker 进程未能正常启动；"
+                "本次批准已经使用，不能直接重试。"
             ),
         ) from exc
 
@@ -498,6 +513,10 @@ def execute_approved_binderranker(
             f"错误日志：{stderr_log}",
             execution_manifest=(
                 verified.execution_manifest
+            ),
+            public_message=(
+                "BinderRanker 执行没有成功完成；"
+                "本次批准已经使用，不能直接重试。"
             ),
         )
 
@@ -541,6 +560,11 @@ def execute_approved_binderranker(
             f"{verified.execution_manifest}",
             execution_manifest=(
                 verified.execution_manifest
+            ),
+            public_message=(
+                "BinderRanker 执行结束，"
+                "但预期结果不完整；"
+                "本次批准已经使用，不能直接重试。"
             ),
         )
 

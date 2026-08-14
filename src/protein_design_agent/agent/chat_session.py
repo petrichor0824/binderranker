@@ -20,6 +20,8 @@ Protein Design Agent 第一版安全聊天状态机。
 
 from __future__ import annotations
 
+from protein_design_agent.agent.user_errors import UserFacingError
+
 import json
 from pathlib import Path
 from typing import Literal
@@ -362,7 +364,7 @@ def format_execution_result_preview(
     return "\n".join(lines)
 
 
-class ChatSessionError(RuntimeError):
+class ChatSessionError(UserFacingError):
     """聊天状态机拒绝或无法完成当前动作。"""
 
 
@@ -416,7 +418,8 @@ def normalize_message(value: str) -> str:
 
     if not clean:
         raise ChatSessionError(
-            "输入内容不能为空"
+            "输入内容不能为空",
+            public_message="输入内容不能为空。",
         )
 
     return clean
@@ -443,13 +446,15 @@ def load_prepare_status(
     except Exception as exc:
         raise ChatSessionError(
             "无法读取准备清单："
-            f"{manifest_path}；{exc}"
+            f"{manifest_path}；{exc}",
+            public_message="无法读取准备清单。",
         ) from exc
 
     if not isinstance(value, dict):
         raise ChatSessionError(
             "准备清单必须是 JSON 对象："
-            f"{manifest_path}"
+            f"{manifest_path}",
+            public_message="准备清单格式无效。",
         )
 
     status = value.get("status")
@@ -469,7 +474,8 @@ def bundle_is_empty(
 
     if not bundle_dir.is_dir():
         raise ChatSessionError(
-            f"Bundle 路径不是目录：{bundle_dir}"
+            f"Bundle 路径不是目录：{bundle_dir}",
+            public_message="指定的 Bundle 路径不是目录。",
         )
 
     return not any(
@@ -486,7 +492,8 @@ def format_status_message(
         )
     except Exception as exc:
         raise ChatSessionError(
-            f"无法检查任务状态：{exc}"
+            f"无法检查任务状态：{exc}",
+            public_message="无法检查任务状态。",
         ) from exc
 
     lines = [
@@ -625,7 +632,8 @@ def process_chat_message(
     if clean.lower() in STATUS_COMMANDS:
         if not bundle.is_dir():
             raise ChatSessionError(
-                f"任务目录尚不存在：{bundle}"
+                f"任务目录尚不存在：{bundle}",
+                public_message="当前任务目录尚不存在。",
             )
 
         try:
@@ -636,7 +644,8 @@ def process_chat_message(
             )
         except Exception as exc:
             raise ChatSessionError(
-                f"无法检查任务状态：{exc}"
+                f"无法检查任务状态：{exc}",
+                public_message="无法检查任务状态。",
             ) from exc
 
         return ChatTurnResult(
@@ -655,7 +664,11 @@ def process_chat_message(
             raise ChatSessionError(
                 "只有 READY_FOR_REVIEW 任务"
                 "才能批准；当前状态为 "
-                f"{prepare_status!r}"
+                f"{prepare_status!r}",
+                public_message=(
+                    "当前任务尚未达到 READY_FOR_REVIEW，"
+                    "因此不能批准。"
+                ),
             )
 
         approval_path = (
@@ -665,7 +678,11 @@ def process_chat_message(
         if approval_path.exists():
             raise ChatSessionError(
                 "批准记录已经存在，禁止覆盖："
-                f"{approval_path}"
+                f"{approval_path}",
+                public_message=(
+                    "当前任务已经存在批准记录，"
+                    "不会覆盖已有批准记录。"
+                ),
             )
 
         acknowledge_smoke_test = (
@@ -690,7 +707,8 @@ def process_chat_message(
             )
         except Exception as exc:
             raise ChatSessionError(
-                f"批准计划失败：{exc}"
+                f"批准计划失败：{exc}",
+                public_message="批准计划未完成。",
             ) from exc
 
         return ChatTurnResult(
@@ -724,7 +742,10 @@ def process_chat_message(
         if not approval_path.is_file():
             raise ChatSessionError(
                 "尚未找到批准记录，"
-                "请先批准计划"
+                "请先批准计划",
+                public_message=(
+                    "尚未找到批准记录，请先批准计划。"
+                ),
             )
 
         try:
@@ -736,7 +757,8 @@ def process_chat_message(
             )
         except Exception as exc:
             raise ChatSessionError(
-                f"BinderRanker 执行失败：{exc}"
+                f"BinderRanker 执行失败：{exc}",
+                public_message="BinderRanker 执行未完成。",
             ) from exc
 
         try:
@@ -810,26 +832,38 @@ def process_chat_message(
             report = inspect_run_status(bundle)
         except Exception as exc:
             raise ChatSessionError(
-                f"无法检查执行状态：{exc}"
+                f"无法检查执行状态：{exc}",
+                public_message="无法检查 BinderRanker 执行状态。",
             ) from exc
 
         if report.execution_status != "COMPLETED":
             raise ChatSessionError(
                 "只有执行状态为 COMPLETED "
                 "时才能分析；当前状态为 "
-                f"{report.execution_status!r}"
+                f"{report.execution_status!r}",
+                public_message=(
+                    "只有 BinderRanker 执行完成后"
+                    "才能分析结果。"
+                ),
             )
 
         if with_model:
             if not allow_network:
                 raise ChatSessionError(
                     "模型解释需要在启动 chat 时"
-                    "显式提供 --allow-network"
+                    "显式提供 --allow-network",
+                    public_message=(
+                        "当前 Chat 会话没有允许模型联网，"
+                        "因此不能生成模型解释。"
+                    ),
                 )
 
             if model_config_path is None:
                 raise ChatSessionError(
-                    "模型解释需要 model_config_path"
+                    "模型解释需要 model_config_path",
+                    public_message=(
+                        "模型解释需要可用的模型配置。"
+                    ),
                 )
 
         analysis_dir = next_analysis_directory(
@@ -860,7 +894,8 @@ def process_chat_message(
             )
         except Exception as exc:
             raise ChatSessionError(
-                f"结果分析失败：{exc}"
+                f"结果分析失败：{exc}",
+                public_message="结果分析未完成。",
             ) from exc
 
         artifacts = {
@@ -895,23 +930,6 @@ def process_chat_message(
             with_model
             and explanation_status == "UNAVAILABLE"
         ):
-            error_type = (
-                getattr(
-                    result,
-                    "explanation_error_type",
-                    None,
-                )
-                or "模型解释错误"
-            )
-            error_message = (
-                getattr(
-                    result,
-                    "explanation_error_message",
-                    None,
-                )
-                or "未提供详细错误信息"
-            )
-
             completion_message = "\n".join(
                 [
                     (
@@ -921,10 +939,6 @@ def process_chat_message(
                     (
                         "结果摘要和失败分析"
                         "已经完整保留。"
-                    ),
-                    (
-                        f"解释错误：{error_type}: "
-                        f"{error_message}"
                     ),
                 ]
             )
@@ -978,7 +992,11 @@ def process_chat_message(
     if bundle_is_empty(bundle):
         if not allow_network:
             raise ChatSessionError(
-                "解析新任务需要显式允许模型联网"
+                "解析新任务需要显式允许模型联网",
+                public_message=(
+                    "当前会话未启用模型；"
+                    "自由文本创建新任务需要模型解析。"
+                ),
             )
 
         if not isinstance(
@@ -986,7 +1004,10 @@ def process_chat_message(
             RequestParserProvider,
         ):
             raise ChatSessionError(
-                "当前 Provider 不支持自然语言请求解析"
+                "当前 Provider 不支持自然语言请求解析",
+                public_message=(
+                    "当前模型 Provider 不支持自然语言任务解析。"
+                ),
             )
 
         try:
@@ -997,7 +1018,8 @@ def process_chat_message(
             )
         except Exception as exc:
             raise ChatSessionError(
-                f"自然语言任务准备失败：{exc}"
+                f"自然语言任务准备失败：{exc}",
+                public_message="自然语言任务准备未完成。",
             ) from exc
 
         if result.status == "NEEDS_INFORMATION":
@@ -1048,7 +1070,11 @@ def process_chat_message(
     if prepare_status == "NEEDS_INFORMATION":
         if not allow_network:
             raise ChatSessionError(
-                "解析补充信息需要显式允许模型联网"
+                "解析补充信息需要显式允许模型联网",
+                public_message=(
+                    "当前会话未启用模型；"
+                    "自然语言补充规划信息需要模型解析。"
+                ),
             )
 
         if not isinstance(
@@ -1056,7 +1082,10 @@ def process_chat_message(
             StructuredJSONProvider,
         ):
             raise ChatSessionError(
-                "当前 Provider 不支持结构化补充解析"
+                "当前 Provider 不支持结构化补充解析",
+                public_message=(
+                    "当前模型 Provider 不支持结构化补充解析。"
+                ),
             )
 
         try:
@@ -1067,7 +1096,8 @@ def process_chat_message(
             )
         except Exception as exc:
             raise ChatSessionError(
-                f"补充规划信息失败：{exc}"
+                f"补充规划信息失败：{exc}",
+                public_message="补充规划信息未完成。",
             ) from exc
 
         if result.status == "NEEDS_INFORMATION":
@@ -1119,5 +1149,10 @@ def process_chat_message(
     raise ChatSessionError(
         "当前任务已经不是待补充状态。"
         "请输入“状态”查看当前阶段，"
-        "或使用明确操作短语继续。"
+        "或使用明确操作短语继续。",
+        public_message=(
+            "当前任务已经不是待补充状态。"
+            "请输入“状态”查看当前阶段，"
+            "或使用明确操作短语继续。"
+        ),
     )

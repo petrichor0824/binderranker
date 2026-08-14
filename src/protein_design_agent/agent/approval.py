@@ -31,6 +31,35 @@ ApprovalStatus = Literal["APPROVED"]
 ApprovalScope = Literal["execute_binderranker_once"]
 
 
+class ApprovalError(ValueError):
+    """
+    批准流程的领域错误。
+
+    继续继承 ValueError 以保持现有 API 兼容；
+    public_message 仅保存可安全展示给用户的确定事实。
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        public_message: str | None = None,
+    ) -> None:
+        super().__init__(message)
+
+        clean_public_message = (
+            public_message.strip()
+            if isinstance(public_message, str)
+            else None
+        )
+
+        self.public_message = (
+            clean_public_message
+            if clean_public_message
+            else None
+        )
+
+
 class FileFingerprint(BaseModel):
     """一个文件的完整性指纹。"""
 
@@ -244,14 +273,35 @@ def snapshot_pdb_dataset(
 def protect_output_file(path: Path) -> None:
     """默认禁止覆盖已有批准记录。"""
     if path.exists():
-        raise ValueError(
-            f"批准记录已经存在，禁止覆盖：{path}"
+        raise ApprovalError(
+            f"批准记录已经存在，禁止覆盖：{path}",
+            public_message=(
+                "批准记录已经存在，禁止覆盖。"
+            ),
         )
 
     path.parent.mkdir(
         parents=True,
         exist_ok=True,
     )
+
+
+def cleanup_unreliable_output(
+    path: Path,
+) -> tuple[bool, str | None]:
+    """
+    尽力删除本次批准流程产生的不可靠输出。
+
+    返回：
+    - True：文件已不存在；
+    - False：无法确认清理完成，并保留内部诊断。
+    """
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as exc:
+        return False, str(exc)
+
+    return True, None
 
 
 def create_approval_record(
@@ -270,8 +320,11 @@ def create_approval_record(
     approved_by = approved_by.strip()
 
     if not approved_by:
-        raise ValueError(
-            "approved_by 不能为空"
+        raise ApprovalError(
+            "approved_by 不能为空",
+            public_message=(
+                "批准者标识不能为空。"
+            ),
         )
 
     prepare_manifest_path = (
@@ -281,19 +334,33 @@ def create_approval_record(
 
     protect_output_file(output_path)
 
-    prepare_manifest = load_json_object(
-        prepare_manifest_path,
-        description="Agent Prepare Manifest",
-    )
+    try:
+        prepare_manifest = load_json_object(
+            prepare_manifest_path,
+            description="Agent Prepare Manifest",
+        )
+    except (ValueError, OSError) as exc:
+        raise ApprovalError(
+            "读取 Agent Prepare Manifest 失败："
+            f"{exc}",
+            public_message=(
+                "批准所需的 Prepare Manifest "
+                "无法读取或格式无效。"
+            ),
+        ) from exc
 
     if (
         prepare_manifest.get("status")
         != "READY_FOR_REVIEW"
     ):
-        raise ValueError(
+        raise ApprovalError(
             "只有 READY_FOR_REVIEW 任务可以批准；"
             f"当前状态为 "
-            f"{prepare_manifest.get('status')}"
+            f"{prepare_manifest.get('status')}",
+            public_message=(
+                "只有 READY_FOR_REVIEW 任务可以批准；"
+                "当前任务状态不允许批准。"
+            ),
         )
 
     if (
@@ -302,9 +369,13 @@ def create_approval_record(
         )
         is not False
     ):
-        raise ValueError(
+        raise ApprovalError(
             "Manifest 未明确证明 "
-            "BinderRanker 尚未执行"
+            "BinderRanker 尚未执行",
+            public_message=(
+                "无法确认 BinderRanker 尚未执行，"
+                "因此拒绝批准。"
+            ),
         )
 
     if (
@@ -313,8 +384,12 @@ def create_approval_record(
         )
         is not False
     ):
-        raise ValueError(
-            "当前批准模块只支持本地未执行任务"
+        raise ApprovalError(
+            "当前批准模块只支持本地未执行任务",
+            public_message=(
+                "当前批准流程只支持本地且"
+                "尚未执行的任务。"
+            ),
         )
 
     base_directory = (
@@ -329,39 +404,77 @@ def create_approval_record(
         "ranker_plan",
     ]
 
-    resolved_paths = {
-        field: resolve_recorded_path(
-            prepare_manifest.get(field),
-            base_directory=base_directory,
-            field_name=field,
-        )
-        for field in required_path_fields
-    }
+    try:
+        resolved_paths = {
+            field: resolve_recorded_path(
+                prepare_manifest.get(field),
+                base_directory=base_directory,
+                field_name=field,
+            )
+            for field in required_path_fields
+        }
+    except (ValueError, OSError) as exc:
+        raise ApprovalError(
+            "解析批准所需记录路径失败："
+            f"{exc}",
+            public_message=(
+                "批准所需的任务记录缺少"
+                "有效的路径信息。"
+            ),
+        ) from exc
 
-    workflow_manifest = load_json_object(
-        resolved_paths["workflow_manifest"],
-        description="Workflow Manifest",
-    )
+    try:
+        workflow_manifest = load_json_object(
+            resolved_paths["workflow_manifest"],
+            description="Workflow Manifest",
+        )
+    except (ValueError, OSError) as exc:
+        raise ApprovalError(
+            "读取 Workflow Manifest 失败："
+            f"{exc}",
+            public_message=(
+                "批准所需的 Workflow Manifest "
+                "无法读取或格式无效。"
+            ),
+        ) from exc
 
     if (
         workflow_manifest.get("status")
         != "READY_FOR_REVIEW"
     ):
-        raise ValueError(
+        raise ApprovalError(
             "工作流不处于 READY_FOR_REVIEW；"
             f"当前状态为 "
-            f"{workflow_manifest.get('status')}"
+            f"{workflow_manifest.get('status')}",
+            public_message=(
+                "工作流不处于 READY_FOR_REVIEW，"
+                "不能批准。"
+            ),
         )
 
-    ranker_plan = load_json_object(
-        resolved_paths["ranker_plan"],
-        description="Ranker Execution Plan",
-    )
+    try:
+        ranker_plan = load_json_object(
+            resolved_paths["ranker_plan"],
+            description="Ranker Execution Plan",
+        )
+    except (ValueError, OSError) as exc:
+        raise ApprovalError(
+            "读取 Ranker Execution Plan 失败："
+            f"{exc}",
+            public_message=(
+                "批准所需的 Ranker 计划"
+                "无法读取或格式无效。"
+            ),
+        ) from exc
 
     if ranker_plan.get("execute_requested") is True:
-        raise ValueError(
+        raise ApprovalError(
             "Ranker 计划已经标记为请求执行，"
-            "不符合审核前状态"
+            "不符合审核前状态",
+            public_message=(
+                "Ranker 计划已进入执行请求状态，"
+                "不符合审核前批准条件。"
+            ),
         )
 
     analysis_scope = (
@@ -375,8 +488,11 @@ def create_approval_record(
     )
 
     if not isinstance(analysis_scope, dict):
-        raise ValueError(
-            "analysis_scope 格式错误"
+        raise ApprovalError(
+            "analysis_scope 格式错误",
+            public_message=(
+                "批准所需的分析范围信息无效。"
+            ),
         )
 
     analysis_level = str(
@@ -390,29 +506,54 @@ def create_approval_record(
         analysis_level == "SMOKE_TEST_ONLY"
         and not acknowledge_smoke_test
     ):
-        raise ValueError(
+        raise ApprovalError(
             "当前任务是 SMOKE_TEST_ONLY。"
             "必须显式确认该结果仅用于工程验证，"
-            "不能作为正式科研排名。"
+            "不能作为正式科研排名。",
+            public_message=(
+                "当前任务是 SMOKE_TEST_ONLY。"
+                "必须显式确认该结果仅用于工程验证，"
+                "不能作为正式科研排名。"
+            ),
         )
 
-    input_directory = resolve_recorded_path(
-        ranker_plan.get("input_directory"),
-        base_directory=base_directory,
-        field_name="input_directory",
-    )
-
-    normalized_snapshot = (
-        snapshot_pdb_dataset(
-            input_directory
+    try:
+        input_directory = resolve_recorded_path(
+            ranker_plan.get("input_directory"),
+            base_directory=base_directory,
+            field_name="input_directory",
         )
-    )
 
-    ranker_path = resolve_recorded_path(
-        ranker_plan.get("ranker_path"),
-        base_directory=base_directory,
-        field_name="ranker_path",
-    )
+        normalized_snapshot = (
+            snapshot_pdb_dataset(
+                input_directory
+            )
+        )
+    except (ValueError, OSError) as exc:
+        raise ApprovalError(
+            "验证标准化 PDB 数据集失败："
+            f"{exc}",
+            public_message=(
+                "无法验证批准所需的"
+                "标准化 PDB 数据集。"
+            ),
+        ) from exc
+
+    try:
+        ranker_path = resolve_recorded_path(
+            ranker_plan.get("ranker_path"),
+            base_directory=base_directory,
+            field_name="ranker_path",
+        )
+    except (ValueError, OSError) as exc:
+        raise ApprovalError(
+            "解析冻结 Ranker 路径失败："
+            f"{exc}",
+            public_message=(
+                "批准所需的冻结 BinderRanker "
+                "路径信息无效。"
+            ),
+        ) from exc
 
     recorded_ranker_sha = ranker_plan.get(
         "ranker_sha256"
@@ -425,19 +566,37 @@ def create_approval_record(
         )
         or len(recorded_ranker_sha) != 64
     ):
-        raise ValueError(
-            "Ranker 计划缺少有效 ranker_sha256"
+        raise ApprovalError(
+            "Ranker 计划缺少有效 ranker_sha256",
+            public_message=(
+                "Ranker 计划缺少有效的冻结"
+                "完整性信息，无法批准。"
+            ),
         )
 
-    actual_ranker_sha = sha256_file(
-        ranker_path
-    )
+    try:
+        actual_ranker_sha = sha256_file(
+            ranker_path
+        )
+    except OSError as exc:
+        raise ApprovalError(
+            "读取冻结 Ranker 进行 SHA256 "
+            f"验证失败：{exc}",
+            public_message=(
+                "无法读取冻结 BinderRanker "
+                "以验证完整性，因此拒绝批准。"
+            ),
+        ) from exc
 
     if actual_ranker_sha != recorded_ranker_sha:
-        raise ValueError(
+        raise ApprovalError(
             "冻结 Ranker 已发生变化：\n"
             f"计划记录：{recorded_ranker_sha}\n"
-            f"当前文件：{actual_ranker_sha}"
+            f"当前文件：{actual_ranker_sha}",
+            public_message=(
+                "冻结 BinderRanker 已发生变化，"
+                "因此拒绝批准。"
+            ),
         )
 
     critical_paths = [
@@ -449,10 +608,20 @@ def create_approval_record(
         resolved_paths["ranker_plan"],
     ]
 
-    critical_files = [
-        fingerprint_file(path)
-        for path in critical_paths
-    ]
+    try:
+        critical_files = [
+            fingerprint_file(path)
+            for path in critical_paths
+        ]
+    except (ValueError, OSError) as exc:
+        raise ApprovalError(
+            "批准关键文件完整性验证失败："
+            f"{exc}",
+            public_message=(
+                "无法完成批准所需关键文件的"
+                "完整性验证。"
+            ),
+        ) from exc
 
     project_name = str(
         prepare_manifest.get(
@@ -469,13 +638,21 @@ def create_approval_record(
     ).strip()
 
     if not project_name:
-        raise ValueError(
-            "Prepare Manifest 缺少 project_name"
+        raise ApprovalError(
+            "Prepare Manifest 缺少 project_name",
+            public_message=(
+                "Prepare Manifest 缺少批准所需的"
+                "项目名称。"
+            ),
         )
 
     if not provider_name:
-        raise ValueError(
-            "Prepare Manifest 缺少 provider_name"
+        raise ApprovalError(
+            "Prepare Manifest 缺少 provider_name",
+            public_message=(
+                "Prepare Manifest 缺少批准所需的"
+                "Provider 信息。"
+            ),
         )
 
     approved_at = datetime.now(
@@ -540,10 +717,44 @@ def create_approval_record(
         **unsigned_payload,
     )
 
-    output_path.write_text(
-        record.model_dump_json(indent=2),
-        encoding="utf-8",
-    )
+    try:
+        output_path.write_text(
+            record.model_dump_json(indent=2),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        cleaned, cleanup_error = (
+            cleanup_unreliable_output(
+                output_path
+            )
+        )
+
+        internal_message = (
+            f"批准记录写入失败：{exc}"
+        )
+
+        if not cleaned:
+            internal_message += (
+                "；不可靠输出清理失败："
+                f"{cleanup_error}"
+            )
+
+        public_message = (
+            "批准记录写入失败；"
+            "已清理可能产生的不可靠输出。"
+            if cleaned
+            else (
+                "批准记录写入失败，且无法确认"
+                "不可靠输出已经清理。"
+                "请勿使用该输出文件，"
+                "并检查输出路径。"
+            )
+        )
+
+        raise ApprovalError(
+            internal_message,
+            public_message=public_message,
+        ) from exc
 
     # 写回后再次验证文件，防止序列化错误。
     try:
@@ -556,20 +767,72 @@ def create_approval_record(
         OSError,
         ValidationError,
     ) as exc:
-        output_path.unlink(
-            missing_ok=True
+        cleaned, cleanup_error = (
+            cleanup_unreliable_output(
+                output_path
+            )
         )
-        raise ValueError(
-            f"批准记录写入后验证失败：{exc}"
+
+        internal_message = (
+            "批准记录写入后验证失败："
+            f"{exc}"
+        )
+
+        if not cleaned:
+            internal_message += (
+                "；不可靠输出清理失败："
+                f"{cleanup_error}"
+            )
+
+        public_message = (
+            "批准记录写入后未通过完整性验证；"
+            "已清理不可靠输出。"
+            if cleaned
+            else (
+                "批准记录写入后未通过完整性验证，"
+                "且无法确认不可靠输出已经清理。"
+                "请勿使用该输出文件，"
+                "并检查输出路径。"
+            )
+        )
+
+        raise ApprovalError(
+            internal_message,
+            public_message=public_message,
         ) from exc
 
     if reloaded != record:
-        output_path.unlink(
-            missing_ok=True
+        cleaned, cleanup_error = (
+            cleanup_unreliable_output(
+                output_path
+            )
         )
-        raise ValueError(
-            "批准记录写入前后不一致，"
-            "已删除不可靠文件"
+
+        internal_message = (
+            "批准记录写入前后不一致"
+        )
+
+        if not cleaned:
+            internal_message += (
+                "；不可靠输出清理失败："
+                f"{cleanup_error}"
+            )
+
+        public_message = (
+            "批准记录写入前后不一致；"
+            "已清理不可靠输出。"
+            if cleaned
+            else (
+                "批准记录写入前后不一致，"
+                "且无法确认不可靠输出已经清理。"
+                "请勿使用该输出文件，"
+                "并检查输出路径。"
+            )
+        )
+
+        raise ApprovalError(
+            internal_message,
+            public_message=public_message,
         )
 
     return record

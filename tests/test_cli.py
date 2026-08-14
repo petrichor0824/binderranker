@@ -233,3 +233,522 @@ def test_text_and_text_file_cannot_be_used_together(
 
     assert result.exit_code == 2
     assert "不能同时使用" in result.output
+
+
+def test_analyze_run_error_uses_safe_user_guidance(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    def fail_analyze(**kwargs):
+        raise RuntimeError(
+            "PRIVATE_ANALYZE_TECHNICAL_DETAIL"
+        )
+
+    monkeypatch.setattr(
+        "protein_design_agent.cli.run_analyze_run",
+        fail_analyze,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "analyze-run",
+            "--bundle-dir",
+            str(bundle),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "当前操作没有完成" in result.output
+    assert "结果分析未完成。" in result.output
+    assert "建议处理" in result.output
+
+    assert (
+        "PRIVATE_ANALYZE_TECHNICAL_DETAIL"
+        not in result.output
+    )
+    assert "RuntimeError" not in result.output
+
+
+def test_explain_run_error_uses_safe_user_guidance(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    config = tmp_path / "models.yaml"
+    config.write_text(
+        "placeholder: true\n",
+        encoding="utf-8",
+    )
+
+    def fail_explain(**kwargs):
+        raise RuntimeError(
+            "PRIVATE_EXPLAIN_TECHNICAL_DETAIL"
+        )
+
+    monkeypatch.setattr(
+        "protein_design_agent.cli.run_explain_run",
+        fail_explain,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "explain-run",
+            "--bundle-dir",
+            str(bundle),
+            "--model-config",
+            str(config),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "当前操作没有完成" in result.output
+    assert "模型解释未完成。" in result.output
+    assert "建议处理" in result.output
+
+    assert (
+        "PRIVATE_EXPLAIN_TECHNICAL_DETAIL"
+        not in result.output
+    )
+    assert "RuntimeError" not in result.output
+
+
+def test_execute_run_generic_error_uses_safe_guidance(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    approval = tmp_path / "approval.json"
+    approval.write_text(
+        "{}\n",
+        encoding="utf-8",
+    )
+
+    def fail_execute(**kwargs):
+        raise RuntimeError(
+            "PRIVATE_EXECUTE_TECHNICAL_DETAIL"
+        )
+
+    monkeypatch.setattr(
+        "protein_design_agent.cli."
+        "execute_approved_binderranker",
+        fail_execute,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "execute-run",
+            "--approval",
+            str(approval),
+            "--confirm-execute",
+        ],
+    )
+
+    assert result.exit_code == 1
+
+    assert "当前操作没有完成" in result.output
+    assert (
+        "BinderRanker 执行未完成。"
+        in result.output
+    )
+
+    assert (
+        "PRIVATE_EXECUTE_TECHNICAL_DETAIL"
+        not in result.output
+    )
+    assert "RuntimeError" not in result.output
+
+    assert not isinstance(
+        result.exception,
+        NameError,
+    )
+
+
+def test_execute_run_local_error_keeps_manifest_recovery_path(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from protein_design_agent.agent.local_executor import (
+        LocalExecutionError,
+    )
+
+    approval = tmp_path / "approval.json"
+    approval.write_text(
+        "{}\n",
+        encoding="utf-8",
+    )
+
+    manifest = (
+        tmp_path
+        / "execution_failed.json"
+    )
+    manifest.write_text(
+        "{}\n",
+        encoding="utf-8",
+    )
+
+    def fail_execute(**kwargs):
+        raise LocalExecutionError(
+            (
+                "PRIVATE_EXECUTION_DETAIL；"
+                "stderr=/private/internal/error.log"
+            ),
+            execution_manifest=manifest,
+        )
+
+    monkeypatch.setattr(
+        "protein_design_agent.cli."
+        "execute_approved_binderranker",
+        fail_execute,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "execute-run",
+            "--approval",
+            str(approval),
+            "--confirm-execute",
+        ],
+    )
+
+    assert result.exit_code == 1
+
+    assert "当前操作没有完成" in result.output
+    assert (
+        "BinderRanker 执行未完成。"
+        in result.output
+    )
+
+    assert "执行清单：" in result.output
+    assert str(manifest) in result.output
+
+    assert (
+        "PRIVATE_EXECUTION_DETAIL"
+        not in result.output
+    )
+    assert (
+        "/private/internal/error.log"
+        not in result.output
+    )
+    assert "LocalExecutionError" not in result.output
+
+
+def test_run_status_error_uses_safe_user_guidance(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    from protein_design_agent.agent.run_status import (
+        RunStatusError,
+    )
+
+    def fail_status(*args, **kwargs):
+        raise RunStatusError(
+            "PRIVATE_STATUS_TECHNICAL_DETAIL"
+        )
+
+    monkeypatch.setattr(
+        "protein_design_agent.cli.inspect_run_status",
+        fail_status,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "run-status",
+            "--bundle-dir",
+            str(bundle),
+        ],
+    )
+
+    assert result.exit_code == 1
+
+    assert "当前操作没有完成" in result.output
+    assert "任务状态检查未完成。" in result.output
+
+    assert (
+        "PRIVATE_STATUS_TECHNICAL_DETAIL"
+        not in result.output
+    )
+    assert "RunStatusError" not in result.output
+
+
+def test_validate_model_config_hides_raw_loader_error(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config = tmp_path / "model.yaml"
+    config.write_text(
+        "placeholder: true\n",
+        encoding="utf-8",
+    )
+
+    def fail_load(_path: Path):
+        raise ValueError(
+            "PRIVATE_MODEL_CONFIG_INTERNAL_DETAIL"
+        )
+
+    monkeypatch.setattr(
+        "protein_design_agent.cli."
+        "load_model_provider_config",
+        fail_load,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "validate-model-config",
+            "--config",
+            str(config),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "当前操作没有完成" in result.output
+    assert (
+        "模型配置文件无法读取或基础格式无效"
+        in result.output
+    )
+    assert "网络访问：否" in result.output
+    assert "没有调用模型 API" in result.output
+
+    assert (
+        "PRIVATE_MODEL_CONFIG_INTERNAL_DETAIL"
+        not in result.output
+    )
+    assert "ValueError" not in result.output
+
+
+def test_validate_model_config_reports_missing_profile_safely(
+    tmp_path: Path,
+) -> None:
+    config = write_model_config(tmp_path)
+
+    result = runner.invoke(
+        app,
+        [
+            "validate-model-config",
+            "--config",
+            str(config),
+            "--profile",
+            "missing-profile",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "当前操作没有完成" in result.output
+    assert (
+        "指定的模型 Profile 不存在"
+        in result.output
+    )
+    assert "missing-profile" in result.output
+    assert "可用 Profile" in result.output
+    assert "网络访问：否" in result.output
+    assert "没有调用模型 API" in result.output
+    assert "ValueError" not in result.output
+
+
+def test_plan_mock_invalid_json_is_reported_safely(
+    tmp_path: Path,
+) -> None:
+    payload = tmp_path / "bad_payload.json"
+    payload.write_text(
+        "{not valid json",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "plan-mock",
+            "--payload",
+            str(payload),
+            "--text",
+            "测试任务",
+            "--output",
+            str(tmp_path / "plan.json"),
+        ],
+    )
+
+    assert result.exit_code == 2
+
+    assert (
+        "Mock payload 不是合法 JSON"
+        in result.output
+    )
+
+    assert (
+        "plan-mock 完全离线"
+        in result.output
+    )
+
+    assert "JSONDecodeError" not in result.output
+
+
+def test_plan_missing_text_preserves_safe_input_fact(
+    tmp_path: Path,
+) -> None:
+    config = write_model_config(tmp_path)
+
+    result = runner.invoke(
+        app,
+        [
+            "plan",
+            "--model-config",
+            str(config),
+        ],
+    )
+
+    assert result.exit_code == 2
+
+    assert (
+        "必须提供 --text 或 --text-file"
+        in result.output
+    )
+
+    assert (
+        "尚未调用模型 API"
+        in result.output
+    )
+
+
+def test_plan_hides_provider_error_detail(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import protein_design_agent.cli as cli_module
+    from protein_design_agent.agent.providers.base import (
+        ProviderError,
+    )
+
+    config = write_model_config(tmp_path)
+
+    class FailingProvider:
+        name = "failing"
+
+        def parse_user_request(
+            self,
+            raw_text: str,
+        ):
+            raise ProviderError(
+                "PRIVATE_MODEL_HTTP_BODY"
+            )
+
+    monkeypatch.setattr(
+        cli_module,
+        "build_request_parser_provider",
+        lambda *args, **kwargs: FailingProvider(),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "plan",
+            "--model-config",
+            str(config),
+            "--text",
+            "测试任务",
+            "--output",
+            str(tmp_path / "plan.json"),
+            "--allow-network",
+        ],
+    )
+
+    assert result.exit_code == 4
+
+    assert (
+        "模型请求或响应处理"
+        in result.output
+    )
+
+    assert (
+        "PRIVATE_MODEL_HTTP_BODY"
+        not in result.output
+    )
+
+    assert "ProviderError" not in result.output
+
+
+def test_plan_mock_publish_failure_preserves_existing_output(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    payload = write_mock_payload(
+        tmp_path,
+        complete=True,
+    )
+
+    output = tmp_path / "existing_plan.json"
+    original = b"important old plan\n"
+    output.write_bytes(original)
+
+    real_replace = Path.replace
+
+    def failing_replace(
+        self: Path,
+        target,
+    ):
+        target_path = Path(target)
+
+        if (
+            target_path == output
+            and ".planning-" in self.name
+        ):
+            raise OSError(
+                "PRIVATE_PLAN_PUBLISH_FAILURE"
+            )
+
+        return real_replace(
+            self,
+            target,
+        )
+
+    monkeypatch.setattr(
+        Path,
+        "replace",
+        failing_replace,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "plan-mock",
+            "--payload",
+            str(payload),
+            "--text",
+            "测试任务",
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 2
+
+    assert output.read_bytes() == original
+
+    assert (
+        "规划会话输出文件写入或验证失败"
+        in result.output
+    )
+
+    assert (
+        "PRIVATE_PLAN_PUBLISH_FAILURE"
+        not in result.output
+    )
+
+    leftovers = [
+        path
+        for path in tmp_path.iterdir()
+        if ".planning-" in path.name
+    ]
+
+    assert leftovers == []

@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from protein_design_agent.agent.natural_language_prepare import (
+    NaturalLanguagePreparationError,
     prepare_from_natural_language,
 )
 from protein_design_agent.agent.providers.mock import (
@@ -195,3 +196,168 @@ def test_empty_text_is_rejected(
             bundle_dir=tmp_path / "empty",
             runner=fake_success_runner,
         )
+
+
+def test_nonempty_bundle_has_safe_public_message(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "existing_public"
+    bundle.mkdir()
+
+    (
+        bundle / "important.txt"
+    ).write_text(
+        "do not overwrite",
+        encoding="utf-8",
+    )
+
+    provider = MockProvider(
+        complete_payload()
+    )
+
+    with pytest.raises(
+        NaturalLanguagePreparationError
+    ) as exc_info:
+        prepare_from_natural_language(
+            raw_text="测试请求",
+            provider=provider,
+            bundle_dir=bundle,
+            runner=fake_success_runner,
+        )
+
+    assert "禁止覆盖" in str(exc_info.value)
+
+    assert (
+        exc_info.value.public_message
+        == (
+            "目标任务目录已经存在且非空，"
+            "默认禁止覆盖。"
+        )
+    )
+
+
+def test_incomplete_save_failure_preserves_existing_empty_bundle(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import protein_design_agent.agent.natural_language_prepare as module
+
+    bundle = tmp_path / "existing_empty"
+    bundle.mkdir()
+
+    provider = MockProvider({})
+
+    real_write_json = module.write_json
+
+    def failing_write_json(
+        path: Path,
+        content: dict,
+    ) -> None:
+        if (
+            path.name
+            == "agent_prepare_manifest.json"
+        ):
+            raise OSError(
+                "PRIVATE_INCOMPLETE_MANIFEST_WRITE"
+            )
+
+        real_write_json(
+            path,
+            content,
+        )
+
+    monkeypatch.setattr(
+        module,
+        "write_json",
+        failing_write_json,
+    )
+
+    with pytest.raises(
+        NaturalLanguagePreparationError
+    ) as exc_info:
+        prepare_from_natural_language(
+            raw_text="帮我排名这批骨架",
+            provider=provider,
+            bundle_dir=bundle,
+            runner=fake_success_runner,
+        )
+
+    assert bundle.exists()
+    assert list(bundle.iterdir()) == []
+
+    assert (
+        "PRIVATE_INCOMPLETE_MANIFEST_WRITE"
+        in str(exc_info.value)
+    )
+
+    assert (
+        exc_info.value.public_message
+        == (
+            "信息不完整的任务记录保存失败；"
+            "正式任务目录没有发布。"
+        )
+    )
+
+    leftovers = [
+        path
+        for path in tmp_path.iterdir()
+        if (
+            ".incomplete-preparing-"
+            in path.name
+        )
+    ]
+
+    assert leftovers == []
+
+
+def test_incomplete_save_failure_does_not_create_new_bundle(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import protein_design_agent.agent.natural_language_prepare as module
+
+    bundle = tmp_path / "new_incomplete"
+
+    provider = MockProvider({})
+
+    def failing_write_json(
+        path: Path,
+        content: dict,
+    ) -> None:
+        raise OSError(
+            "PRIVATE_NEW_INCOMPLETE_FAILURE"
+        )
+
+    monkeypatch.setattr(
+        module,
+        "write_json",
+        failing_write_json,
+    )
+
+    with pytest.raises(
+        NaturalLanguagePreparationError
+    ) as exc_info:
+        prepare_from_natural_language(
+            raw_text="帮我排名这批骨架",
+            provider=provider,
+            bundle_dir=bundle,
+            runner=fake_success_runner,
+        )
+
+    assert not bundle.exists()
+
+    assert (
+        "PRIVATE_NEW_INCOMPLETE_FAILURE"
+        in str(exc_info.value)
+    )
+
+    leftovers = [
+        path
+        for path in tmp_path.iterdir()
+        if (
+            ".incomplete-preparing-"
+            in path.name
+        )
+    ]
+
+    assert leftovers == []

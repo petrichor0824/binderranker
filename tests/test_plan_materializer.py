@@ -7,6 +7,7 @@ from protein_design_agent.agent.orchestrator import (
     LocalAgentOrchestrator,
 )
 from protein_design_agent.agent.plan_materializer import (
+    PlanMaterializationError,
     load_planning_session,
     materialize_planning_session,
 )
@@ -194,3 +195,252 @@ def test_provenance_contains_hashes(
 
     assert provenance["workflow_executed"] is False
     assert provenance["execution_allowed"] is False
+
+
+def test_non_ready_plan_has_safe_public_message(
+    tmp_path: Path,
+) -> None:
+    session_path = write_session(
+        tmp_path,
+        {},
+        text="帮我排名这批骨架",
+    )
+
+    with pytest.raises(
+        PlanMaterializationError
+    ) as exc_info:
+        materialize_planning_session(
+            session_path=session_path,
+            output_config=(
+                tmp_path / "blocked.yaml"
+            ),
+        )
+
+    assert (
+        "只有 READY_FOR_REVIEW"
+        in str(exc_info.value)
+    )
+
+    assert (
+        exc_info.value.public_message
+        == (
+            "只有 READY_FOR_REVIEW 计划"
+            "可以落地为正式项目配置。"
+        )
+    )
+
+
+def test_materialization_rejects_same_output_paths(
+    tmp_path: Path,
+) -> None:
+    session_path = write_session(
+        tmp_path,
+        complete_payload(),
+    )
+
+    output = tmp_path / "same-output.yaml"
+
+    with pytest.raises(
+        PlanMaterializationError
+    ) as exc_info:
+        materialize_planning_session(
+            session_path=session_path,
+            output_config=output,
+            provenance_file=output,
+        )
+
+    assert (
+        exc_info.value.public_message
+        == (
+            "项目配置与来源记录"
+            "不能使用同一路径。"
+        )
+    )
+
+    assert not output.exists()
+
+
+def test_provenance_publish_failure_restores_existing_config(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    session_path = write_session(
+        tmp_path,
+        complete_payload(),
+    )
+
+    output = tmp_path / "project.yaml"
+    provenance = tmp_path / "provenance.json"
+
+    original_config = (
+        b"important old project config\n"
+    )
+    original_provenance = (
+        b'{"important": "old provenance"}\n'
+    )
+
+    output.write_bytes(
+        original_config
+    )
+    provenance.write_bytes(
+        original_provenance
+    )
+
+    import protein_design_agent.agent.plan_materializer as module
+
+    real_replace = module.os.replace
+
+    def controlled_replace(
+        src,
+        dst,
+    ):
+        src_path = Path(src)
+        dst_path = Path(dst)
+
+        if (
+            dst_path == provenance
+            and ".materializing-"
+            in src_path.name
+        ):
+            raise OSError(
+                "PRIVATE_PROVENANCE_PUBLISH_FAILURE"
+            )
+
+        return real_replace(
+            src,
+            dst,
+        )
+
+    monkeypatch.setattr(
+        module.os,
+        "replace",
+        controlled_replace,
+    )
+
+    with pytest.raises(
+        PlanMaterializationError
+    ) as exc_info:
+        materialize_planning_session(
+            session_path=session_path,
+            output_config=output,
+            provenance_file=provenance,
+            overwrite=True,
+        )
+
+    assert (
+        output.read_bytes()
+        == original_config
+    )
+
+    assert (
+        provenance.read_bytes()
+        == original_provenance
+    )
+
+    assert (
+        "PRIVATE_PROVENANCE_PUBLISH_FAILURE"
+        in str(exc_info.value)
+    )
+
+    assert (
+        exc_info.value.public_message
+        == (
+            "计划落地发布失败；"
+            "已恢复发布前的项目配置状态。"
+        )
+    )
+
+
+def test_provenance_publish_failure_removes_new_config(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    session_path = write_session(
+        tmp_path,
+        complete_payload(),
+    )
+
+    output = tmp_path / "new-project.yaml"
+    provenance = tmp_path / "new-provenance.json"
+
+    import protein_design_agent.agent.plan_materializer as module
+
+    real_replace = module.os.replace
+
+    def controlled_replace(
+        src,
+        dst,
+    ):
+        src_path = Path(src)
+        dst_path = Path(dst)
+
+        if (
+            dst_path == provenance
+            and ".materializing-"
+            in src_path.name
+        ):
+            raise OSError(
+                "PRIVATE_NEW_PROVENANCE_FAILURE"
+            )
+
+        return real_replace(
+            src,
+            dst,
+        )
+
+    monkeypatch.setattr(
+        module.os,
+        "replace",
+        controlled_replace,
+    )
+
+    with pytest.raises(
+        PlanMaterializationError
+    ) as exc_info:
+        materialize_planning_session(
+            session_path=session_path,
+            output_config=output,
+            provenance_file=provenance,
+        )
+
+    assert not output.exists()
+    assert not provenance.exists()
+
+    assert (
+        "PRIVATE_NEW_PROVENANCE_FAILURE"
+        in str(exc_info.value)
+    )
+
+    assert (
+        exc_info.value.public_message
+        == (
+            "计划落地发布失败；"
+            "已恢复发布前的项目配置状态。"
+        )
+    )
+
+
+def test_successful_materialization_leaves_no_staging_files(
+    tmp_path: Path,
+) -> None:
+    session_path = write_session(
+        tmp_path,
+        complete_payload(),
+    )
+
+    output = tmp_path / "clean-project.yaml"
+    provenance = tmp_path / "clean-provenance.json"
+
+    materialize_planning_session(
+        session_path=session_path,
+        output_config=output,
+        provenance_file=provenance,
+    )
+
+    leftovers = [
+        path
+        for path in tmp_path.iterdir()
+        if ".materializing-" in path.name
+    ]
+
+    assert leftovers == []

@@ -148,5 +148,86 @@ def test_prepare_session_command_reports_failure(
     )
 
     assert result.exit_code == 2
-    assert "Agent 准备失败" in result.output
-    assert "simulated preparation failure" in result.output
+
+    assert (
+        "当前操作没有完成"
+        in result.output
+    )
+
+    assert (
+        "Agent 准备未完成"
+        in result.output
+    )
+
+    assert (
+        "不授权执行 BinderRanker"
+        in result.output
+    )
+
+    assert (
+        "simulated preparation failure"
+        not in result.output
+    )
+
+    assert (
+        "AgentPreparationError"
+        not in result.output
+    )
+
+
+def test_prepare_session_hides_raw_oserror(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    session = tmp_path / "session.json"
+    session.write_text(
+        "{}",
+        encoding="utf-8",
+    )
+
+    def failing_prepare_agent_run(
+        *,
+        session_path: Path,
+        bundle_dir: Path,
+    ):
+        raise OSError(
+            "PRIVATE_PREPARE_IO_DETAIL"
+        )
+
+    monkeypatch.setattr(
+        cli_module,
+        "prepare_agent_run",
+        failing_prepare_agent_run,
+    )
+
+    result = runner.invoke(
+        cli_module.app,
+        [
+            "prepare-session",
+            "--session",
+            str(session),
+            "--bundle-dir",
+            str(tmp_path / "bundle"),
+        ],
+    )
+
+    assert result.exit_code == 2
+
+    assert (
+        "当前操作没有完成"
+        in result.output
+    )
+    assert (
+        "Agent 准备未完成"
+        in result.output
+    )
+    assert (
+        "不授权执行 BinderRanker"
+        in result.output
+    )
+
+    assert (
+        "PRIVATE_PREPARE_IO_DETAIL"
+        not in result.output
+    )
+    assert "OSError" not in result.output

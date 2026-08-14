@@ -18,6 +18,10 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from protein_design_agent.agent.user_errors import (
+    UserFacingError,
+)
+
 
 WORKSPACE_MARKER_TEMPLATE = '''{
   "schema_version": "0.1",
@@ -200,7 +204,7 @@ MANAGED_FILES = {
 }
 
 
-class WorkspaceInitError(RuntimeError):
+class WorkspaceInitError(UserFacingError):
     """工作区无法安全初始化。"""
 
     def __init__(
@@ -208,8 +212,12 @@ class WorkspaceInitError(RuntimeError):
         message: str,
         *,
         conflicts: tuple[Path, ...] = (),
+        public_message: str | None = None,
     ) -> None:
-        super().__init__(message)
+        super().__init__(
+            message,
+            public_message=public_message,
+        )
         self.conflicts = conflicts
 
 
@@ -374,6 +382,11 @@ def initialize_workspace(
             "工作区中存在不可覆盖的路径："
             f"{rendered}",
             conflicts=conflicts,
+            public_message=(
+                "工作区初始化失败："
+                "存在不可安全覆盖的受管路径。"
+                "本次初始化在写入受管文件之前停止。"
+            ),
         )
 
     created_directories: list[Path] = []

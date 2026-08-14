@@ -48,6 +48,9 @@ from protein_design_agent.agent.plan_materializer import (
     sha256_file,
     validate_session_for_materialization,
 )
+from protein_design_agent.agent.user_errors import (
+    UserFacingError,
+)
 
 
 # command、stdout日志、stderr日志 -> 退出码
@@ -57,7 +60,7 @@ WorkflowRunner = Callable[
 ]
 
 
-class AgentPreparationError(RuntimeError):
+class AgentPreparationError(UserFacingError):
     """Agent 准备流水线失败。"""
 
 
@@ -365,7 +368,11 @@ def load_workflow_manifest(
     """读取骨架排名工作流的 Manifest。"""
     if not path.exists():
         raise AgentPreparationError(
-            f"工作流没有生成 Manifest：{path}"
+            f"工作流没有生成 Manifest：{path}",
+            public_message=(
+                "准备工作流没有生成所需的 "
+                "Workflow Manifest。"
+            ),
         )
 
     try:
@@ -375,12 +382,20 @@ def load_workflow_manifest(
     except json.JSONDecodeError as exc:
         raise AgentPreparationError(
             "工作流 Manifest 不是合法 JSON："
-            f"{exc}"
+            f"{exc}",
+            public_message=(
+                "准备工作流生成的 "
+                "Workflow Manifest 格式无效。"
+            ),
         ) from exc
 
     if not isinstance(data, dict):
         raise AgentPreparationError(
-            "工作流 Manifest 最外层必须是对象"
+            "工作流 Manifest 最外层必须是对象",
+            public_message=(
+                "准备工作流生成的 "
+                "Workflow Manifest 结构无效。"
+            ),
         )
 
     return data
@@ -479,7 +494,11 @@ def prepare_agent_run(
             != sha256_file(session_copy)
         ):
             raise AgentPreparationError(
-                "PlanningSession 复制后的 SHA256 不一致"
+                "PlanningSession 复制后的 SHA256 不一致",
+                public_message=(
+                    "PlanningSession 副本未通过"
+                    "完整性验证，准备任务已停止。"
+                ),
             )
 
         materialization = materialize_planning_session(
@@ -522,7 +541,10 @@ def prepare_agent_run(
         if return_code != 0:
             raise AgentPreparationError(
                 "骨架排名准备工作流执行失败，"
-                f"退出码={return_code}"
+                f"退出码={return_code}",
+                public_message=(
+                    "骨架排名准备工作流没有成功完成。"
+                ),
             )
 
         workflow_data = load_workflow_manifest(
@@ -536,7 +558,12 @@ def prepare_agent_run(
         if workflow_status != "READY_FOR_REVIEW":
             raise AgentPreparationError(
                 "工作流没有停在 READY_FOR_REVIEW；"
-                f"实际状态为 {workflow_status}"
+                f"实际状态为 {workflow_status}",
+                public_message=(
+                    "准备工作流没有停在 "
+                    "READY_FOR_REVIEW，"
+                    "因此不能发布正式任务。"
+                ),
             )
 
         ranker_plan_path = (
@@ -548,7 +575,11 @@ def prepare_agent_run(
         if not ranker_plan_path.exists():
             raise AgentPreparationError(
                 "工作流没有生成 BinderRanker 计划："
-                f"{ranker_plan_path}"
+                f"{ranker_plan_path}",
+                public_message=(
+                    "准备工作流没有生成 "
+                    "BinderRanker 执行计划。"
+                ),
             )
 
         # 准备阶段绝不能产生真正的 Ranker 结果。
@@ -590,7 +621,12 @@ def prepare_agent_run(
             raise AgentPreparationError(
                 "准备阶段意外生成了 Ranker 结果，"
                 "说明执行边界被破坏：\n"
-                f"{formatted}"
+                f"{formatted}",
+                public_message=(
+                    "准备阶段检测到实际 BinderRanker "
+                    "结果，执行边界可能被破坏，"
+                    "因此拒绝发布正式任务。"
+                ),
             )
 
         # 工作流实际在 staging 中运行，因此在正式发布前，
