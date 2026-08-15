@@ -68,6 +68,17 @@
 - 优先级：P2。
 - 建议版本：v0.4。
 
+## P2 — Capability / Scientific Claims
+
+### Semantic capability claim validation
+
+- 发现位置：`agent/capability_truth.py`、`agent/result_explainer.py`、`agent/chat_dialogue.py`。
+- 当前问题：v0.3 已使用统一 Capability Truth 和经过回归测试的确定性 pattern guard 拦截亲和力、稳定性、溶解性、实验成功概率、binder 保证、任意结构编辑和替代下游验证等越界声明；但该 guard 仍基于受控自然语言模式，不是完整的语义断言系统，未来可能遇到新的同义改写、其他语言表达或复杂否定结构。
+- 建议方向：后续考虑建立结构化 capability claim taxonomy，将“主体、能力动作、科学性质、极性/否定、保证程度”等规范化后再做确定性判定，并保持模型不能自行决定自身能力边界。
+- 为什么当前不做：v0.3 的主要用户可见出口已经有事前 Capability Truth、事后 deterministic guard、Chat fallback 和 Result Explainer repair/revalidate，现有测试覆盖发布要求；继续扩展为通用语义判定器会明显扩大 NLP、国际化和误判控制范围，不属于本版本发布阻塞项。
+- 优先级：P2。
+- 建议版本：v0.4。
+
 ## P2 — Planning / Interaction
 
 ### plan-mock long-term role

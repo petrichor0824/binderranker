@@ -17,6 +17,10 @@ Protein Design Agent 自然语言对话控制层。
 from __future__ import annotations
 
 from protein_design_agent.agent.user_errors import UserFacingError
+from protein_design_agent.agent.capability_truth import (
+    CAPABILITY_TRUTH_PROMPT,
+    capability_safe_reply,
+)
 
 import hashlib
 import json
@@ -1140,6 +1144,8 @@ def classify_dialogue_intent(
                 "统计显著性或正式科研结论。"
 
                 "输出必须严格符合 JSON Schema。"
+                + "\n\n真实科学能力边界：\n"
+                + CAPABILITY_TRUTH_PROMPT
             ),
         },
         {
@@ -2605,7 +2611,9 @@ def process_dialogue_message(
                     action="HELP",
                     status="ANSWER",
                     message=(
-                        decision.reply.strip()
+                        capability_safe_reply(
+                            decision.reply
+                        )
                         + pending_reminder
                     ),
                     bundle_dir=(
@@ -2891,7 +2899,9 @@ def process_dialogue_message(
             return ChatTurnResult(
                 action="HELP",
                 status="ANSWER",
-                message=decision.reply.strip(),
+                message=capability_safe_reply(
+                    decision.reply
+                ),
                 bundle_dir=bundle_dir.resolve(),
             )
 

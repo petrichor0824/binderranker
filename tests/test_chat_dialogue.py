@@ -1495,3 +1495,148 @@ def test_empty_start_task_routes_to_prepare(
     assert result.action == "PREPARE"
     assert result.status == "NEEDS_INFORMATION"
     assert result.message == "任务信息尚不完整。"
+
+def test_general_question_capability_overclaim_uses_safe_fallback(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "empty_bundle"
+    bundle.mkdir()
+
+    wrong_reply = (
+        "BinderRanker 可以预测结合亲和力，"
+        "排名越高说明亲和力越强。"
+    )
+
+    result = process_dialogue_message(
+        message="BinderRanker 能预测结合亲和力吗？",
+        bundle_dir=bundle,
+        provider=FakeDialogueProvider(
+            "GENERAL_QUESTION",
+            reply=wrong_reply,
+        ),
+        approved_by="tester",
+        model_config_path=None,
+        profile_name=None,
+        allow_network=True,
+    )
+
+    assert result.status == "ANSWER"
+    assert wrong_reply not in result.message
+    assert "候选骨架" in result.message
+    assert "排序" in result.message
+    assert "不能预测结合亲和力" in result.message
+
+
+def test_pending_general_question_capability_overclaim_uses_safe_fallback(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = prepared_bundle(tmp_path)
+
+    monkeypatch.setattr(
+        module,
+        "inspect_run_status",
+        lambda path: SimpleNamespace(
+            current_stage="PREPARED",
+            project_name="demo",
+            analysis_scope_level=None,
+            approval_status=None,
+            execution_status=None,
+        ),
+    )
+
+    module.save_pending_action(
+        bundle_dir=bundle,
+        action="APPROVE",
+        summary="是否批准当前计划？",
+    )
+
+    wrong_reply = (
+        "BinderRanker 可以预测结合亲和力。"
+    )
+
+    result = process_dialogue_message(
+        message="这个工具能预测结合亲和力吗？",
+        bundle_dir=bundle,
+        provider=FakeDialogueProvider(
+            "GENERAL_QUESTION",
+            reply=wrong_reply,
+        ),
+        approved_by="tester",
+        model_config_path=None,
+        profile_name=None,
+        allow_network=True,
+    )
+
+    assert result.status == "ANSWER"
+    assert wrong_reply not in result.message
+    assert "不能预测结合亲和力" in result.message
+    assert "待确认动作仍然保留" in result.message
+
+    pending = load_pending_action(bundle)
+
+    assert pending is not None
+    assert pending.action == "APPROVE"
+
+
+def test_general_question_safe_capability_reply_is_preserved(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "empty_bundle"
+    bundle.mkdir()
+
+    answer = (
+        "BinderRanker 用于当前候选骨架批次内的"
+        "工程排序和分层筛选，"
+        "不能预测结合亲和力。"
+    )
+
+    result = process_dialogue_message(
+        message="BinderRanker 是干什么的？",
+        bundle_dir=bundle,
+        provider=FakeDialogueProvider(
+            "GENERAL_QUESTION",
+            reply=answer,
+        ),
+        approved_by="tester",
+        model_config_path=None,
+        profile_name=None,
+        allow_network=True,
+    )
+
+    assert result.status == "ANSWER"
+    assert result.message == answer
+
+
+def test_general_question_prompt_contains_capability_truth(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "empty_bundle"
+    bundle.mkdir()
+
+    provider = FakeDialogueProvider(
+        "GENERAL_QUESTION",
+        reply="这是一个受控工程排序工具。",
+    )
+
+    result = process_dialogue_message(
+        message="这个程序到底能做什么？",
+        bundle_dir=bundle,
+        provider=provider,
+        approved_by="tester",
+        model_config_path=None,
+        profile_name=None,
+        allow_network=True,
+    )
+
+    assert result.status == "ANSWER"
+    assert provider.last_messages is not None
+
+    system_message = (
+        provider.last_messages[0]["content"]
+    )
+
+    assert "候选骨架排序与分层筛选" in system_message
+    assert "结合亲和力预测器" in system_message
+    assert "实验成功概率预测器" in system_message
+    assert "不能替代" in system_message
