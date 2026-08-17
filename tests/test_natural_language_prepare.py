@@ -7,6 +7,18 @@ from protein_design_agent.agent.natural_language_prepare import (
     NaturalLanguagePreparationError,
     prepare_from_natural_language,
 )
+from protein_design_agent.agent.planning_session_prepare import (
+    prepare_planning_session,
+)
+from protein_design_agent.agent.planner import (
+    build_agent_plan,
+)
+from protein_design_agent.schemas.agent_models import (
+    UserRequest,
+)
+from protein_design_agent.schemas.planning_session import (
+    PlanningSession,
+)
 from protein_design_agent.agent.providers.mock import (
     MockProvider,
 )
@@ -240,7 +252,7 @@ def test_incomplete_save_failure_preserves_existing_empty_bundle(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    import protein_design_agent.agent.natural_language_prepare as module
+    import protein_design_agent.agent.planning_session_prepare as module
 
     bundle = tmp_path / "existing_empty"
     bundle.mkdir()
@@ -314,7 +326,7 @@ def test_incomplete_save_failure_does_not_create_new_bundle(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    import protein_design_agent.agent.natural_language_prepare as module
+    import protein_design_agent.agent.planning_session_prepare as module
 
     bundle = tmp_path / "new_incomplete"
 
@@ -361,3 +373,114 @@ def test_incomplete_save_failure_does_not_create_new_bundle(
     ]
 
     assert leftovers == []
+
+def test_prepare_planning_session_persists_incomplete_session(
+    tmp_path: Path,
+) -> None:
+    request = UserRequest(
+        raw_text="帮我检查并排名这批骨架",
+    )
+    session = PlanningSession(
+        provider_name="unit-test",
+        request=request,
+        plan=build_agent_plan(request),
+        request_explicit_fields=[],
+    )
+
+    def forbidden_runner(*args, **kwargs):
+        raise AssertionError(
+            "incomplete session must not run workflow"
+        )
+
+    bundle = tmp_path / "session_incomplete"
+
+    result = prepare_planning_session(
+        session=session,
+        bundle_dir=bundle,
+        runner=forbidden_runner,
+    )
+
+    assert result.status == "NEEDS_INFORMATION"
+    assert result.provider_name == "unit-test"
+    assert result.missing_information == [
+        "input_dir",
+        "input_layout",
+    ]
+    assert result.planning_session.exists()
+    assert result.prepare_manifest.exists()
+    assert not (bundle / "workflow").exists()
+
+
+def test_prepare_planning_session_prepares_ready_session(
+    tmp_path: Path,
+) -> None:
+    request = UserRequest(
+        raw_text="检查已经正确分链的数据，只准备计划。",
+        **complete_payload(),
+    )
+    session = PlanningSession(
+        provider_name="unit-test",
+        request=request,
+        plan=build_agent_plan(request),
+        request_explicit_fields=[
+            "project_name",
+            "input_dir",
+            "input_layout",
+            "binder_chain",
+            "execute_requested",
+        ],
+    )
+
+    bundle = tmp_path / "session_ready"
+
+    result = prepare_planning_session(
+        session=session,
+        bundle_dir=bundle,
+        runner=fake_success_runner,
+    )
+
+    assert result.status == "READY_FOR_REVIEW"
+    assert result.provider_name == "unit-test"
+    assert result.project_name == "natural_language_test"
+    assert result.project_config is not None
+    assert result.project_config.exists()
+    assert result.workflow_manifest is not None
+    assert result.workflow_manifest.exists()
+
+
+def test_prepare_planning_session_rejects_nonempty_bundle(
+    tmp_path: Path,
+) -> None:
+    request = UserRequest(
+        raw_text="检查已经正确分链的数据，只准备计划。",
+        **complete_payload(),
+    )
+    session = PlanningSession(
+        provider_name="unit-test",
+        request=request,
+        plan=build_agent_plan(request),
+        request_explicit_fields=[],
+    )
+
+    bundle = tmp_path / "existing_session_bundle"
+    bundle.mkdir()
+
+    existing_file = bundle / "important.txt"
+    existing_file.write_text(
+        "do not overwrite",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        NaturalLanguagePreparationError,
+        match="禁止覆盖",
+    ):
+        prepare_planning_session(
+            session=session,
+            bundle_dir=bundle,
+            runner=fake_success_runner,
+        )
+
+    assert existing_file.read_text(
+        encoding="utf-8"
+    ) == "do not overwrite"

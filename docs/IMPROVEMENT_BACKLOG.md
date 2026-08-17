@@ -129,6 +129,17 @@
 - 优先级：P2。
 - 建议版本：v0.4。
 
+## P2 — Preparation API naming
+
+### Provider-agnostic preparation type names
+
+- 发现位置：`agent/planning_session_prepare.py`。
+- 当前问题：稳定的 PlanningSession preparation service 已不依赖自然语言 Provider，但仍沿用历史名称 `NaturalLanguagePreparationError` 和 `NaturalLanguagePrepareResult`，名称与当前职责不完全一致。
+- 建议方向：迁移为 provider-agnostic preparation 命名，并通过 compatibility alias 暂时保留旧名称，再逐步迁移现有调用方。
+- 为什么当前不做：当前 migration slice 专门解决 legacy Agent runtime 与 deterministic preparation 的依赖边界；同时进行公共类型重命名会把架构解耦和 API 命名迁移混在一个 commit 中，扩大回归范围。
+- 优先级：P2。
+- 建议版本：v0.3 Tool API migration 时重新评估；若会扩大当前发布范围则延后到 v0.4。
+
 ## Recording template
 
 后续新增项目使用：
