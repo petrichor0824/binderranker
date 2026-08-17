@@ -21,7 +21,7 @@ from protein_design_agent.agent.dataset_advisor import (
     load_dataset_advice,
     verify_dataset_advice_fresh,
 )
-from protein_design_agent.agent.orchestrator import (
+from protein_design_agent.schemas.planning_session import (
     PlanningSession,
 )
 from protein_design_agent.agent.planner import (

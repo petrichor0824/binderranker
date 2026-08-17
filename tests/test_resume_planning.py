@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 import protein_design_agent.agent.resume_planning as module
-from protein_design_agent.agent.orchestrator import (
+from protein_design_agent.schemas.planning_session import (
     PlanningSession,
 )
 from protein_design_agent.agent.planner import (

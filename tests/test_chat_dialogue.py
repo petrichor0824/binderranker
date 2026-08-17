@@ -457,7 +457,7 @@ def test_general_question_returns_model_answer(
 def create_incomplete_inspection_bundle(
     tmp_path: Path,
 ) -> Path:
-    from protein_design_agent.agent.orchestrator import (
+    from protein_design_agent.schemas.planning_session import (
         PlanningSession,
     )
     from protein_design_agent.agent.planner import (

@@ -24,7 +24,7 @@ from protein_design_agent.agent.dataset_grouping import (
 from protein_design_agent.agent.natural_language_prepare import (
     save_incomplete_session,
 )
-from protein_design_agent.agent.orchestrator import (
+from protein_design_agent.schemas.planning_session import (
     PlanningSession,
 )
 from protein_design_agent.agent.planner import (

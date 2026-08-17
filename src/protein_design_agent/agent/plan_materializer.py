@@ -27,7 +27,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from protein_design_agent.agent.orchestrator import (
+from protein_design_agent.schemas.planning_session import (
     PlanningSession,
 )
 from protein_design_agent.schemas.project_config import (

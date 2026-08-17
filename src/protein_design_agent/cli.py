@@ -79,6 +79,8 @@ from protein_design_agent.agent.natural_language_prepare import (
 )
 from protein_design_agent.agent.orchestrator import (
     LocalAgentOrchestrator,
+)
+from protein_design_agent.schemas.planning_session import (
     PlanningSession,
 )
 from protein_design_agent.agent.plan_materializer import (
