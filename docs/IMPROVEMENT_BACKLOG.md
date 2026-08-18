@@ -90,6 +90,15 @@
   后续可扩展更自然的 conversational intent classification。
 - 建议阶段：v0.4+。
 
+### Multi-provider PlanningSession provenance
+
+- 发现位置：`schemas/planning_session.py`、`agent/planning_session_resume.py`、`agent/resume_planning.py`、resume history / manifest provenance。
+- 当前问题：`PlanningSession.provider_name` 目前只有一个字符串值，历史上同时承担“创建该会话的 Provider”和 legacy resume Provider 连续性判断。随着 Tool API、Pydantic AI 或其他 runtime 接入，同一任务未来可能跨不同模型或 Agent runtime 继续交互，单一 `provider_name` 无法准确表达逐轮 provenance。
+- 建议方向：明确区分 session creation/original provider 与逐轮模型/runtime provenance；保留创建来源作为历史事实，并在 resume / Tool invocation history 中记录每次语义解析或 Agent runtime 的来源。Provider 身份不应成为 deterministic PlanningSession mutation 的授权条件。
+- 为什么当前不做：本次 migration slice 的目标是先把 Provider semantic adapter 与 deterministic resume core 分离；修改 PlanningSession schema、manifest 和历史记录格式会同时扩大兼容性与迁移范围。当前 legacy Provider continuity 已被限制在 `resume_planning.py`，不会污染新的 provider-independent resume core。
+- 优先级：P2。
+- 建议版本：Tool API / Pydantic AI migration 时重新评估；若需要扩大兼容 schema 范围，则延后到 v0.4。
+
 ## P2 — Domain error model
 
 ### Domain error taxonomy
