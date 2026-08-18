@@ -99,6 +99,15 @@
 - 优先级：P2。
 - 建议版本：Tool API / Pydantic AI migration 时重新评估；若需要扩大兼容 schema 范围，则延后到 v0.4。
 
+### Semantic request-evidence validation
+
+- 发现位置：`agent/request_evidence.py`、`agent/planning_session_builder.py`、`agent/tool_api.py`。
+- 当前问题：当前 deterministic evidence validator 可以证明字段 evidence 引用真实存在于可信用户原文中，也可以检查 patch/evidence 字段一致性，但纯字符串校验不能证明引用内容在语义上一定支持模型提取出的具体字段和值。
+- 建议方向：在 Pydantic AI / Tool runtime 迁移时评估更强的结构化 extraction contract、框架级 tool argument约束和用户 review 机制；不得通过不断增加关键词、正则或特殊句式补丁重新实现手写 NLU。
+- 为什么当前不做：v0.3 已通过原文绑定、typed schema、deterministic planner、READY_FOR_REVIEW 用户审核以及 approval/execution guard 建立多层边界。实现通用语义蕴含验证会显著扩大模型评估和 NLU 范围，不应阻塞首个确定性 BinderRanker 闭环。
+- 优先级：P2。
+- 建议版本：Pydantic AI migration 时重新评估；若仍需独立能力则 v0.4。
+
 ### Legacy request-evidence compatibility names
 
 - 发现位置：`agent/planning_session_resume.py`、`agent/resume_planning.py`。

@@ -17,10 +17,22 @@ from pydantic import BaseModel, Field
 from protein_design_agent.agent.plan_materializer import (
     load_planning_session,
 )
+from protein_design_agent.agent.planning_session_builder import (
+    build_planning_session_from_extraction,
+)
+from protein_design_agent.agent.planning_session_prepare import (
+    NaturalLanguagePreparationError,
+    NaturalLanguagePrepareResult,
+    prepare_planning_session,
+)
 from protein_design_agent.agent.run_status import (
     RunStatusError,
     RunStatusReport,
     inspect_run_status,
+)
+from protein_design_agent.agent.request_evidence import (
+    RequestEvidenceError,
+    RequestExtraction,
 )
 from protein_design_agent.agent.planning_session_resume import (
     ResumePlanningError,
@@ -185,4 +197,42 @@ def provide_information(
     except ResumePlanningError as exc:
         raise ToolAPIError(
             f"无法应用补充信息：{exc}"
+        ) from exc
+
+
+def prepare_task(
+    *,
+    bundle_dir: Path,
+    raw_text: str,
+    extraction: RequestExtraction,
+    provider_name: str,
+) -> NaturalLanguagePrepareResult:
+    """
+    从带可信用户原文证据的首次请求创建任务。
+
+    Tool API 不负责自然语言理解，也不自行构造计划；
+    它只串联 trusted PlanningSession builder 与
+    deterministic preparation service。
+    """
+    try:
+        session = (
+            build_planning_session_from_extraction(
+                raw_text=raw_text,
+                extraction=extraction,
+                provider_name=provider_name,
+            )
+        )
+
+        return prepare_planning_session(
+            session=session,
+            bundle_dir=bundle_dir,
+        )
+
+    except (
+        RequestEvidenceError,
+        NaturalLanguagePreparationError,
+        ValueError,
+    ) as exc:
+        raise ToolAPIError(
+            f"无法准备任务：{exc}"
         ) from exc
