@@ -99,6 +99,15 @@
 - 优先级：P2。
 - 建议版本：Tool API / Pydantic AI migration 时重新评估；若需要扩大兼容 schema 范围，则延后到 v0.4。
 
+### Legacy request-evidence compatibility names
+
+- 发现位置：`agent/planning_session_resume.py`、`agent/resume_planning.py`。
+- 当前问题：共享的请求字段与原文证据规则已经迁移到 `agent/request_evidence.py`，但 legacy resume 路径仍保留 `SupplementExtraction` 和 `validate_supplement_evidence` 等历史名称作为 compatibility facade。
+- 建议方向：在 legacy resume / handwritten Agent runtime 收缩或删除时，将剩余调用方迁移到中性的 `RequestExtraction` / `validate_request_evidence` API，并删除旧兼容名称；不要长期维护两套公共术语。
+- 为什么当前不做：当前 migration slice 的目标是先建立唯一的共享 schema 和 validator，同时保持现有 resume、dataset advice 与 Tool API 行为兼容。现在同步重命名所有 legacy 调用方会扩大非必要改动范围。
+- 优先级：P2。
+- 建议版本：Pydantic AI / legacy runtime migration 时清理；若未完成则 v0.4。
+
 ## P2 — Domain error model
 
 ### Domain error taxonomy

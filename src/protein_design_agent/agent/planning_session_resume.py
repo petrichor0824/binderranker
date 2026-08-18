@@ -31,7 +31,6 @@ from typing import Any, Literal
 
 from pydantic import (
     BaseModel,
-    ConfigDict,
     Field,
     ValidationError,
 )
@@ -41,6 +40,12 @@ from protein_design_agent.schemas.planning_session import (
 )
 from protein_design_agent.agent.planner import (
     build_agent_plan,
+)
+from protein_design_agent.agent.request_evidence import (
+    RequestEvidenceError,
+    RequestExtraction,
+    UserRequestPatch,
+    validate_request_evidence,
 )
 from protein_design_agent.agent.prepare_pipeline import (
     load_planning_session,
@@ -61,100 +66,13 @@ class ResumePlanningError(RuntimeError):
     """规划会话续接失败。"""
 
 
-class UserRequestPatch(BaseModel):
+class SupplementExtraction(RequestExtraction):
     """
-    本轮补充文本中明确出现的字段。
+    兼容旧 resume API 的提取类型名。
 
-    所有字段默认 None，模型必须省略未提及字段。
-    不允许模型修改 raw_text、task_type，
-    也不允许通过补充文本直接批准执行。
+    真实字段 schema 与 evidence contract
+    由 request_evidence.RequestExtraction 统一维护。
     """
-
-    model_config = ConfigDict(
-        extra="forbid"
-    )
-
-    project_name: str | None = Field(
-        default=None,
-        pattern=r"^[A-Za-z0-9_.-]+$",
-    )
-
-    input_dir: Path | None = None
-
-    input_layout: (
-        Literal[
-            "existing_chains",
-            "concatenated_single_chain",
-        ]
-        | None
-    ) = None
-
-    binder_chain: str | None = None
-    target_chains: list[str] | None = None
-
-    source_chain: str | None = None
-    target_residue_count: int | None = Field(
-        default=None,
-        ge=1,
-    )
-    target_start_residue: int | None = Field(
-        default=None,
-        ge=1,
-    )
-
-    normalized_target_chain: str | None = None
-    normalized_binder_chain: str | None = None
-
-    desired_regions: list[str] | None = None
-    undesired_regions: list[str] | None = None
-    hotspots: list[str] | None = None
-
-    region_policy: (
-        Literal[
-            "off",
-            "diagnostic",
-            "weak",
-            "constraint",
-        ]
-        | None
-    ) = None
-
-    region_filter: (
-        Literal[
-            "off",
-            "soft",
-            "strict",
-        ]
-        | None
-    ) = None
-
-    requested_top_k: int | None = Field(
-        default=None,
-        ge=1,
-    )
-
-
-class SupplementExtraction(BaseModel):
-    """
-    模型对本轮补充文本的结构化提取。
-
-    evidence 的键必须对应 patch 中实际提取的字段，
-    值必须引用用户本轮原话中的依据。
-    """
-
-    model_config = ConfigDict(
-        extra="forbid"
-    )
-
-    patch: UserRequestPatch
-
-    evidence: dict[str, str] = Field(
-        default_factory=dict
-    )
-
-    notes: list[str] = Field(
-        default_factory=list
-    )
 
 
 class ResumePlanningResult(BaseModel):
@@ -439,95 +357,25 @@ def validate_incomplete_bundle(
     )
 
 
-def normalize_evidence_text(
-    value: str,
-) -> str:
-    """
-    用于核对原文引用。
-
-    仅忽略空白差异，不做同义词替换，
-    防止模型用改写后的内容冒充用户原话。
-    """
-    return "".join(
-        value.split()
-    )
-
-
 def validate_supplement_evidence(
     *,
     extraction: SupplementExtraction,
     supplement_text: str,
 ) -> None:
     """
-    确认每个提取字段都有用户原话依据。
+    兼容旧 resume API 的 evidence 校验入口。
 
-    该校验不判断科研含义，只判断：
-    - evidence 与 patch 字段一致；
-    - 引用文字确实来自本轮用户输入。
+    真实确定性校验规则由共享 request_evidence seam 维护。
     """
-    patch_fields = {
-        field_name
-        for field_name
-        in extraction.patch.model_fields_set
-        if getattr(
-            extraction.patch,
-            field_name,
-        ) is not None
-    }
-
-    evidence_fields = set(
-        extraction.evidence
-    )
-
-    missing_evidence = sorted(
-        patch_fields - evidence_fields
-    )
-
-    if missing_evidence:
+    try:
+        validate_request_evidence(
+            extraction=extraction,
+            evidence_text=supplement_text,
+        )
+    except RequestEvidenceError as exc:
         raise ResumePlanningError(
-            "模型提取字段缺少用户原文依据："
-            f"{missing_evidence}"
-        )
-
-    unexpected_evidence = sorted(
-        evidence_fields - patch_fields
-    )
-
-    if unexpected_evidence:
-        raise ResumePlanningError(
-            "模型为未提取字段提供了多余依据："
-            f"{unexpected_evidence}"
-        )
-
-    normalized_source = (
-        normalize_evidence_text(
-            supplement_text
-        )
-    )
-
-    invalid_quotes: list[str] = []
-
-    for field_name, quote in (
-        extraction.evidence.items()
-    ):
-        clean_quote = quote.strip()
-
-        if (
-            not clean_quote
-            or normalize_evidence_text(
-                clean_quote
-            )
-            not in normalized_source
-        ):
-            invalid_quotes.append(
-                field_name
-            )
-
-    if invalid_quotes:
-        raise ResumePlanningError(
-            "模型提供的依据不是用户本轮原话："
-            f"{sorted(invalid_quotes)}"
-        )
+            str(exc)
+        ) from exc
 
 
 def is_empty_value(value: Any) -> bool:
