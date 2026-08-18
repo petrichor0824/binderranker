@@ -13,6 +13,10 @@ from __future__ import annotations
 from protein_design_agent.agent.planner import (
     build_agent_plan,
 )
+from protein_design_agent.agent.request_evidence import (
+    RequestExtraction,
+    validate_request_evidence,
+)
 from protein_design_agent.schemas.agent_models import (
     UserRequest,
 )
@@ -38,4 +42,45 @@ def build_planning_session(
         request=request,
         plan=build_agent_plan(request),
         request_explicit_fields=explicit_fields,
+    )
+
+
+def build_planning_session_from_extraction(
+    *,
+    raw_text: str,
+    extraction: RequestExtraction,
+    provider_name: str,
+) -> PlanningSession:
+    """
+    从带用户原文证据的结构化请求构建 PlanningSession。
+
+    模型提供的结构化字段必须先通过确定性 evidence 校验；
+    未在 patch 中显式提供的 UserRequest 字段使用领域默认值。
+    """
+    clean_text = raw_text.strip()
+
+    if not clean_text:
+        raise ValueError(
+            "用户请求不能为空"
+        )
+
+    validate_request_evidence(
+        extraction=extraction,
+        evidence_text=clean_text,
+    )
+
+    explicit_data = extraction.patch.model_dump(
+        mode="python",
+        exclude_unset=True,
+        exclude_none=True,
+    )
+
+    request = UserRequest(
+        raw_text=clean_text,
+        **explicit_data,
+    )
+
+    return build_planning_session(
+        request=request,
+        provider_name=provider_name,
     )
