@@ -9,22 +9,18 @@ Local Agent v0.1 的总调度器。
 2. 调用可替换的 Provider；
 3. 获得经过验证的 UserRequest；
 4. 调用确定性 Planner；
-5. 返回可审核的 AgentPlan。
+5. 返回可审核的 PlanningSession。
 
 v0.1 不执行 Ranker，不连接服务器，不运行任意 Shell。
 """
 
 from __future__ import annotations
 
-from protein_design_agent.agent.planner import (
-    build_agent_plan,
+from protein_design_agent.agent.planning_session_builder import (
+    build_planning_session,
 )
 from protein_design_agent.agent.providers.base import (
     RequestParserProvider,
-)
-from protein_design_agent.schemas.agent_models import (
-    AgentPlan,
-    UserRequest,
 )
 from protein_design_agent.schemas.planning_session import (
     PlanningSession,
@@ -60,18 +56,7 @@ class LocalAgentOrchestrator:
             clean_text
         )
 
-        plan = build_agent_plan(request)
-
-        explicit_fields = sorted(
-            field_name
-            for field_name
-            in request.model_fields_set
-            if field_name != "raw_text"
-        )
-
-        return PlanningSession(
-            provider_name=self.provider.name,
+        return build_planning_session(
             request=request,
-            plan=plan,
-            request_explicit_fields=explicit_fields,
+            provider_name=self.provider.name,
         )
