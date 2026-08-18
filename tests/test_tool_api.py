@@ -7,8 +7,14 @@ from protein_design_agent.agent.planner import (
     build_agent_plan,
 )
 from protein_design_agent.agent.tool_api import (
+    ToolAPIError,
     get_current_plan,
     get_task_status,
+    provide_information,
+)
+from protein_design_agent.agent.planning_session_resume import (
+    SupplementExtraction,
+    UserRequestPatch,
 )
 from protein_design_agent.schemas.agent_models import (
     UserRequest,
@@ -50,9 +56,19 @@ def create_incomplete_bundle(
     ).write_text(
         json.dumps(
             {
-                "schema_version": "0.2",
+                "schema_version": "0.1",
                 "status": "NEEDS_INFORMATION",
-                "project_name": "demo",
+                "provider_name": "fake-provider",
+                "bundle_directory": str(bundle),
+                "planning_session": str(
+                    bundle / "planning_session.json"
+                ),
+                "missing_information": (
+                    plan.missing_information
+                ),
+                "scientific_workflow_executed": False,
+                "binderranker_executed": False,
+                "remote_backend_used": False,
             }
         ),
         encoding="utf-8",
@@ -162,6 +178,85 @@ def test_read_only_tools_do_not_modify_bundle(
 
     get_current_plan(bundle)
     get_task_status(bundle)
+
+    after = {
+        path.relative_to(bundle): path.read_bytes()
+        for path in bundle.rglob("*")
+        if path.is_file()
+    }
+
+    assert after == before
+
+
+def test_provide_information_updates_planning_session(
+    tmp_path: Path,
+) -> None:
+    bundle = create_incomplete_bundle(tmp_path)
+
+    input_dir = tmp_path / "pdbs"
+    supplement = f"输入目录是 {input_dir}"
+
+    extraction = SupplementExtraction(
+        patch=UserRequestPatch(
+            input_dir=input_dir,
+        ),
+        evidence={
+            "input_dir": supplement,
+        },
+    )
+
+    result = provide_information(
+        bundle_dir=bundle,
+        supplement_text=supplement,
+        extraction=extraction,
+    )
+
+    assert result.status == "NEEDS_INFORMATION"
+
+    current = get_current_plan(bundle)
+
+    assert current.available is True
+    assert current.plan is not None
+    assert (
+        current.plan.request.input_dir
+        == input_dir
+    )
+    assert (
+        "input_dir"
+        in current.request_explicit_fields
+    )
+
+
+def test_provide_information_rejects_forged_evidence_without_mutation(
+    tmp_path: Path,
+) -> None:
+    bundle = create_incomplete_bundle(tmp_path)
+
+    before = {
+        path.relative_to(bundle): path.read_bytes()
+        for path in bundle.rglob("*")
+        if path.is_file()
+    }
+
+    input_dir = tmp_path / "pdbs"
+
+    extraction = SupplementExtraction(
+        patch=UserRequestPatch(
+            input_dir=input_dir,
+        ),
+        evidence={
+            "input_dir": (
+                f"输入目录是 {input_dir}"
+            ),
+        },
+    )
+
+    with pytest.raises(ToolAPIError):
+        provide_information(
+            bundle_dir=bundle,
+            supplement_text="谢谢",
+            extraction=extraction,
+        )
 
     after = {
         path.relative_to(bundle): path.read_bytes()

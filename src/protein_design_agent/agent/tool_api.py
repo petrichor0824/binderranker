@@ -22,6 +22,12 @@ from protein_design_agent.agent.run_status import (
     RunStatusReport,
     inspect_run_status,
 )
+from protein_design_agent.agent.planning_session_resume import (
+    ResumePlanningError,
+    ResumePlanningResult,
+    SupplementExtraction,
+    resume_planning_session_from_extraction,
+)
 from protein_design_agent.schemas.agent_models import (
     AgentPlan,
 )
@@ -156,3 +162,27 @@ def get_task_status(
         ),
         run_status=run_status,
     )
+
+
+def provide_information(
+    *,
+    bundle_dir: Path,
+    supplement_text: str,
+    extraction: SupplementExtraction,
+) -> ResumePlanningResult:
+    """
+    使用经过结构化提取的用户补充信息续接任务。
+
+    Tool API 不自行合并、重规划或持久化；
+    所有业务校验与状态变更均委托给稳定 resume core。
+    """
+    try:
+        return resume_planning_session_from_extraction(
+            bundle_dir=bundle_dir,
+            supplement_text=supplement_text,
+            extraction=extraction,
+        )
+    except ResumePlanningError as exc:
+        raise ToolAPIError(
+            f"无法应用补充信息：{exc}"
+        ) from exc
