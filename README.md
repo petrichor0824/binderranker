@@ -1,5 +1,7 @@
 # BinderRanker
 
+[简体中文](README.zh-CN.md)
+
 **Interpretable Ranking and Layered Screening for Generated Protein Backbone Candidates**
 
 BinderRanker prioritizes generated protein backbone candidates before more

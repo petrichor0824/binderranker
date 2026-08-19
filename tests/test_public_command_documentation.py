@@ -11,7 +11,13 @@ from protein_design_agent.public_identity import (
 )
 
 
-DOCS = Path("README.md").read_text(encoding="utf-8") + "\n" + QUICKSTART_TEMPLATE
+DOCS = (
+    Path("README.md").read_text(encoding="utf-8")
+    + "\n"
+    + Path("README.zh-CN.md").read_text(encoding="utf-8")
+    + "\n"
+    + QUICKSTART_TEMPLATE
+)
 PATTERN = re.compile(
     rf"{re.escape(CLI_NAME)}\s+([a-z][a-z0-9-]*)"
 )
