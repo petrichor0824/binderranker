@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "protein-design-agent"
-version = "0.2.0"
-description = "Evidence-driven backbone ranking and conversational triage for protein design"
+name = "binderranker"
+version = "0.3.0"
+description = "Interpretable ranking and layered screening for generated protein backbone candidates"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
@@ -45,6 +45,7 @@ pythonpath = ["src"]
 testpaths = ["tests"]
 
 [project.scripts]
+binderranker = "protein_design_agent.cli:app"
 protein-design-agent = "protein_design_agent.cli:app"
 
 [tool.setuptools.package-data]
