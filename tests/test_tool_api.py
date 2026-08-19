@@ -10,6 +10,7 @@ from protein_design_agent.agent.tool_api import (
     ToolAPIError,
     get_current_plan,
     get_task_status,
+    inspect_dataset,
     prepare_task,
     provide_information,
 )
@@ -474,3 +475,132 @@ def test_prepare_task_rejects_nonempty_bundle_without_overwrite(
     }
 
     assert after == before
+
+
+def create_bundle_with_input_dir(
+    tmp_path: Path,
+    input_dir: Path,
+) -> Path:
+    bundle = tmp_path / "dataset-bundle"
+    bundle.mkdir()
+
+    request = UserRequest(
+        raw_text=f"输入目录是 {input_dir}",
+        input_dir=input_dir,
+    )
+    plan = build_agent_plan(request)
+
+    session = PlanningSession(
+        provider_name="fake-provider",
+        request=request,
+        plan=plan,
+        request_explicit_fields=[
+            "input_dir",
+        ],
+    )
+
+    (
+        bundle / "planning_session.json"
+    ).write_text(
+        session.model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+
+    return bundle
+
+
+def write_minimal_pdb(
+    path: Path,
+) -> None:
+    path.write_text(
+        (
+            "ATOM      1  N   ALA A   1      "
+            "0.000   0.000   0.000  1.00 20.00           N\n"
+            "ATOM      2  CA  ALA A   1      "
+            "1.000   0.000   0.000  1.00 20.00           C\n"
+            "END\n"
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_inspect_dataset_uses_current_session_input_dir(
+    tmp_path: Path,
+) -> None:
+    input_dir = tmp_path / "pdbs"
+    input_dir.mkdir()
+
+    write_minimal_pdb(
+        input_dir / "candidate_1.pdb"
+    )
+
+    bundle = create_bundle_with_input_dir(
+        tmp_path,
+        input_dir,
+    )
+
+    result = inspect_dataset(
+        bundle_dir=bundle,
+    )
+
+    assert (
+        result.input_directory
+        == input_dir.resolve()
+    )
+    assert result.processed_file_count == 1
+    assert result.valid_file_count == 1
+    assert result.invalid_file_count == 0
+    assert (
+        result.file_evidence[0].chain_ids
+        == ["A"]
+    )
+
+
+def test_inspect_dataset_does_not_modify_bundle(
+    tmp_path: Path,
+) -> None:
+    input_dir = tmp_path / "pdbs"
+    input_dir.mkdir()
+
+    write_minimal_pdb(
+        input_dir / "candidate_1.pdb"
+    )
+
+    bundle = create_bundle_with_input_dir(
+        tmp_path,
+        input_dir,
+    )
+
+    before = {
+        path.relative_to(bundle): path.read_bytes()
+        for path in bundle.rglob("*")
+        if path.is_file()
+    }
+
+    inspect_dataset(
+        bundle_dir=bundle,
+    )
+
+    after = {
+        path.relative_to(bundle): path.read_bytes()
+        for path in bundle.rglob("*")
+        if path.is_file()
+    }
+
+    assert after == before
+
+
+def test_inspect_dataset_requires_task_input_dir(
+    tmp_path: Path,
+) -> None:
+    bundle = create_incomplete_bundle(
+        tmp_path
+    )
+
+    with pytest.raises(
+        ToolAPIError,
+        match="input_dir",
+    ):
+        inspect_dataset(
+            bundle_dir=bundle,
+        )

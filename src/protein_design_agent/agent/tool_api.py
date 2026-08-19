@@ -14,6 +14,12 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from protein_design_agent.agent.dataset_advisor import (
+    DatasetAdvisorError,
+    DatasetPlanningAdvice,
+    inspect_dataset_for_planning,
+)
+
 from protein_design_agent.agent.plan_materializer import (
     load_planning_session,
 )
@@ -235,4 +241,58 @@ def prepare_task(
     ) as exc:
         raise ToolAPIError(
             f"无法准备任务：{exc}"
+        ) from exc
+
+
+def inspect_dataset(
+    *,
+    bundle_dir: Path,
+) -> DatasetPlanningAdvice:
+    """
+    只读检查当前任务 PlanningSession 所记录的 PDB 数据集。
+
+    input_dir 由 trusted PlanningSession 决定；
+    Tool 调用方不能临时指定其他数据目录。
+    """
+    bundle = bundle_dir.resolve()
+
+    if not bundle.is_dir():
+        raise ToolAPIError(
+            f"任务目录不存在：{bundle}"
+        )
+
+    session_path = (
+        bundle / "planning_session.json"
+    )
+
+    if not session_path.is_file():
+        raise ToolAPIError(
+            "当前任务缺少 planning_session.json"
+        )
+
+    try:
+        session = load_planning_session(
+            session_path
+        )
+    except ValueError as exc:
+        raise ToolAPIError(
+            f"无法读取当前规划会话：{exc}"
+        ) from exc
+
+    input_dir = session.request.input_dir
+
+    if input_dir is None:
+        raise ToolAPIError(
+            "当前任务尚未提供 input_dir，"
+            "无法检查 PDB 数据集。"
+        )
+
+    try:
+        return inspect_dataset_for_planning(
+            input_dir=input_dir,
+            recursive=False,
+        )
+    except DatasetAdvisorError as exc:
+        raise ToolAPIError(
+            f"无法检查当前数据集：{exc}"
         ) from exc

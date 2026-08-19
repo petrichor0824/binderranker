@@ -99,6 +99,15 @@
 - 优先级：P2。
 - 建议版本：Tool API / Pydantic AI migration 时重新评估；若需要扩大兼容 schema 范围，则延后到 v0.4。
 
+### Dataset observation / advice separation
+
+- 发现位置：`agent/dataset_advisor.py`、`agent/tool_api.py`。
+- 当前问题：`inspect_dataset_for_planning()` 是只读、deterministic 的稳定能力，但其返回类型 `DatasetPlanningAdvice` 同时包含 PDB 可验证事实、conditional suggestion、unresolved questions 和 cautions。v0.3 的 `inspect_dataset` Tool 直接复用该能力，因此 Tool 名义上的“检查结果”仍混有确定性规划建议。
+- 建议方向：未来评估拆分纯 observation/report schema 与 planning-advice schema；底层 inspection 只描述文件和结构事实，上层再从 observation 构造建议。adoption 仍必须保持独立、需要确认的 mutation boundary。
+- 为什么当前不做：现有 advisor 已只读、不调用模型、不修改 PlanningSession，且 advice adoption 已有独立的 freshness / confirmation 边界。为首个 BinderRanker 用户闭环重构 schema 会扩大调用方、持久化和兼容测试范围，没有直接发布收益。
+- 优先级：P2。
+- 建议版本：v0.4；若 Pydantic AI Tool contract 提前需要更纯的 observation schema，则迁移时重新评估。
+
 ### Semantic request-evidence validation
 
 - 发现位置：`agent/request_evidence.py`、`agent/planning_session_builder.py`、`agent/tool_api.py`。
