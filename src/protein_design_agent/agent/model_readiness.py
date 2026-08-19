@@ -27,6 +27,9 @@ from protein_design_agent.agent.provider_factory import (
 from protein_design_agent.agent.providers.base import (
     RequestParserProvider,
 )
+from protein_design_agent.public_identity import (
+    CLI_NAME,
+)
 from protein_design_agent.schemas.provider_config import (
     load_model_provider_config,
 )
@@ -401,7 +404,7 @@ def format_model_readiness(
             ])
 
             if workspace_root is not None:
-                restart = "protein-design-agent chat"
+                restart = f"{CLI_NAME} chat"
 
                 if report.profile_name is not None:
                     restart += (
@@ -456,7 +459,7 @@ def format_model_readiness(
             lines.extend([
                 "请检查该配置文件，并运行：",
                 (
-                    "   protein-design-agent doctor "
+                    f"   {CLI_NAME} doctor "
                     f"--model-config {config_argument}"
                 ),
             ])
@@ -476,7 +479,7 @@ def format_model_readiness(
             "",
             "当前会话使用离线确定性模式。",
             (
-                "下次运行 protein-design-agent chat 时，"
+                f"下次运行 {CLI_NAME} chat 时，"
                 "如果模型配置和 API Key 已就绪，"
             ),
             (

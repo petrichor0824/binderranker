@@ -220,9 +220,10 @@ def test_missing_credential_has_safe_guidance(
     assert "export TEST_MODEL_API_KEY" in rendered
     assert str(config.resolve()) in rendered
     assert (
-        "protein-design-agent chat --profile test_profile"
+        "binderranker chat --profile test_profile"
         in rendered
     )
+    assert "protein-design-agent" not in rendered
     assert "--allow-network" not in rendered
     assert (
         "不需要再运行其他 API Key 设置命令"
