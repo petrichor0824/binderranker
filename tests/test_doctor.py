@@ -208,3 +208,54 @@ def test_doctor_report_uses_binderranker_identity(
 
     assert "BinderRanker Doctor" in rendered
     assert "Protein Design Agent Doctor" not in rendered
+
+
+def test_missing_virtual_environment_has_activation_guidance(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        module.sys,
+        "prefix",
+        "/usr",
+    )
+    monkeypatch.setattr(
+        module.sys,
+        "base_prefix",
+        "/usr",
+    )
+    monkeypatch.delenv(
+        "VIRTUAL_ENV",
+        raising=False,
+    )
+
+    result = module.check_virtual_environment()
+
+    assert result.status == "WARN"
+    assert "未检测到虚拟环境" in result.message
+    assert result.detail is not None
+    assert (
+        "激活安装 BinderRanker 的 Python 环境"
+        in result.detail
+    )
+    assert ".venv" in result.detail
+
+
+def test_missing_cli_path_has_recovery_guidance(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        module.shutil,
+        "which",
+        lambda _name: None,
+    )
+
+    result = module.check_cli_on_path()
+
+    assert result.status == "FAIL"
+    assert "PATH 中找不到 binderranker" in result.message
+    assert result.detail is not None
+    assert (
+        "python -m pip show binderranker"
+        in result.detail
+    )
+    assert "binderranker doctor" in result.detail

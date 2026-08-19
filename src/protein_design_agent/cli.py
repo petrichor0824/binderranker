@@ -2428,7 +2428,21 @@ def plan_mock_command(
     """
     使用 MockProvider 生成规划。
 
-    完全离线，不访问模型 API。
+    完全离线，不访问模型 API，也不会执行 BinderRanker。
+
+    示例 payload：
+
+    {"project_name":"demo","input_dir":"sample_data/test_two_chain","input_layout":"existing_chains","binder_chain":"A","execute_requested":false}
+
+    核心字段：
+
+    project_name=项目标识；input_dir=候选 PDB 目录；
+    input_layout=输入布局；
+    binder_chain=existing_chains 布局中的 binder 链；
+    execute_requested=仅记录执行请求，不代表批准或执行。
+
+    concatenated_single_chain 布局还需要
+    source_chain 和 target_residue_count。
     """
     try:
         raw_text = read_user_text(

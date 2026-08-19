@@ -778,3 +778,23 @@ def test_root_help_uses_binderranker_identity() -> None:
     assert result.exit_code == 0
     assert "BinderRanker" in result.output
     assert "Protein Design Agent" not in result.output
+
+
+def test_plan_mock_help_includes_payload_example() -> None:
+    result = runner.invoke(
+        app,
+        [
+            "plan-mock",
+            "--help",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert '"project_name"' in result.output
+    assert '"input_dir"' in result.output
+    assert '"input_layout"' in result.output
+    assert '"binder_chain"' in result.output
+    assert "execute_requested" in result.output
+    assert "不会执行 BinderRanker" in result.output
+    assert "source_chain" in result.output
+    assert "target_residue_count" in result.output

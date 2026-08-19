@@ -518,6 +518,77 @@ def check_model_profile(
     return checks
 
 
+
+def virtual_environment_activation_hint() -> str:
+    """返回当前平台常见的 venv 激活示例。"""
+    if os.name == "nt":
+        return (
+            "Windows PowerShell 常见 venv 激活示例："
+            r".\.venv\Scripts\Activate.ps1"
+        )
+
+    return (
+        "Linux / macOS / WSL 常见 venv 激活示例："
+        "source .venv/bin/activate"
+    )
+
+
+def check_virtual_environment() -> DoctorCheck:
+    """检查当前 Python 是否运行在虚拟环境中。"""
+    virtual_env = os.environ.get("VIRTUAL_ENV")
+
+    in_virtual_environment = (
+        sys.prefix != sys.base_prefix
+        or bool(virtual_env)
+    )
+
+    if in_virtual_environment:
+        return DoctorCheck(
+            name="virtual_environment",
+            status="PASS",
+            message="当前位于虚拟环境中",
+            detail=virtual_env or sys.prefix,
+        )
+
+    return DoctorCheck(
+        name="virtual_environment",
+        status="WARN",
+        message="当前未检测到虚拟环境",
+        detail=(
+            "建议激活安装 BinderRanker 的 Python 环境。"
+            f"{virtual_environment_activation_hint()}"
+        ),
+    )
+
+
+def check_cli_on_path() -> DoctorCheck:
+    """检查 BinderRanker CLI 是否能从 PATH 解析。"""
+    cli_path = shutil.which(CLI_NAME)
+
+    if cli_path:
+        return DoctorCheck(
+            name="cli",
+            status="PASS",
+            message=(
+                f"{CLI_NAME} CLI 可从 PATH 调用"
+            ),
+            detail=cli_path,
+        )
+
+    return DoctorCheck(
+        name="cli",
+        status="FAIL",
+        message=f"PATH 中找不到 {CLI_NAME}",
+        detail=(
+            "请确认当前 Python 环境已经安装 BinderRanker；"
+            "可运行 python -m pip show binderranker "
+            "检查当前解释器中的安装状态。"
+            f"{virtual_environment_activation_hint()}。"
+            "激活正确环境后重新运行 "
+            f"{CLI_NAME} doctor。"
+        ),
+    )
+
 def run_doctor(
     *,
     project_root: Path | None = None,
@@ -569,56 +640,12 @@ def run_doctor(
             )
         )
 
-    in_virtual_environment = (
-        sys.prefix != sys.base_prefix
-        or bool(
-            os.environ.get("VIRTUAL_ENV")
-        )
+    checks.append(
+        check_virtual_environment()
     )
 
     checks.append(
-        DoctorCheck(
-            name="virtual_environment",
-            status=(
-                "PASS"
-                if in_virtual_environment
-                else "WARN"
-            ),
-            message=(
-                "当前位于虚拟环境中"
-                if in_virtual_environment
-                else (
-                    "当前未检测到虚拟环境"
-                )
-            ),
-            detail=(
-                os.environ.get("VIRTUAL_ENV")
-                or sys.prefix
-            ),
-        )
-    )
-
-    cli_path = shutil.which(
-        CLI_NAME
-    )
-
-    checks.append(
-        DoctorCheck(
-            name="cli",
-            status=(
-                "PASS"
-                if cli_path
-                else "FAIL"
-            ),
-            message=(
-                f"{CLI_NAME} CLI 可从 PATH 调用"
-                if cli_path
-                else (
-                    f"PATH 中找不到 {CLI_NAME}"
-                )
-            ),
-            detail=cli_path,
-        )
+        check_cli_on_path()
     )
 
     checks.append(
