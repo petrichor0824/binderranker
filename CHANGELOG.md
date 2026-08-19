@@ -1,10 +1,16 @@
 # Changelog
 
-All notable changes to Protein Design Agent are documented here.
+All notable changes to BinderRanker are documented here.
+
+Historical entries preserve the project names, CLI commands, and terminology
+used by the corresponding release.
 
 ## 0.1.0 - 2026-07-28
 
 First public beta release.
+
+Historical note: this release predates the BinderRanker public rebranding, so
+its original CLI commands are retained below for traceability.
 
 ### Added
 

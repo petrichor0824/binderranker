@@ -1,4 +1,4 @@
-# Protein Design Agent Improvement Backlog
+# BinderRanker Improvement Backlog
 
 本文件记录开发过程中发现的合理优化方向。
 
@@ -10,10 +10,10 @@
 
 ## P1 — v0.4 候选
 
-### Tool API
-- 问题：当前 Chat 与 CLI 仍较直接地调用 deterministic core。
-- 方向：建立稳定 PDA Tool API，供内置 Agent、OpenClaw 和未来 MCP 共用。
-- 暂缓原因：架构已定义，但不是 v0.3 release blocker。
+### Tool API adoption and runtime integration
+- 当前状态：v0.3 已建立稳定、framework-independent 的 BinderRanker Tool API；legacy Chat 和部分 CLI 路径尚未统一迁移到这一边界。
+- 后续方向：Pydantic AI、OpenClaw 和未来 MCP adapter 统一复用 BinderRanker Tool API，不绕过 deterministic Core。
+- 暂缓原因：v0.3 的目标是冻结稳定 domain boundary，而不是同时完成下一代 Agent runtime 迁移。
 - 建议阶段：v0.4。
 
 ### Pydantic AI built-in Agent migration
@@ -29,7 +29,7 @@
 
 ### OpenClaw / MCP gateway
 - 方向：把外部 Agent 接到同一 Tool API，而不是绕过 deterministic core。
-- 建议阶段：Tool API 稳定之后。
+- 建议阶段：v0.4，在现有 BinderRanker Tool API 上增加 adapter。
 
 ## P2 — Error UX 后续增强
 
@@ -64,7 +64,7 @@
 - 发现位置：`tools/check_project_input.py`、`tools/normalize_pdb_dataset.py`、`tools/run_binderranker.py`、`tools/validate_project_config.py`、`workflows/backbone_ranking_workflow.py`。
 - 当前问题：这些内部/开发 Typer 入口仍有少量路径会直接显示底层 ValueError / ValidationError；其中 workflow stderr 同时承担内部失败诊断证据用途。
 - 建议方向：如果未来将这些模块升级为正式公共命令，再统一接入 `UserFacingError` / `format_error_guidance()`；内部 workflow 应继续保留足够的原始诊断证据，由上层公共 CLI 负责安全展示。
-- 为什么当前不做：当前 package 只注册 `protein-design-agent` 为正式 CLI，这些模块未在 README / docs 中作为普通用户入口公开；现在修改会扩大 v0.3 范围，并可能削弱 subprocess 失败审计。
+- 为什么当前不做：当前 canonical public CLI 已是 `binderranker`，并暂时保留 `protein-design-agent` compatibility alias；这些内部 Typer 模块仍未作为普通用户入口公开。现在修改会扩大 v0.3 范围，并可能削弱 subprocess 失败审计。
 - 优先级：P2。
 - 建议版本：v0.4。
 
@@ -97,7 +97,7 @@
 - 建议方向：明确区分 session creation/original provider 与逐轮模型/runtime provenance；保留创建来源作为历史事实，并在 resume / Tool invocation history 中记录每次语义解析或 Agent runtime 的来源。Provider 身份不应成为 deterministic PlanningSession mutation 的授权条件。
 - 为什么当前不做：本次 migration slice 的目标是先把 Provider semantic adapter 与 deterministic resume core 分离；修改 PlanningSession schema、manifest 和历史记录格式会同时扩大兼容性与迁移范围。当前 legacy Provider continuity 已被限制在 `resume_planning.py`，不会污染新的 provider-independent resume core。
 - 优先级：P2。
-- 建议版本：Tool API / Pydantic AI migration 时重新评估；若需要扩大兼容 schema 范围，则延后到 v0.4。
+- 建议版本：Pydantic AI runtime migration 时重新评估；若需要扩大兼容 schema 范围，则延后到 v0.4。
 
 ### Runtime authorization injection for mutating Tools
 
@@ -183,7 +183,7 @@
 - 建议方向：迁移为 provider-agnostic preparation 命名，并通过 compatibility alias 暂时保留旧名称，再逐步迁移现有调用方。
 - 为什么当前不做：当前 migration slice 专门解决 legacy Agent runtime 与 deterministic preparation 的依赖边界；同时进行公共类型重命名会把架构解耦和 API 命名迁移混在一个 commit 中，扩大回归范围。
 - 优先级：P2。
-- 建议版本：v0.3 Tool API migration 时重新评估；若会扩大当前发布范围则延后到 v0.4。
+- 建议版本：Pydantic AI / runtime migration 时重新评估；若会扩大兼容范围则在 v0.4 完成。
 
 ## Recording template
 
