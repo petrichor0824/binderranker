@@ -19,6 +19,12 @@ from protein_design_agent.agent.dataset_advisor import (
     DatasetPlanningAdvice,
     inspect_dataset_for_planning,
 )
+from protein_design_agent.agent.analyze_run import (
+    AnalyzeRunError,
+    AnalyzeRunResult,
+    next_analysis_directory,
+    run_analyze_run,
+)
 from protein_design_agent.agent.approval import (
     ApprovalError,
     ApprovalRecord,
@@ -418,4 +424,41 @@ def execute_ranker(
 
         raise ToolAPIError(
             public_message
+        ) from exc
+
+
+def analyze_results(
+    *,
+    bundle_dir: Path,
+) -> AnalyzeRunResult:
+    """
+    对当前任务已完成的 BinderRanker 结果执行确定性分析。
+
+    本 Tool：
+    - 不调用模型；
+    - 不允许调用方指定分析目录；
+    - 不允许覆盖历史分析；
+    - 不执行 BinderRanker。
+    """
+    bundle = bundle_dir.resolve()
+
+    if not bundle.is_dir():
+        raise ToolAPIError(
+            f"任务目录不存在：{bundle}"
+        )
+
+    analysis_dir = next_analysis_directory(
+        bundle_dir=bundle,
+        prefix="tool_deterministic",
+    )
+
+    try:
+        return run_analyze_run(
+            bundle_dir=bundle,
+            analysis_dir=analysis_dir,
+            with_model=False,
+        )
+    except AnalyzeRunError as exc:
+        raise ToolAPIError(
+            f"BinderRanker 结果分析未完成：{exc}"
         ) from exc

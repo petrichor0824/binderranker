@@ -451,3 +451,27 @@ def test_next_analysis_directory_never_reuses_existing_attempt(
         Path("analyses")
         / "tool_deterministic_0003"
     )
+
+
+def test_analyze_run_does_not_eagerly_import_model_explainer() -> None:
+    import ast
+
+    source = Path(
+        module.__file__
+    ).read_text(
+        encoding="utf-8"
+    )
+
+    tree = ast.parse(source)
+
+    eager_model_imports = [
+        node
+        for node in tree.body
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module
+            == "protein_design_agent.agent.explain_run"
+        )
+    ]
+
+    assert eager_model_imports == []

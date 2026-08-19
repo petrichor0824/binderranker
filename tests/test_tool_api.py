@@ -8,6 +8,7 @@ from protein_design_agent.agent.planner import (
 )
 from protein_design_agent.agent.tool_api import (
     ToolAPIError,
+    analyze_results,
     execute_ranker,
     get_current_plan,
     get_task_status,
@@ -786,3 +787,113 @@ def test_execute_ranker_uses_task_bound_approval(
         observed["confirm_execute"]
         is True
     )
+
+
+def test_analyze_results_uses_task_bound_deterministic_analysis(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import protein_design_agent.agent.tool_api as tool_api_module
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    sentinel = object()
+    observed = {}
+
+    def fake_next_analysis_directory(**kwargs):
+        observed["allocation"] = kwargs
+        return (
+            Path("analyses")
+            / "tool_deterministic_0001"
+        )
+
+    def fake_run_analyze_run(**kwargs):
+        observed["analysis"] = kwargs
+        return sentinel
+
+    monkeypatch.setattr(
+        tool_api_module,
+        "next_analysis_directory",
+        fake_next_analysis_directory,
+    )
+    monkeypatch.setattr(
+        tool_api_module,
+        "run_analyze_run",
+        fake_run_analyze_run,
+    )
+
+    result = analyze_results(
+        bundle_dir=bundle,
+    )
+
+    assert result is sentinel
+
+    assert observed["allocation"] == {
+        "bundle_dir": bundle.resolve(),
+        "prefix": "tool_deterministic",
+    }
+
+    assert observed["analysis"] == {
+        "bundle_dir": bundle.resolve(),
+        "analysis_dir": (
+            Path("analyses")
+            / "tool_deterministic_0001"
+        ),
+        "with_model": False,
+    }
+
+
+def test_analyze_results_rejects_missing_bundle(
+    tmp_path: Path,
+) -> None:
+    missing = tmp_path / "missing"
+
+    with pytest.raises(
+        ToolAPIError,
+        match="任务目录不存在",
+    ):
+        analyze_results(
+            bundle_dir=missing,
+        )
+
+
+def test_analyze_results_translates_analysis_failure(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import protein_design_agent.agent.tool_api as tool_api_module
+    from protein_design_agent.agent.analyze_run import (
+        AnalyzeRunError,
+    )
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    monkeypatch.setattr(
+        tool_api_module,
+        "next_analysis_directory",
+        lambda **kwargs: (
+            Path("analyses")
+            / "tool_deterministic_0001"
+        ),
+    )
+
+    def fail_analysis(**kwargs):
+        raise AnalyzeRunError(
+            "deterministic analysis failed"
+        )
+
+    monkeypatch.setattr(
+        tool_api_module,
+        "run_analyze_run",
+        fail_analysis,
+    )
+
+    with pytest.raises(
+        ToolAPIError,
+        match="结果分析",
+    ):
+        analyze_results(
+            bundle_dir=bundle,
+        )

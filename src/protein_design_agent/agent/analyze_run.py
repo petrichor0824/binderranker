@@ -24,15 +24,26 @@ from protein_design_agent.agent.analysis_artifacts import (
     build_analysis_provenance_seal,
 )
 
-from protein_design_agent.agent.explain_run import (
-    run_explain_run,
-)
 from protein_design_agent.agent.failure_analysis import (
     write_failure_analysis,
 )
 from protein_design_agent.agent.ranker_result_parser import (
     write_ranker_result_summary,
 )
+
+
+def run_explain_run(**kwargs: Any) -> Any:
+    """
+    按需加载可选的模型解释运行时。
+
+    保留模块级依赖 seam，便于现有调用方和测试注入；
+    deterministic analyze 路径不会因此加载模型 runtime。
+    """
+    from protein_design_agent.agent.explain_run import (
+        run_explain_run as _run_explain_run,
+    )
+
+    return _run_explain_run(**kwargs)
 
 
 class AnalyzeRunError(RuntimeError):
