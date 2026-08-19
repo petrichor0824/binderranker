@@ -99,6 +99,15 @@
 - 优先级：P2。
 - 建议版本：Tool API / Pydantic AI migration 时重新评估；若需要扩大兼容 schema 范围，则延后到 v0.4。
 
+### Runtime authorization injection for mutating Tools
+
+- 发现位置：`agent/tool_api.py` 的 `request_approval()` / `execute_ranker()`，以及未来 Pydantic AI Tool runtime。
+- 当前问题：framework-independent Tool API 目前通过 `approval_confirmed` 和 `execution_confirmed` 显式表达两次独立授权事实。这个契约适合当前 deterministic API，但未来若直接把这些布尔参数暴露给模型填写，LLM Tool Call 就可能被错误等同为真实用户授权。
+- 建议方向：Pydantic AI 接入时通过可信 runtime context / RunContext 注入用户身份和授权状态；模型只能请求执行某个 Tool，不能自行生成 approval 或 execution authorization。继续保留“批准计划”和“确认真正执行”两个独立步骤。
+- 为什么当前不做：当前 slice 只建立 framework-independent Tool boundary，尚未接入 Pydantic AI runtime。现在提前设计完整会话级授权容器会扩大范围；现有 Chat、CLI、approval core 和 local executor 已经完整执行双确认与一次性批准规则。
+- 优先级：P1，Pydantic AI runtime migration blocker。
+- 建议版本：Pydantic AI Tool 接入时完成；不得延后到允许模型直接调用执行类 Tool 之后。
+
 ### Dataset observation / advice separation
 
 - 发现位置：`agent/dataset_advisor.py`、`agent/tool_api.py`。

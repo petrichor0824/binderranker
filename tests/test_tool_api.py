@@ -8,11 +8,13 @@ from protein_design_agent.agent.planner import (
 )
 from protein_design_agent.agent.tool_api import (
     ToolAPIError,
+    execute_ranker,
     get_current_plan,
     get_task_status,
     inspect_dataset,
     prepare_task,
     provide_information,
+    request_approval,
 )
 from protein_design_agent.agent.planning_session_resume import (
     SupplementExtraction,
@@ -604,3 +606,183 @@ def test_inspect_dataset_requires_task_input_dir(
         inspect_dataset(
             bundle_dir=bundle,
         )
+
+
+def test_request_approval_requires_explicit_runtime_confirmation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import protein_design_agent.agent.tool_api as tool_api_module
+
+    called = False
+
+    def fake_create_approval_record(**kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError(
+            "未确认批准时不应进入 approval core"
+        )
+
+    monkeypatch.setattr(
+        tool_api_module,
+        "create_approval_record",
+        fake_create_approval_record,
+    )
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    with pytest.raises(
+        ToolAPIError,
+        match="确认",
+    ):
+        request_approval(
+            bundle_dir=bundle,
+            approved_by="unit-test-user",
+            approval_confirmed=False,
+        )
+
+    assert called is False
+
+
+def test_request_approval_uses_task_bound_paths(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import protein_design_agent.agent.tool_api as tool_api_module
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    sentinel = object()
+    observed = {}
+
+    def fake_create_approval_record(**kwargs):
+        observed.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(
+        tool_api_module,
+        "create_approval_record",
+        fake_create_approval_record,
+    )
+
+    result = request_approval(
+        bundle_dir=bundle,
+        approved_by="unit-test-user",
+        approval_confirmed=True,
+        approval_note="reviewed",
+        acknowledge_smoke_test=True,
+    )
+
+    assert result is sentinel
+
+    assert (
+        observed["prepare_manifest_path"]
+        == (
+            bundle
+            / "agent_prepare_manifest.json"
+        ).resolve()
+    )
+
+    assert (
+        observed["output_path"]
+        == (
+            bundle
+            / "approval.json"
+        ).resolve()
+    )
+
+    assert (
+        observed["approved_by"]
+        == "unit-test-user"
+    )
+    assert observed["approval_note"] == "reviewed"
+    assert (
+        observed["acknowledge_smoke_test"]
+        is True
+    )
+
+
+def test_execute_ranker_requires_explicit_runtime_confirmation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import protein_design_agent.agent.tool_api as tool_api_module
+
+    called = False
+
+    def fake_execute_approved_binderranker(**kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError(
+            "未确认执行时不应进入 local executor"
+        )
+
+    monkeypatch.setattr(
+        tool_api_module,
+        "execute_approved_binderranker",
+        fake_execute_approved_binderranker,
+    )
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    with pytest.raises(
+        ToolAPIError,
+        match="确认",
+    ):
+        execute_ranker(
+            bundle_dir=bundle,
+            execution_confirmed=False,
+        )
+
+    assert called is False
+
+
+def test_execute_ranker_uses_task_bound_approval(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import protein_design_agent.agent.tool_api as tool_api_module
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    approval_path = (
+        bundle / "approval.json"
+    )
+    approval_path.write_text(
+        "{}",
+        encoding="utf-8",
+    )
+
+    sentinel = object()
+    observed = {}
+
+    def fake_execute_approved_binderranker(**kwargs):
+        observed.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(
+        tool_api_module,
+        "execute_approved_binderranker",
+        fake_execute_approved_binderranker,
+    )
+
+    result = execute_ranker(
+        bundle_dir=bundle,
+        execution_confirmed=True,
+    )
+
+    assert result is sentinel
+
+    assert (
+        observed["approval_path"]
+        == approval_path.resolve()
+    )
+
+    assert (
+        observed["confirm_execute"]
+        is True
+    )

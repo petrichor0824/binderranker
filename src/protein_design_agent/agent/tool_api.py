@@ -19,6 +19,19 @@ from protein_design_agent.agent.dataset_advisor import (
     DatasetPlanningAdvice,
     inspect_dataset_for_planning,
 )
+from protein_design_agent.agent.approval import (
+    ApprovalError,
+    ApprovalRecord,
+    create_approval_record,
+)
+from protein_design_agent.agent.execution_guard import (
+    ExecutionGuardError,
+)
+from protein_design_agent.agent.local_executor import (
+    CompletedLocalExecution,
+    LocalExecutionError,
+    execute_approved_binderranker,
+)
 
 from protein_design_agent.agent.plan_materializer import (
     load_planning_session,
@@ -295,4 +308,114 @@ def inspect_dataset(
     except DatasetAdvisorError as exc:
         raise ToolAPIError(
             f"无法检查当前数据集：{exc}"
+        ) from exc
+
+
+def request_approval(
+    *,
+    bundle_dir: Path,
+    approved_by: str,
+    approval_confirmed: bool = False,
+    approval_note: str = "",
+    acknowledge_smoke_test: bool = False,
+) -> ApprovalRecord:
+    """
+    为当前任务创建一次性 BinderRanker 执行批准。
+
+    approval_confirmed 是可信 runtime 提供的授权事实，
+    不能由模型自行推断为 True。
+    """
+    if not approval_confirmed:
+        raise ToolAPIError(
+            "必须由用户明确确认批准，"
+            "才能创建 BinderRanker 执行批准记录。"
+        )
+
+    bundle = bundle_dir.resolve()
+
+    if not bundle.is_dir():
+        raise ToolAPIError(
+            f"任务目录不存在：{bundle}"
+        )
+
+    prepare_manifest = (
+        bundle / "agent_prepare_manifest.json"
+    )
+    approval_path = (
+        bundle / "approval.json"
+    )
+
+    try:
+        return create_approval_record(
+            prepare_manifest_path=prepare_manifest,
+            output_path=approval_path,
+            approved_by=approved_by,
+            approval_note=approval_note,
+            acknowledge_smoke_test=(
+                acknowledge_smoke_test
+            ),
+        )
+    except ApprovalError as exc:
+        public_message = (
+            exc.public_message
+            or "任务批准未完成。"
+        )
+
+        raise ToolAPIError(
+            public_message
+        ) from exc
+
+
+def execute_ranker(
+    *,
+    bundle_dir: Path,
+    execution_confirmed: bool = False,
+) -> CompletedLocalExecution:
+    """
+    使用当前任务的一次性批准执行 BinderRanker。
+
+    execution_confirmed 是独立于计划批准的第二次
+    runtime 用户确认。完整 execution guard 由
+    local executor 内部负责。
+    """
+    if not execution_confirmed:
+        raise ToolAPIError(
+            "必须由用户明确确认执行，"
+            "才能运行 BinderRanker。"
+        )
+
+    bundle = bundle_dir.resolve()
+
+    if not bundle.is_dir():
+        raise ToolAPIError(
+            f"任务目录不存在：{bundle}"
+        )
+
+    approval_path = (
+        bundle / "approval.json"
+    )
+
+    if not approval_path.is_file():
+        raise ToolAPIError(
+            "当前任务尚无 approval.json，"
+            "请先批准计划。"
+        )
+
+    try:
+        return execute_approved_binderranker(
+            approval_path=approval_path,
+            confirm_execute=True,
+        )
+    except ExecutionGuardError as exc:
+        raise ToolAPIError(
+            f"BinderRanker 执行前安全检查未通过：{exc}"
+        ) from exc
+    except LocalExecutionError as exc:
+        public_message = (
+            exc.public_message
+            or "BinderRanker 执行未完成。"
+        )
+
+        raise ToolAPIError(
+            public_message
         ) from exc
