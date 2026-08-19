@@ -1636,6 +1636,9 @@ def test_general_question_prompt_contains_capability_truth(
         provider.last_messages[0]["content"]
     )
 
+    assert system_message.startswith(
+        "你是 BinderRanker Agent 的受控对话意图分类器。"
+    )
     assert "候选骨架排序与分层筛选" in system_message
     assert "结合亲和力预测器" in system_message
     assert "实验成功概率预测器" in system_message

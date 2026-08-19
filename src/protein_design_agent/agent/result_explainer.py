@@ -37,6 +37,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from protein_design_agent.public_identity import (
+    AGENT_NAME,
+    PROJECT_NAME,
+)
 from protein_design_agent.agent.capability_truth import (
     CAPABILITY_TRUTH_PROMPT,
     find_capability_overclaim,
@@ -928,8 +932,8 @@ def build_result_explainer_messages(
         .model_json_schema()
     )
 
-    system_message = """
-你是 Protein Design Agent 的科学结果解释模块。
+    system_message = f"""
+你是 {AGENT_NAME} 的科学结果解释模块。
 
 你的工作不是重新计算结果，而是根据给定证据：
 1. 综合解释每个候选的优势和局限；
@@ -1932,7 +1936,7 @@ def render_result_explanation_markdown(
     }
 
     lines: list[str] = [
-        "# Protein Design Agent 结果解释",
+        f"# {PROJECT_NAME} 结果解释",
         "",
         f"- 项目：`{explanation.project_name}`",
         (

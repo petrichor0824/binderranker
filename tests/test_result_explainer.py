@@ -347,6 +347,8 @@ def test_artifacts_written_and_protected(
         encoding="utf-8"
     )
 
+    assert "# BinderRanker 结果解释" in markdown
+    assert "# Protein Design Agent 结果解释" not in markdown
     assert "SMOKE_TEST_ONLY" in markdown
     assert "candidate_1" in markdown
     assert (
@@ -889,6 +891,9 @@ def test_result_explainer_prompt_contains_capability_truth() -> None:
 
     system_message = provider.messages[0]["content"]
 
+    assert system_message.startswith(
+        "你是 BinderRanker Agent 的科学结果解释模块。"
+    )
     assert "候选骨架排序与分层筛选" in system_message
     assert "结合亲和力预测器" in system_message
     assert "实验成功概率预测器" in system_message

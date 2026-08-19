@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Protein Design Agent 自然语言对话控制层。
+BinderRanker Agent 自然语言对话控制层。
 
 职责：
 1. 理解用户自然语言意图；
@@ -17,6 +17,9 @@ Protein Design Agent 自然语言对话控制层。
 from __future__ import annotations
 
 from protein_design_agent.agent.user_errors import UserFacingError
+from protein_design_agent.public_identity import (
+    AGENT_NAME,
+)
 from protein_design_agent.agent.capability_truth import (
     CAPABILITY_TRUTH_PROMPT,
     capability_safe_reply,
@@ -1048,7 +1051,7 @@ def classify_dialogue_intent(
         {
             "role": "system",
             "content": (
-                "你是 Protein Design Agent 的"
+                f"你是 {AGENT_NAME} 的"
                 "受控对话意图分类器。"
                 "你只能判断用户意图，不能执行任何动作，"
                 "不能输出 Shell 命令，也不能修改科研参数。"
