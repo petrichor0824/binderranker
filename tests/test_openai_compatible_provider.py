@@ -145,6 +145,7 @@ def test_provider_builds_request_and_returns_user_request() -> None:
     assert call["headers"]["Authorization"] == (
         "Bearer secret-test-key"
     )
+    assert call["headers"]["User-Agent"] == "binderranker"
 
     body = call["body"]
 

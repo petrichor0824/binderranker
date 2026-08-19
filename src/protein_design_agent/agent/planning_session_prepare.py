@@ -495,7 +495,7 @@ def prepare_planning_session(
     # prepare_agent_run 接收一个会话文件。
     # 这里先在系统临时目录中保存，随后它会复制到正式 bundle。
     with tempfile.TemporaryDirectory(
-        prefix="protein-design-agent-"
+        prefix="binderranker-"
     ) as temporary_directory:
         temporary_session = (
             Path(temporary_directory)

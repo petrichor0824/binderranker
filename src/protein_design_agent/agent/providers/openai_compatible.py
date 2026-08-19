@@ -502,7 +502,7 @@ class OpenAICompatibleProvider:
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "protein-design-agent/0.1",
+            "User-Agent": "binderranker",
         }
 
         api_key = self._read_api_key()

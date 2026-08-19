@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Protein Design Agent 的公共科学能力边界。
+BinderRanker 的公共科学能力边界。
 
 本模块只定义：
 1. BinderRanker / Agent 的真实能力说明；
@@ -24,7 +24,7 @@ BinderRanker 是针对当前 target 和候选批次的
 它用于帮助确定哪些候选更值得进入后续的序列设计、
 复合体结构预测、分子模拟和实验验证。
 
-不得把 BinderRanker 或 Protein Design Agent 描述为：
+不得把 BinderRanker（包括历史名称 Protein Design Agent）描述为：
 - 结合亲和力预测器；
 - 稳定性预测器；
 - 溶解性预测器；
@@ -44,7 +44,7 @@ DETERMINISTIC_CAPABILITY_ANSWER = (
     "它用于帮助确定哪些候选更值得进入后续计算和实验验证，"
     "不能预测结合亲和力、稳定性、溶解性或实验成功概率，"
     "也不能保证候选一定结合或成为优质 binder。"
-    "Protein Design Agent 不提供任意蛋白结构拼接或编辑能力，"
+    "BinderRanker 不提供任意蛋白结构拼接或编辑能力，"
     "也不能替代序列设计、AlphaFold/复合体结构预测、"
     "分子模拟或实验验证。"
 )

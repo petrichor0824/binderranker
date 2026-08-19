@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Protein Design Agent CLI 的安全本地默认值。"""
+"""BinderRanker CLI 的安全本地默认值。"""
 
 from __future__ import annotations
 
