@@ -75,7 +75,7 @@ jobs:
 
           wheels = list(
               Path("dist").glob(
-                  "protein_design_agent-*.whl"
+                  "*.whl"
               )
           )
 
