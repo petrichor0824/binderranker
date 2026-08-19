@@ -16,9 +16,9 @@ def test_generated_quickstart_matches_public_workflow(
     ).read_text(encoding="utf-8")
 
     required = (
-        "protein-design-agent doctor",
-        "protein-design-agent extract-sample",
-        "protein-design-agent chat",
+        "binderranker doctor",
+        "binderranker extract-sample",
+        "binderranker chat",
         "data/3c98_small",
         "binder 是 B 链",
         "查看计划",
@@ -33,6 +33,9 @@ def test_generated_quickstart_matches_public_workflow(
 
     for value in required:
         assert value in content
+
+    assert "Protein Design Agent" not in content
+    assert "protein-design-agent" not in content
 
 
 def test_generated_quickstart_is_portable(

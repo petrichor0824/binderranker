@@ -328,4 +328,4 @@ def test_quickstart_explains_secure_api_key_input(
         'export DEEPSEEK_API_KEY="你的真实 API Key"'
         not in quickstart
     )
-    assert "protein-design-agent chat" in quickstart
+    assert "binderranker chat" in quickstart

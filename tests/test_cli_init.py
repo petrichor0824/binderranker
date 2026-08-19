@@ -148,7 +148,7 @@ def test_cli_init_shows_secure_api_key_guidance(
         not in result.output
     )
     assert (
-        "protein-design-agent chat"
+        "binderranker chat"
         in result.output
     )
 

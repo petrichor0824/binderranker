@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-创建可移植的 Protein Design Agent 工作区。
+创建可移植的 BinderRanker 工作区。
 
 安全原则：
 - 不访问网络；
@@ -20,6 +20,10 @@ from pathlib import Path
 
 from protein_design_agent.agent.user_errors import (
     UserFacingError,
+)
+from protein_design_agent.public_identity import (
+    CLI_NAME,
+    PROJECT_NAME,
 )
 
 
@@ -80,9 +84,9 @@ Thumbs.db
 '''
 
 
-QUICKSTART_TEMPLATE = '''# Protein Design Agent 工作区
+QUICKSTART_TEMPLATE = f'''# {PROJECT_NAME} 工作区
 
-本目录由 `protein-design-agent init` 创建。
+本目录由 `{CLI_NAME} init` 创建。
 
 ## 目录说明
 
@@ -94,9 +98,7 @@ QUICKSTART_TEMPLATE = '''# Protein Design Agent 工作区
 
 以下命令不会访问网络，也不会显示 API Key：
 
-    protein-design-agent doctor \
-      --model-config configs/models/deepseek.local.yaml \
-      --profile deepseek_flash
+    {CLI_NAME} doctor --model-config configs/models/deepseek.local.yaml --profile deepseek_flash
 
 ## 2. 可选：启用自然语言模型
 
@@ -121,14 +123,13 @@ QUICKSTART_TEMPLATE = '''# Protein Design Agent 工作区
 
 ## 3. 提取内置 smoke 数据
 
-    protein-design-agent extract-sample \
-      --destination data/3c98_small
+    {CLI_NAME} extract-sample --destination data/3c98_small
 
 该样例包含 5 个 PDB，只用于安装和工程 smoke test，不能作为正式候选推荐。
 
 ## 4. 启动对话式 Agent
 
-    protein-design-agent chat
+    {CLI_NAME} chat
 
 配置和 API Key 已就绪时，Agent 会询问本次 Chat 是否允许调用模型 API。
 
@@ -467,7 +468,7 @@ def render_workspace_init_report(
     """生成终端报告。"""
     lines = [
         "=" * 72,
-        "Protein Design Agent Workspace",
+        f"{PROJECT_NAME} Workspace",
         "=" * 72,
         f"工作区：{report.destination}",
         "",
@@ -511,12 +512,12 @@ def render_workspace_init_report(
             ),
             "",
             (
-                "  protein-design-agent doctor "
+                f"  {CLI_NAME} doctor "
                 "--model-config "
                 "configs/models/deepseek.local.yaml "
                 "--profile deepseek_flash"
             ),
-            "  protein-design-agent chat",
+            f"  {CLI_NAME} chat",
             (
                 "  Chat 启动后会询问本次会话"
                 "是否允许调用模型 API。"
