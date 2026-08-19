@@ -13,6 +13,28 @@ from typer.testing import CliRunner
 runner = CliRunner()
 
 
+def test_chat_eof_exits_cleanly(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    result = runner.invoke(
+        app,
+        [
+            "chat",
+            "--bundle-dir",
+            str(bundle),
+            "--approved-by",
+            "tester",
+        ],
+        input="",
+    )
+
+    assert result.exit_code == 0
+    assert "会话已结束。" in result.output
+    assert "Aborted" not in result.output
+
 
 def test_chat_continues_without_model_config_when_network_enabled(
     tmp_path: Path,

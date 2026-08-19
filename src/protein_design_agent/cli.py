@@ -30,6 +30,10 @@ import json
 import sys
 import tempfile
 import os
+from importlib.metadata import (
+    PackageNotFoundError,
+    version as distribution_version,
+)
 from pathlib import Path
 from typing import Any, Optional
 
@@ -124,6 +128,38 @@ app = typer.Typer(
         f"{PROJECT_NAME}：{SHORT_DESCRIPTION_ZH}"
     ),
 )
+
+
+def resolve_cli_version() -> str:
+    """读取当前安装的 BinderRanker distribution 版本。"""
+    try:
+        return distribution_version("binderranker")
+    except PackageNotFoundError:
+        return "unknown"
+
+
+def version_callback(value: bool) -> None:
+    """显示安装版本并正常退出。"""
+    if not value:
+        return
+
+    typer.echo(
+        f"{PROJECT_NAME} {resolve_cli_version()}"
+    )
+    raise typer.Exit()
+
+
+@app.callback()
+def main_callback(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=version_callback,
+        is_eager=True,
+        help="显示 BinderRanker 安装版本并退出。",
+    ),
+) -> None:
+    """BinderRanker 根级命令选项。"""
 
 
 class CLIInputError(ValueError):
@@ -1313,7 +1349,11 @@ def chat_command(
                 prompt_suffix=" > ",
             )
 
-        except (EOFError, KeyboardInterrupt):
+        except (
+            EOFError,
+            KeyboardInterrupt,
+            typer.Abort,
+        ):
             typer.echo("")
             typer.echo(
                 "会话已结束。"

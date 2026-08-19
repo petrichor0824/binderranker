@@ -1,4 +1,7 @@
 import json
+from importlib.metadata import (
+    version as distribution_version,
+)
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -7,6 +10,19 @@ from protein_design_agent.cli import app
 
 
 runner = CliRunner()
+
+
+def test_cli_reports_installed_distribution_version() -> None:
+    result = runner.invoke(
+        app,
+        ["--version"],
+    )
+
+    assert result.exit_code == 0
+    assert result.output.strip() == (
+        "BinderRanker "
+        f"{distribution_version('binderranker')}"
+    )
 
 
 def write_model_config(
