@@ -16,6 +16,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from protein_design_agent.path_semantics import (
+    resolve_local_path,
+)
 from protein_design_agent.agent.dataset_advisor import (
     DatasetAdvisorError,
     load_dataset_advice,
@@ -93,14 +96,28 @@ def adopt_dataset_advice(
             "无法确认建议对应当前任务"
         )
 
+    try:
+        resolved_request_input = resolve_local_path(
+            request_input_dir,
+            field_name="request.input_dir",
+        )
+        resolved_advice_input = resolve_local_path(
+            advice.input_directory,
+            field_name="advice.input_directory",
+        )
+    except ValueError as exc:
+        raise DatasetAdviceAdoptionError(
+            str(exc)
+        ) from exc
+
     if (
-        request_input_dir.resolve()
-        != advice.input_directory.resolve()
+        resolved_request_input
+        != resolved_advice_input
     ):
         raise DatasetAdviceAdoptionError(
             "建议报告的输入目录与当前任务不一致："
-            f"任务={request_input_dir.resolve()}；"
-            f"建议={advice.input_directory.resolve()}"
+            f"任务={resolved_request_input}；"
+            f"建议={resolved_advice_input}"
         )
 
     candidate = dict(

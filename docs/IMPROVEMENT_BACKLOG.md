@@ -185,6 +185,17 @@
 - 优先级：P2。
 - 建议版本：Pydantic AI / runtime migration 时重新评估；若会扩大兼容范围则在 v0.4 完成。
 
+## P2 — Cross-platform path portability
+
+### Explicit cross-platform path mapping
+
+- 发现位置：`path_semantics.py`、CLI `--input-dir` 边界、Manifest / approval / execution 中的持久化路径恢复。
+- 当前问题：v0.3 已能检测并拒绝当前平台无法正确解释的其他平台绝对路径，避免例如 Windows `C:\\...` 在 POSIX / WSL 中被静默拼接成错误本地路径；但不会自动完成 Windows、WSL 与 POSIX 之间的路径映射或历史 Bundle 路径迁移。
+- 建议方向：未来如确有跨平台迁移需求，评估显式、用户可审计的路径映射配置，例如由用户声明 Windows 路径前缀与 WSL 挂载点之间的对应关系；不得依赖隐式猜测自动把 `C:\\...` 转换为 `/mnt/c/...`。
+- 为什么当前不做：自动映射具有明显的平台和机器特异性，错误转换可能比明确拒绝更危险；它不属于 BinderRanker 的科学核心。v0.3 的发布目标是保证外平台路径不会被静默错误解释，而不是提供通用跨操作系统路径迁移系统。
+- 优先级：P2。
+- 建议版本：v0.4+，仅在真实用户需求证明有必要时实现。
+
 ## Recording template
 
 后续新增项目使用：

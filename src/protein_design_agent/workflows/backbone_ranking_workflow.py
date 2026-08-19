@@ -34,6 +34,10 @@ from pydantic import ValidationError
 from protein_design_agent.public_identity import (
     PROJECT_NAME,
 )
+from protein_design_agent.path_semantics import (
+    resolve_local_path,
+)
+
 from protein_design_agent.schemas.project_config import (
     load_project_config,
 )
@@ -101,11 +105,11 @@ def prepare(
     input_dir: Optional[Path] = typer.Option(
         None,
         "--input-dir",
-        exists=True,
+        exists=False,
         file_okay=False,
         dir_okay=True,
         readable=True,
-        resolve_path=True,
+        resolve_path=False,
         help="临时覆盖 YAML 中的 pdb_dir。",
     ),
     run_dir: Optional[Path] = typer.Option(
@@ -120,22 +124,25 @@ def prepare(
     """准备完整工作流，但暂不真正执行 BinderRanker。"""
     try:
         project = load_project_config(config)
+
+        effective_input_dir = resolve_local_path(
+            (
+                input_dir
+                if input_dir is not None
+                else project.input.pdb_dir
+            ),
+            field_name="input_dir",
+        )
     except (ValueError, ValidationError) as exc:
         typer.echo(
-            f"BLOCKED: 配置加载失败：{exc}",
+            f"BLOCKED: 配置或输入路径无效：{exc}",
             err=True,
         )
         raise typer.Exit(code=2) from exc
 
-    effective_input_dir = (
-        input_dir
-        if input_dir is not None
-        else project.input.pdb_dir
-    ).resolve()
-
-    if not effective_input_dir.exists():
+    if not effective_input_dir.is_dir():
         typer.echo(
-            f"BLOCKED: 输入目录不存在："
+            f"BLOCKED: 输入目录不存在或不是目录："
             f"{effective_input_dir}",
             err=True,
         )

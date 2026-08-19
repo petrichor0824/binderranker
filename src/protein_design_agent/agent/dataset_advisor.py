@@ -29,6 +29,9 @@ from pydantic import (
     ValidationError,
 )
 
+from protein_design_agent.path_semantics import (
+    resolve_local_path,
+)
 from protein_design_agent.tools.inspect_pdb_dataset import (
     build_dataset_report,
     collect_pdb_files,
@@ -482,7 +485,15 @@ def inspect_dataset_for_planning(
     """
     只读检查一个 PDB 目录，并生成条件建议。
     """
-    resolved = input_dir.resolve()
+    try:
+        resolved = resolve_local_path(
+            input_dir,
+            field_name="input_dir",
+        )
+    except ValueError as exc:
+        raise DatasetAdvisorError(
+            str(exc)
+        ) from exc
 
     if not resolved.is_dir():
         raise DatasetAdvisorError(

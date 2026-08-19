@@ -7,6 +7,7 @@ import pytest
 from protein_design_agent.agent.approval import (
     ApprovalError,
     create_approval_record,
+    resolve_recorded_path,
     snapshot_pdb_dataset,
 )
 
@@ -567,3 +568,37 @@ def test_approval_write_failure_cleans_partial_output(
             "已清理可能产生的不可靠输出。"
         )
     )
+
+
+@pytest.mark.skipif(
+    __import__("os").name == "nt",
+    reason="POSIX-specific cross-platform regression",
+)
+def test_recorded_windows_absolute_path_is_rejected_on_posix(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match="Windows 风格绝对路径",
+    ):
+        resolve_recorded_path(
+            r"C:\Users\Alice\data\pdbs",
+            base_directory=tmp_path,
+            field_name="input_directory",
+        )
+
+
+def test_recorded_relative_path_uses_manifest_directory(
+    tmp_path: Path,
+) -> None:
+    result = resolve_recorded_path(
+        "workflow/normalized_pdbs",
+        base_directory=tmp_path,
+        field_name="input_directory",
+    )
+
+    assert result == (
+        tmp_path
+        / "workflow"
+        / "normalized_pdbs"
+    ).resolve()

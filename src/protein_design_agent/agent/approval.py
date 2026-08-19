@@ -22,6 +22,10 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+
+from protein_design_agent.path_semantics import (
+    resolve_local_path,
+)
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError
@@ -193,12 +197,11 @@ def resolve_recorded_path(
             f"Manifest 缺少有效路径字段：{field_name}"
         )
 
-    path = Path(value)
-
-    if not path.is_absolute():
-        path = base_directory / path
-
-    return path.resolve()
+    return resolve_local_path(
+        value,
+        base_directory=base_directory,
+        field_name=field_name,
+    )
 
 
 def snapshot_pdb_dataset(
