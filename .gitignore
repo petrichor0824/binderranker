@@ -26,3 +26,6 @@ sample_data/real/*
 # User-specific model configurations
 configs/models/*.local.yaml
 configs/models/private/
+
+# BinderRanker local workspace
+.protein-design-agent/
