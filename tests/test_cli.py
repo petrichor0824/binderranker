@@ -752,3 +752,13 @@ def test_plan_mock_publish_failure_preserves_existing_output(
     ]
 
     assert leftovers == []
+
+def test_root_help_uses_binderranker_identity() -> None:
+    result = runner.invoke(
+        app,
+        ["--help"],
+    )
+
+    assert result.exit_code == 0
+    assert "BinderRanker" in result.output
+    assert "Protein Design Agent" not in result.output

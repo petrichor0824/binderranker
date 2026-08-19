@@ -194,3 +194,17 @@ def test_present_required_api_key_passes(
 
     assert checks[1].status == "PASS"
     assert "secret" not in str(checks[1])
+
+def test_doctor_report_uses_binderranker_identity(
+    tmp_path: Path,
+) -> None:
+    report = DoctorReport(
+        project_root=tmp_path,
+        working_directory=tmp_path,
+        checks=[],
+    )
+
+    rendered = module.render_doctor_report(report)
+
+    assert "BinderRanker Doctor" in rendered
+    assert "Protein Design Agent Doctor" not in rendered

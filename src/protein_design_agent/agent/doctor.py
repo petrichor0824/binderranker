@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Protein Design Agent 本地环境诊断。
+BinderRanker 本地环境诊断。
 
 原则：
 - 只读；
@@ -27,6 +27,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from protein_design_agent.agent.provider_factory import (
     resolve_provider_profile,
+)
+from protein_design_agent.public_identity import (
+    CLI_NAME,
+    PROJECT_NAME,
 )
 from protein_design_agent.schemas.provider_config import (
     load_model_provider_config,
@@ -307,7 +311,7 @@ def resolve_doctor_context(
                     "但没有进入用户工作区"
                 ),
                 detail=(
-                    "可运行 protein-design-agent init "
+                    f"可运行 {CLI_NAME} init "
                     "--destination <目录>"
                 ),
             ),
@@ -595,7 +599,7 @@ def run_doctor(
     )
 
     cli_path = shutil.which(
-        "protein-design-agent"
+        CLI_NAME
     )
 
     checks.append(
@@ -607,12 +611,10 @@ def run_doctor(
                 else "FAIL"
             ),
             message=(
-                "protein-design-agent CLI "
-                "可从 PATH 调用"
+                f"{CLI_NAME} CLI 可从 PATH 调用"
                 if cli_path
                 else (
-                    "PATH 中找不到 "
-                    "protein-design-agent"
+                    f"PATH 中找不到 {CLI_NAME}"
                 )
             ),
             detail=cli_path,
@@ -800,7 +802,7 @@ def render_doctor_report(
     """生成终端友好的诊断报告。"""
     lines = [
         "=" * 72,
-        "Protein Design Agent Doctor",
+        f"{PROJECT_NAME} Doctor",
         "=" * 72,
         f"运行模式：{report.context_mode}",
         f"诊断根目录：{report.project_root}",

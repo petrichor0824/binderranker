@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Protein Design Agent 公开命令行入口。
+BinderRanker 公开命令行入口。
 
 当前 Local Agent v0.1 支持：
 
@@ -107,6 +107,11 @@ from protein_design_agent.agent.model_readiness import (
     format_model_readiness,
     resolve_model_config_path,
 )
+from protein_design_agent.public_identity import (
+    AGENT_NAME,
+    PROJECT_NAME,
+    SHORT_DESCRIPTION_ZH,
+)
 from protein_design_agent.schemas.provider_config import (
     load_model_provider_config,
 )
@@ -116,8 +121,7 @@ app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
     help=(
-        "Protein Design Agent："
-        "配置驱动、可审核的蛋白骨架排名 Agent。"
+        f"{PROJECT_NAME}：{SHORT_DESCRIPTION_ZH}"
     ),
 )
 
@@ -329,7 +333,7 @@ def print_plan_summary(
 
     typer.echo("")
     typer.echo("=" * 60)
-    typer.echo("Protein Design Agent 规划结果")
+    typer.echo(f"{PROJECT_NAME} 规划结果")
     typer.echo("=" * 60)
     typer.echo(
         f"Provider：{session.provider_name}"
@@ -473,7 +477,7 @@ def approve_run_command(
 
     typer.echo("")
     typer.echo("=" * 60)
-    typer.echo("Protein Design Agent 批准记录")
+    typer.echo(f"{PROJECT_NAME} 批准记录")
     typer.echo("=" * 60)
     typer.echo(f"状态：{record.status}")
     typer.echo(f"批准 ID：{record.approval_id}")
@@ -707,7 +711,7 @@ def prepare_command(
 
     typer.echo("")
     typer.echo("=" * 60)
-    typer.echo("Protein Design Agent 结果")
+    typer.echo(f"{PROJECT_NAME} 结果")
     typer.echo("=" * 60)
     typer.echo(f"状态：{result.status}")
     typer.echo(
@@ -834,7 +838,7 @@ def prepare_session_command(
 
     typer.echo("")
     typer.echo("=" * 60)
-    typer.echo("Protein Design Agent 准备完成")
+    typer.echo(f"{PROJECT_NAME} 准备完成")
     typer.echo("=" * 60)
     typer.echo(f"状态：{result.status}")
     typer.echo(f"项目：{result.project_name}")
@@ -1068,7 +1072,7 @@ def chat_command(
     ),
 ) -> None:
     """
-    启动 Protein Design Agent 安全自然语言会话。
+    启动 BinderRanker Agent 安全自然语言会话。
 
     大模型负责理解自然语言和生成受控解释，
     不生成或执行 Shell。
@@ -1251,7 +1255,7 @@ def chat_command(
 
     typer.echo("")
     typer.echo("=" * 72)
-    typer.echo("Protein Design Agent Chat")
+    typer.echo(f"{AGENT_NAME} Chat")
     typer.echo("=" * 72)
     if workspace_root is not None:
         typer.echo(
@@ -1403,7 +1407,7 @@ def run_status_command(
         file_okay=False,
         dir_okay=True,
         readable=True,
-        help="要检查的 Protein Design Agent bundle。",
+        help=f"要检查的 {PROJECT_NAME} bundle。",
     ),
 ) -> None:
     """
@@ -1447,7 +1451,7 @@ def run_status_command(
         return "未知"
 
     typer.echo("=" * 72)
-    typer.echo("Protein Design Agent 任务状态")
+    typer.echo(f"{PROJECT_NAME} 任务状态")
     typer.echo("=" * 72)
 
     typer.echo(
