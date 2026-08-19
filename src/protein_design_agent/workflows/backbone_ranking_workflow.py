@@ -31,6 +31,9 @@ from typing import Any, Optional
 import typer
 from pydantic import ValidationError
 
+from protein_design_agent.public_identity import (
+    PROJECT_NAME,
+)
 from protein_design_agent.schemas.project_config import (
     load_project_config,
 )
@@ -164,7 +167,7 @@ def prepare(
     reports_dir.mkdir(parents=True)
 
     typer.echo("================================================")
-    typer.echo("Protein Design Agent：骨架排名准备工作流")
+    typer.echo(f"{PROJECT_NAME}：骨架排名准备工作流")
     typer.echo("================================================")
     typer.echo(f"项目：{project.project_name}")
     typer.echo(f"运行目录：{run_dir}")

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Protein Design Agent 第一版安全聊天状态机。
+BinderRanker Agent 第一版安全聊天状态机。
 
 自然语言只用于：
 - 创建任务；
@@ -21,6 +21,9 @@ Protein Design Agent 第一版安全聊天状态机。
 from __future__ import annotations
 
 from protein_design_agent.agent.user_errors import UserFacingError
+from protein_design_agent.public_identity import (
+    AGENT_NAME,
+)
 
 import json
 from pathlib import Path
@@ -669,8 +672,7 @@ def process_chat_message(
                 output_path=approval_path,
                 approved_by=approved_by,
                 approval_note=(
-                    "Approved through "
-                    "Protein Design Agent chat"
+                    f"Approved through {AGENT_NAME} chat"
                 ),
                 acknowledge_smoke_test=(
                     acknowledge_smoke_test

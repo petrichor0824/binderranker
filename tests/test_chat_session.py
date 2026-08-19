@@ -220,6 +220,10 @@ def test_approval_uses_explicit_smoke_ack(
         ]
         is True
     )
+    assert (
+        captured["approval_note"]
+        == "Approved through BinderRanker Agent chat"
+    )
 
 
 def test_execution_requires_exact_phrase(
