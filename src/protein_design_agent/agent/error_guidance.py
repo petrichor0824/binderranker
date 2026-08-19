@@ -12,6 +12,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from protein_design_agent.public_identity import (
+    AGENT_NAME,
+)
 from protein_design_agent.agent.providers.base import (
     StructuredJSONProvider,
 )
@@ -252,7 +255,7 @@ def build_model_messages(
         {
             "role": "system",
             "content": (
-                "你是 Protein Design Agent 的错误诊断助手。"
+                f"你是 {AGENT_NAME} 的错误诊断助手。"
                 "只能根据给定的确定性错误事实和任务状态"
                 "解释问题，不能执行命令、修改文件、改变科研"
                 "参数或绕过批准机制。"

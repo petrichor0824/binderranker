@@ -11,7 +11,11 @@ from protein_design_agent.agent.error_guidance import (
 class FakeGuidanceProvider:
     name = "fake-guidance"
 
+    def __init__(self) -> None:
+        self.last_messages = None
+
     def generate_json(self, messages):
+        self.last_messages = messages
         return {
             "explanation": (
                 "当前请求与任务阶段不匹配，"
@@ -70,14 +74,21 @@ def test_model_explains_error(
         )(),
     )
 
+    provider = FakeGuidanceProvider()
+
     text = format_error_guidance(
         kind="REJECTED",
         error=RuntimeError(
             "只有执行完成后才能分析"
         ),
         bundle_dir=tmp_path,
-        provider=FakeGuidanceProvider(),
+        provider=provider,
     )
+
+    assert provider.last_messages is not None
+    system_message = provider.last_messages[0]["content"]
+    assert "BinderRanker Agent" in system_message
+    assert "Protein Design Agent" not in system_message
 
     assert "影响：" in text
     assert "RuntimeError" not in text

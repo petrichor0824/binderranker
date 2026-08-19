@@ -12,6 +12,8 @@ from protein_design_agent.agent.prompts import (
 def test_system_prompt_forbids_scientific_guessing() -> None:
     prompt = REQUEST_PARSER_SYSTEM_PROMPT
 
+    assert "BinderRanker Agent" in prompt
+    assert "Protein Design Agent" not in prompt
     assert "只能提取用户明确提供的信息" in prompt
     assert "不得猜测 binder 链" in prompt
     assert "未提供的信息必须从 JSON 中完全省略" in prompt

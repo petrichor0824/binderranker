@@ -12,6 +12,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from protein_design_agent.public_identity import (
+    AGENT_NAME,
+)
 from protein_design_agent.agent.dataset_discovery import (
     DatasetDiscoveryReport,
 )
@@ -285,7 +288,7 @@ def propose_dataset_grouping(
         {
             "role": "system",
             "content": (
-                "你是 Protein Design Agent 的数据分组助手。"
+                f"你是 {AGENT_NAME} 的数据分组助手。"
                 "请根据用户描述和确定性扫描证据，"
                 "提出任意数量的独立 PDB 排序任务。"
                 "只能使用 candidate_groups 中真实存在的"

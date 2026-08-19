@@ -19,13 +19,16 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from protein_design_agent.public_identity import (
+    AGENT_NAME,
+)
 from protein_design_agent.schemas.agent_models import (
     UserRequest,
 )
 
 
-REQUEST_PARSER_SYSTEM_PROMPT = """
-你是 Protein Design Agent 的请求解析器。
+REQUEST_PARSER_SYSTEM_PROMPT = f"""
+你是 {AGENT_NAME} 的请求解析器。
 
 你的唯一任务是：
 把用户的自然语言需求转换为结构化 UserRequest。
