@@ -29,6 +29,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from protein_design_agent.agent.analyze_run import (
+    next_analysis_directory,
     run_analyze_run,
 )
 from protein_design_agent.agent.approval import (
@@ -569,36 +570,6 @@ def help_message() -> str:
     )
 
 
-def next_analysis_directory(
-    *,
-    bundle_dir: Path,
-    with_model: bool,
-) -> Path:
-    """
-    生成不覆盖历史结果的相对分析目录。
-    """
-    analyses_root = (
-        bundle_dir / "analyses"
-    )
-
-    prefix = (
-        "chat_model"
-        if with_model
-        else "chat_deterministic"
-    )
-
-    index = 1
-
-    while True:
-        name = f"{prefix}_{index:04d}"
-        candidate = analyses_root / name
-
-        if not candidate.exists():
-            return Path("analyses") / name
-
-        index += 1
-
-
 def process_chat_message(
     *,
     message: str,
@@ -868,7 +839,11 @@ def process_chat_message(
 
         analysis_dir = next_analysis_directory(
             bundle_dir=bundle,
-            with_model=with_model,
+            prefix=(
+                "chat_model"
+                if with_model
+                else "chat_deterministic"
+            ),
         )
 
         try:

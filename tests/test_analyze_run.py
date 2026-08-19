@@ -405,3 +405,49 @@ def test_completed_analysis_manifest_is_sealed(
         manifest["execution_manifest_sha256"]
         == sha256_file(execution)
     )
+
+
+def test_next_analysis_directory_starts_from_first_slot(
+    tmp_path: Path,
+) -> None:
+    result = module.next_analysis_directory(
+        bundle_dir=tmp_path,
+        prefix="tool_deterministic",
+    )
+
+    assert result == (
+        Path("analyses")
+        / "tool_deterministic_0001"
+    )
+
+    assert not (
+        tmp_path
+        / result
+    ).exists()
+
+
+def test_next_analysis_directory_never_reuses_existing_attempt(
+    tmp_path: Path,
+) -> None:
+    analyses = tmp_path / "analyses"
+    analyses.mkdir()
+
+    (
+        analyses
+        / "tool_deterministic_0001"
+    ).mkdir()
+
+    (
+        analyses
+        / "tool_deterministic_0002"
+    ).mkdir()
+
+    result = module.next_analysis_directory(
+        bundle_dir=tmp_path,
+        prefix="tool_deterministic",
+    )
+
+    assert result == (
+        Path("analyses")
+        / "tool_deterministic_0003"
+    )

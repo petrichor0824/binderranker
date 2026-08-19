@@ -132,6 +132,34 @@ def resolve_analysis_dir(
     ).resolve()
 
 
+def next_analysis_directory(
+    *,
+    bundle_dir: Path,
+    prefix: str,
+) -> Path:
+    """
+    返回一个不会覆盖历史分析尝试的相对目录。
+
+    已存在的 COMPLETED、FAILED 或其他历史目录
+    都视为已占用，不进行复用。
+    """
+    analyses_root = (
+        bundle_dir.resolve()
+        / "analyses"
+    )
+
+    index = 1
+
+    while True:
+        name = f"{prefix}_{index:04d}"
+        candidate = analyses_root / name
+
+        if not candidate.exists():
+            return Path("analyses") / name
+
+        index += 1
+
+
 def run_analyze_run(
     *,
     bundle_dir: Path,
