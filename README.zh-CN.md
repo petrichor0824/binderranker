@@ -438,9 +438,16 @@ v0.3 开发线重点是让 BinderRanker 的候选排序与筛选工作流变得�
 
 贡献指南见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
 
-机器可读的 citation metadata 将在 v0.3.0 正式发布、公共仓库 URL
-最终确定时完成。在此之前，请引用 BinderRanker 仓库，并注明分析中
-使用的具体软件版本。
+机器可读的引用信息见 [`CITATION.cff`](CITATION.cff)，GitHub 的
+**Cite this repository** 功能可直接使用这些 metadata。
+
+主要软件作者：
+
+- **Zheng Hu**
+- ORCID：[0009-0006-7368-613X](https://orcid.org/0009-0006-7368-613X)
+
+在论文、报告或分析中使用 BinderRanker 时，请同时注明实际使用的
+软件版本。
 
 Copyright 2026 BinderRanker contributors.
 

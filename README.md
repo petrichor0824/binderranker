@@ -348,9 +348,17 @@ See [`docs/V0.3_ROADMAP.md`](docs/V0.3_ROADMAP.md) and
 
 Contribution guidelines are available in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-Machine-readable citation metadata will be finalized with the public repository
-URL during the v0.3.0 release step. Until then, reference the BinderRanker
-repository and the specific software version used in your analysis.
+Machine-readable citation metadata is provided in
+[`CITATION.cff`](CITATION.cff). GitHub's **Cite this repository** feature can
+use this metadata directly.
+
+Primary software author:
+
+- **Zheng Hu**
+- ORCID: [0009-0006-7368-613X](https://orcid.org/0009-0006-7368-613X)
+
+When reporting results, cite the specific BinderRanker software version used in
+the analysis.
 
 Copyright 2026 BinderRanker contributors.
 

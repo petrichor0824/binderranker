@@ -7,6 +7,9 @@ name = "binderranker"
 version = "0.3.0"
 description = "Interpretable ranking and layered screening for generated protein backbone candidates"
 readme = "README.md"
+authors = [
+    { name = "Zheng Hu" }
+]
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
@@ -47,6 +50,12 @@ testpaths = ["tests"]
 [project.scripts]
 binderranker = "protein_design_agent.cli:app"
 protein-design-agent = "protein_design_agent.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/petrichor0824/binderranker"
+Repository = "https://github.com/petrichor0824/binderranker"
+Issues = "https://github.com/petrichor0824/binderranker/issues"
+Changelog = "https://github.com/petrichor0824/binderranker/blob/main/CHANGELOG.md"
 
 [tool.setuptools.package-data]
 protein_design_agent = [

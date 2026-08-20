@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use BinderRanker in your work, please cite it using the metadata below."
+title: "BinderRanker: Interpretable Ranking and Layered Screening for Generated Protein Backbone Candidates"
+type: software
+authors:
+  - family-names: Hu
+    given-names: Zheng
+    orcid: "https://orcid.org/0009-0006-7368-613X"
+version: 0.3.0
+repository-code: "https://github.com/petrichor0824/binderranker"
+url: "https://github.com/petrichor0824/binderranker"
+license: Apache-2.0
