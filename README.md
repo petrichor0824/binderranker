@@ -323,6 +323,7 @@ enrichment analysis, or prospective experimental validation.
 - [Scientific method](docs/SCIENTIFIC_METHOD.md)
 - [Metric reference](docs/METRICS.md)
 - [Result interpretation](docs/RESULT_INTERPRETATION.md)
+- [Validation](docs/VALIDATION.md)
 - [Public identity and claim policy](docs/PUBLIC_IDENTITY.md)
 - [v0.3 architecture](docs/V0.3_ARCHITECTURE.md)
 - [v0.3 roadmap](docs/V0.3_ROADMAP.md)
@@ -345,11 +346,11 @@ See [`docs/V0.3_ROADMAP.md`](docs/V0.3_ROADMAP.md) and
 
 ## Citation, Contributions, and License
 
-Formal citation metadata and contributor documentation are planned as part of
-public-release preparation.
+Contribution guidelines are available in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-Until then, reference the BinderRanker repository and the specific software
-version used in your analysis.
+Machine-readable citation metadata will be finalized with the public repository
+URL during the v0.3.0 release step. Until then, reference the BinderRanker
+repository and the specific software version used in your analysis.
 
 Copyright 2026 BinderRanker contributors.
 

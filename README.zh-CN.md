@@ -405,6 +405,7 @@ BinderRanker 明确区分**工程验证**与**科学验证**。
 - [科学方法](docs/SCIENTIFIC_METHOD.md)
 - [指标说明](docs/METRICS.md)
 - [结果解读](docs/RESULT_INTERPRETATION.md)
+- [验证状态与边界](docs/VALIDATION.md)
 - [公开身份与科学表述边界](docs/PUBLIC_IDENTITY.md)
 - [v0.3 架构](docs/V0.3_ARCHITECTURE.md)
 - [v0.3 路线图](docs/V0.3_ROADMAP.md)
@@ -435,10 +436,11 @@ v0.3 开发线重点是让 BinderRanker 的候选排序与筛选工作流变得�
 
 ## 引用、贡献与许可证
 
-正式 citation metadata 和贡献者文档将在公开发布准备阶段补充。
+贡献指南见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
 
-在正式 citation 文件加入仓库之前，请引用 BinderRanker 仓库，
-并注明分析中使用的具体软件版本。
+机器可读的 citation metadata 将在 v0.3.0 正式发布、公共仓库 URL
+最终确定时完成。在此之前，请引用 BinderRanker 仓库，并注明分析中
+使用的具体软件版本。
 
 Copyright 2026 BinderRanker contributors.
 
