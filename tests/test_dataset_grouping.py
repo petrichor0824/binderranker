@@ -96,6 +96,9 @@ def test_model_can_propose_arbitrary_group_count(
     ] == names
     assert result.omitted_relative_paths == ()
     assert provider.last_messages is not None
+    system_message = provider.last_messages[0]["content"]
+    assert "BinderRanker Agent" in system_message
+    assert "Protein Design Agent" not in system_message
 
 
 def test_invented_directory_is_rejected(

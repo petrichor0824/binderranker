@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-创建可移植的 Protein Design Agent 工作区。
+创建可移植的 BinderRanker 工作区。
 
 安全原则：
 - 不访问网络；
@@ -17,6 +17,14 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+
+from protein_design_agent.agent.user_errors import (
+    UserFacingError,
+)
+from protein_design_agent.public_identity import (
+    CLI_NAME,
+    PROJECT_NAME,
+)
 
 
 WORKSPACE_MARKER_TEMPLATE = '''{
@@ -76,9 +84,9 @@ Thumbs.db
 '''
 
 
-QUICKSTART_TEMPLATE = '''# Protein Design Agent 工作区
+QUICKSTART_TEMPLATE = f'''# {PROJECT_NAME} 工作区
 
-本目录由 `protein-design-agent init` 创建。
+本目录由 `{CLI_NAME} init` 创建。
 
 ## 目录说明
 
@@ -90,36 +98,46 @@ QUICKSTART_TEMPLATE = '''# Protein Design Agent 工作区
 
 以下命令不会访问网络，也不会显示 API Key：
 
-    protein-design-agent doctor \
-      --model-config configs/models/deepseek.local.yaml \
-      --profile deepseek_flash
+    {CLI_NAME} doctor --model-config configs/models/deepseek.local.yaml --profile deepseek_flash
 
 ## 2. 可选：启用自然语言模型
 
-自然语言任务理解和模型解释需要配置 Provider。
+自然语言任务理解和模型解释需要配置 Provider 和 API Key。
 
-在 Linux、WSL 或 macOS 中安全输入 DeepSeek API Key：
+在 Linux、WSL 或 macOS 终端中，复制并运行下面的整行命令：
 
-    read -rsp 'DeepSeek API Key: ' DEEPSEEK_API_KEY
-    echo
-    export DEEPSEEK_API_KEY
+    read -rsp '请粘贴真实 DeepSeek API Key，然后按回车（输入不会显示）：' DEEPSEEK_API_KEY && echo && export DEEPSEEK_API_KEY
 
-不要把真实 API Key 写入 YAML、Git、截图、日志或共享 Bundle。
+操作说明：
+
+1. 先复制上面的整行命令并按回车。
+2. 终端出现提示后，粘贴真实 DeepSeek API Key。
+3. 再按一次回车即可，不需要继续输入其他命令。
+4. 粘贴 Key 时，屏幕不会显示星号或其他字符，这是正常的安全行为。
+
+不要修改命令末尾的 `DEEPSEEK_API_KEY`。它是模型配置要求的环境变量名，不是填写 API Key 的位置。
+
+不要把真实 API Key 写入 YAML、Git、截图、日志、共享 Bundle，或直接写入可能被 Shell 历史记录的命令。
 
 未配置模型时，`doctor`、样例提取、状态查看和确定性结果分析仍可使用，但不能可靠地把新的自由文本科研需求转换成完整计划。
 
 ## 3. 提取内置 smoke 数据
 
-    protein-design-agent extract-sample \
-      --destination data/3c98_small
+    {CLI_NAME} extract-sample --destination data/3c98_small
 
 该样例包含 5 个 PDB，只用于安装和工程 smoke test，不能作为正式候选推荐。
 
 ## 4. 启动对话式 Agent
 
-    protein-design-agent chat
+    {CLI_NAME} chat
 
-模型可用时，可以输入：
+配置和 API Key 已就绪时，Agent 会询问本次 Chat 是否允许调用模型 API。
+
+选择 `yes` 才会启用模型，并可能产生网络请求和 API 费用；选择 `no` 仍可使用离线确定性功能。
+
+高级用户和自动化脚本可以使用 `--allow-network` 跳过询问，普通用户无需记忆该参数。
+
+模型可用且本次已经授权时，可以输入：
 
     分析 data/3c98_small，binder 是 B 链。
     这是五个候选的 smoke test，不启用 design region 和 hotspot。
@@ -187,7 +205,7 @@ MANAGED_FILES = {
 }
 
 
-class WorkspaceInitError(RuntimeError):
+class WorkspaceInitError(UserFacingError):
     """工作区无法安全初始化。"""
 
     def __init__(
@@ -195,8 +213,12 @@ class WorkspaceInitError(RuntimeError):
         message: str,
         *,
         conflicts: tuple[Path, ...] = (),
+        public_message: str | None = None,
     ) -> None:
-        super().__init__(message)
+        super().__init__(
+            message,
+            public_message=public_message,
+        )
         self.conflicts = conflicts
 
 
@@ -361,6 +383,11 @@ def initialize_workspace(
             "工作区中存在不可覆盖的路径："
             f"{rendered}",
             conflicts=conflicts,
+            public_message=(
+                "工作区初始化失败："
+                "存在不可安全覆盖的受管路径。"
+                "本次初始化在写入受管文件之前停止。"
+            ),
         )
 
     created_directories: list[Path] = []
@@ -441,7 +468,7 @@ def render_workspace_init_report(
     """生成终端报告。"""
     lines = [
         "=" * 72,
-        "Protein Design Agent Workspace",
+        f"{PROJECT_NAME} Workspace",
         "=" * 72,
         f"工作区：{report.destination}",
         "",
@@ -466,17 +493,35 @@ def render_workspace_init_report(
             "",
             "下一步：",
             f"  cd {report.destination}",
+            "",
+            "  设置 DeepSeek API Key：",
             (
-                "  export "
-                'DEEPSEEK_API_KEY="你的真实 API Key"'
+                "  复制并运行下一整行命令；"
+                "出现提示后粘贴真实 Key 并按回车。"
             ),
             (
-                "  protein-design-agent doctor "
+                "  输入时不会显示字符；"
+                "命令末尾的 DEEPSEEK_API_KEY 不要修改。"
+            ),
+            (
+                "  read -rsp "
+                "'请粘贴真实 DeepSeek API Key，"
+                "然后按回车（输入不会显示）：' "
+                "DEEPSEEK_API_KEY && echo && "
+                "export DEEPSEEK_API_KEY"
+            ),
+            "",
+            (
+                f"  {CLI_NAME} doctor "
                 "--model-config "
                 "configs/models/deepseek.local.yaml "
                 "--profile deepseek_flash"
             ),
-            "  protein-design-agent chat",
+            f"  {CLI_NAME} chat",
+            (
+                "  Chat 启动后会询问本次会话"
+                "是否允许调用模型 API。"
+            ),
         ]
     )
 

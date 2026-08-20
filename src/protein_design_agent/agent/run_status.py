@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""只读解析 Protein Design Agent bundle 的当前状态。"""
+"""只读解析 BinderRanker bundle 的当前状态。"""
 
 from __future__ import annotations
 

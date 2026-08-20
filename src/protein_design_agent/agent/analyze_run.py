@@ -20,16 +20,30 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
-
-from protein_design_agent.agent.explain_run import (
-    run_explain_run,
+from protein_design_agent.agent.analysis_artifacts import (
+    build_analysis_provenance_seal,
 )
+
 from protein_design_agent.agent.failure_analysis import (
     write_failure_analysis,
 )
 from protein_design_agent.agent.ranker_result_parser import (
     write_ranker_result_summary,
 )
+
+
+def run_explain_run(**kwargs: Any) -> Any:
+    """
+    按需加载可选的模型解释运行时。
+
+    保留模块级依赖 seam，便于现有调用方和测试注入；
+    deterministic analyze 路径不会因此加载模型 runtime。
+    """
+    from protein_design_agent.agent.explain_run import (
+        run_explain_run as _run_explain_run,
+    )
+
+    return _run_explain_run(**kwargs)
 
 
 class AnalyzeRunError(RuntimeError):
@@ -39,7 +53,7 @@ class AnalyzeRunError(RuntimeError):
 class AnalyzeRunManifest(BaseModel):
     """一次 analyze-run 的审计清单。"""
 
-    schema_version: str = "0.1"
+    schema_version: str = "0.2"
     status: str
 
     bundle_dir: Path
@@ -50,6 +64,12 @@ class AnalyzeRunManifest(BaseModel):
 
     result_summary_path: Path | None = None
     failure_analysis_path: Path | None = None
+
+    completed_at_utc: str | None = None
+    result_summary_sha256: str | None = None
+    failure_analysis_sha256: str | None = None
+    execution_manifest_path: Path | None = None
+    execution_manifest_sha256: str | None = None
 
     explanation_evidence_path: Path | None = None
     explanation_json_path: Path | None = None
@@ -121,6 +141,34 @@ def resolve_analysis_dir(
         bundle_dir
         / analysis_dir
     ).resolve()
+
+
+def next_analysis_directory(
+    *,
+    bundle_dir: Path,
+    prefix: str,
+) -> Path:
+    """
+    返回一个不会覆盖历史分析尝试的相对目录。
+
+    已存在的 COMPLETED、FAILED 或其他历史目录
+    都视为已占用，不进行复用。
+    """
+    analyses_root = (
+        bundle_dir.resolve()
+        / "analyses"
+    )
+
+    index = 1
+
+    while True:
+        name = f"{prefix}_{index:04d}"
+        candidate = analyses_root / name
+
+        if not candidate.exists():
+            return Path("analyses") / name
+
+        index += 1
 
 
 def run_analyze_run(
@@ -308,10 +356,25 @@ def run_analyze_run(
                     .explanation_markdown_path
                 )
 
+        provenance_seal = (
+            build_analysis_provenance_seal(
+                bundle_dir=resolved_bundle,
+                result_summary_path=(
+                    written_summary
+                ),
+                failure_analysis_path=(
+                    written_failure
+                ),
+            )
+        )
+
         completed_manifest = (
             running_manifest.model_copy(
                 update={
                     "status": "COMPLETED",
+                    **provenance_seal.model_dump(
+                        mode="python"
+                    ),
                     "provider_name": (
                         provider_name
                     ),

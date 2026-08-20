@@ -1,0 +1,899 @@
+import json
+from pathlib import Path
+
+import pytest
+
+from protein_design_agent.agent.planner import (
+    build_agent_plan,
+)
+from protein_design_agent.agent.tool_api import (
+    ToolAPIError,
+    analyze_results,
+    execute_ranker,
+    get_current_plan,
+    get_task_status,
+    inspect_dataset,
+    prepare_task,
+    provide_information,
+    request_approval,
+)
+from protein_design_agent.agent.planning_session_resume import (
+    SupplementExtraction,
+    UserRequestPatch,
+)
+from protein_design_agent.agent.request_evidence import (
+    RequestExtraction,
+)
+from protein_design_agent.schemas.agent_models import (
+    UserRequest,
+)
+from protein_design_agent.schemas.planning_session import (
+    PlanningSession,
+)
+
+
+def create_incomplete_bundle(
+    tmp_path: Path,
+) -> Path:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    request = UserRequest(
+        raw_text="分析骨架",
+    )
+    plan = build_agent_plan(request)
+
+    assert plan.status == "NEEDS_INFORMATION"
+
+    session = PlanningSession(
+        provider_name="fake-provider",
+        request=request,
+        plan=plan,
+        request_explicit_fields=[],
+    )
+
+    (
+        bundle / "planning_session.json"
+    ).write_text(
+        session.model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+
+    (
+        bundle / "agent_prepare_manifest.json"
+    ).write_text(
+        json.dumps(
+            {
+                "schema_version": "0.1",
+                "status": "NEEDS_INFORMATION",
+                "provider_name": "fake-provider",
+                "bundle_directory": str(bundle),
+                "planning_session": str(
+                    bundle / "planning_session.json"
+                ),
+                "missing_information": (
+                    plan.missing_information
+                ),
+                "scientific_workflow_executed": False,
+                "binderranker_executed": False,
+                "remote_backend_used": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    return bundle
+
+
+def test_get_task_status_separates_planning_and_run_state(
+    tmp_path: Path,
+) -> None:
+    bundle = create_incomplete_bundle(tmp_path)
+
+    result = get_task_status(bundle)
+
+    assert (
+        result.planning_status
+        == "NEEDS_INFORMATION"
+    )
+    assert (
+        result.run_status.current_stage
+        == "PREPARED"
+    )
+    assert result.missing_information
+
+
+def test_get_current_plan_reads_canonical_session(
+    tmp_path: Path,
+) -> None:
+    bundle = create_incomplete_bundle(tmp_path)
+
+    result = get_current_plan(bundle)
+
+    assert result.available is True
+    assert result.plan is not None
+    assert (
+        result.plan.status
+        == "NEEDS_INFORMATION"
+    )
+    assert (
+        result.plan.request.raw_text
+        == "分析骨架"
+    )
+    assert result.request_explicit_fields == []
+
+
+def test_get_current_plan_reports_absence_without_chat_runtime(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    result = get_current_plan(bundle)
+
+    assert result.available is False
+    assert result.plan is None
+    assert result.planning_session is None
+
+
+def test_get_task_status_supports_empty_bundle(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    result = get_task_status(bundle)
+
+    assert result.planning_status is None
+    assert result.missing_information == []
+    assert result.run_status.current_stage == "EMPTY"
+
+
+def test_get_current_plan_wraps_invalid_session(
+    tmp_path: Path,
+) -> None:
+    from protein_design_agent.agent.tool_api import (
+        ToolAPIError,
+    )
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    (
+        bundle / "planning_session.json"
+    ).write_text(
+        "{not-valid-json",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ToolAPIError,
+        match="无法读取当前规划会话",
+    ):
+        get_current_plan(bundle)
+
+
+def test_read_only_tools_do_not_modify_bundle(
+    tmp_path: Path,
+) -> None:
+    bundle = create_incomplete_bundle(tmp_path)
+
+    before = {
+        path.relative_to(bundle): path.read_bytes()
+        for path in bundle.rglob("*")
+        if path.is_file()
+    }
+
+    get_current_plan(bundle)
+    get_task_status(bundle)
+
+    after = {
+        path.relative_to(bundle): path.read_bytes()
+        for path in bundle.rglob("*")
+        if path.is_file()
+    }
+
+    assert after == before
+
+
+def test_provide_information_updates_planning_session(
+    tmp_path: Path,
+) -> None:
+    bundle = create_incomplete_bundle(tmp_path)
+
+    input_dir = tmp_path / "pdbs"
+    supplement = f"输入目录是 {input_dir}"
+
+    extraction = SupplementExtraction(
+        patch=UserRequestPatch(
+            input_dir=input_dir,
+        ),
+        evidence={
+            "input_dir": supplement,
+        },
+    )
+
+    result = provide_information(
+        bundle_dir=bundle,
+        supplement_text=supplement,
+        extraction=extraction,
+    )
+
+    assert result.status == "NEEDS_INFORMATION"
+
+    current = get_current_plan(bundle)
+
+    assert current.available is True
+    assert current.plan is not None
+    assert (
+        current.plan.request.input_dir
+        == input_dir
+    )
+    assert (
+        "input_dir"
+        in current.request_explicit_fields
+    )
+
+
+def test_provide_information_rejects_forged_evidence_without_mutation(
+    tmp_path: Path,
+) -> None:
+    bundle = create_incomplete_bundle(tmp_path)
+
+    before = {
+        path.relative_to(bundle): path.read_bytes()
+        for path in bundle.rglob("*")
+        if path.is_file()
+    }
+
+    input_dir = tmp_path / "pdbs"
+
+    extraction = SupplementExtraction(
+        patch=UserRequestPatch(
+            input_dir=input_dir,
+        ),
+        evidence={
+            "input_dir": (
+                f"输入目录是 {input_dir}"
+            ),
+        },
+    )
+
+    with pytest.raises(ToolAPIError):
+        provide_information(
+            bundle_dir=bundle,
+            supplement_text="谢谢",
+            extraction=extraction,
+        )
+
+    after = {
+        path.relative_to(bundle): path.read_bytes()
+        for path in bundle.rglob("*")
+        if path.is_file()
+    }
+
+    assert after == before
+
+
+def test_prepare_task_creates_incomplete_task_from_trusted_extraction(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "new-task"
+
+    raw_text = "binder chain 是 B"
+
+    extraction = RequestExtraction(
+        patch=UserRequestPatch(
+            binder_chain="B",
+        ),
+        evidence={
+            "binder_chain": raw_text,
+        },
+    )
+
+    result = prepare_task(
+        bundle_dir=bundle,
+        raw_text=raw_text,
+        extraction=extraction,
+        provider_name="unit-test",
+    )
+
+    assert result.status == "NEEDS_INFORMATION"
+    assert bundle.is_dir()
+
+    current = get_current_plan(bundle)
+
+    assert current.available is True
+    assert current.plan is not None
+    assert current.plan.request.binder_chain == "B"
+    assert current.request_explicit_fields == [
+        "binder_chain"
+    ]
+
+
+def test_prepare_task_rejects_forged_initial_evidence_without_bundle(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "new-task"
+
+    extraction = RequestExtraction(
+        patch=UserRequestPatch(
+            binder_chain="B",
+        ),
+        evidence={
+            "binder_chain": "binder chain 是 B",
+        },
+    )
+
+    with pytest.raises(ToolAPIError):
+        prepare_task(
+            bundle_dir=bundle,
+            raw_text="帮我分析这些骨架",
+            extraction=extraction,
+            provider_name="unit-test",
+        )
+
+    assert not bundle.exists()
+
+
+def test_prepare_task_passes_ready_session_to_stable_preparation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import protein_design_agent.agent.tool_api as tool_api_module
+    from protein_design_agent.agent.planning_session_prepare import (
+        NaturalLanguagePrepareResult,
+    )
+
+    bundle = tmp_path / "ready-task"
+    input_dir = tmp_path / "pdbs"
+
+    raw_text = (
+        f"项目名是 demo，输入目录是 {input_dir}，"
+        "数据已经正确分链，binder chain 是 B。"
+    )
+
+    extraction = RequestExtraction(
+        patch=UserRequestPatch(
+            project_name="demo",
+            input_dir=input_dir,
+            input_layout="existing_chains",
+            binder_chain="B",
+        ),
+        evidence={
+            "project_name": raw_text,
+            "input_dir": raw_text,
+            "input_layout": raw_text,
+            "binder_chain": raw_text,
+        },
+    )
+
+    observed = {}
+
+    def fake_prepare_planning_session(
+        *,
+        session,
+        bundle_dir,
+    ):
+        observed["session"] = session
+        observed["bundle_dir"] = (
+            bundle_dir.resolve()
+        )
+
+        return NaturalLanguagePrepareResult(
+            status="READY_FOR_REVIEW",
+            provider_name=session.provider_name,
+            bundle_directory=bundle_dir.resolve(),
+            planning_session=(
+                bundle_dir.resolve()
+                / "planning_session.json"
+            ),
+            prepare_manifest=(
+                bundle_dir.resolve()
+                / "agent_prepare_manifest.json"
+            ),
+            project_name=(
+                session.request.project_name
+            ),
+        )
+
+    monkeypatch.setattr(
+        tool_api_module,
+        "prepare_planning_session",
+        fake_prepare_planning_session,
+    )
+
+    result = prepare_task(
+        bundle_dir=bundle,
+        raw_text=raw_text,
+        extraction=extraction,
+        provider_name="unit-test",
+    )
+
+    assert result.status == "READY_FOR_REVIEW"
+
+    session = observed["session"]
+
+    assert session.plan.status == "READY_FOR_REVIEW"
+    assert session.provider_name == "unit-test"
+
+    assert set(
+        session.request_explicit_fields
+    ) == {
+        "project_name",
+        "input_dir",
+        "input_layout",
+        "binder_chain",
+    }
+
+    assert observed["bundle_dir"] == (
+        bundle.resolve()
+    )
+
+
+def test_prepare_task_rejects_nonempty_bundle_without_overwrite(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "existing-task"
+    bundle.mkdir()
+
+    important = bundle / "important.txt"
+    important.write_text(
+        "do not overwrite",
+        encoding="utf-8",
+    )
+
+    before = {
+        path.relative_to(bundle): path.read_bytes()
+        for path in bundle.rglob("*")
+        if path.is_file()
+    }
+
+    raw_text = "binder chain 是 B"
+
+    extraction = RequestExtraction(
+        patch=UserRequestPatch(
+            binder_chain="B",
+        ),
+        evidence={
+            "binder_chain": raw_text,
+        },
+    )
+
+    with pytest.raises(
+        ToolAPIError,
+        match="已经存在且非空",
+    ):
+        prepare_task(
+            bundle_dir=bundle,
+            raw_text=raw_text,
+            extraction=extraction,
+            provider_name="unit-test",
+        )
+
+    after = {
+        path.relative_to(bundle): path.read_bytes()
+        for path in bundle.rglob("*")
+        if path.is_file()
+    }
+
+    assert after == before
+
+
+def create_bundle_with_input_dir(
+    tmp_path: Path,
+    input_dir: Path,
+) -> Path:
+    bundle = tmp_path / "dataset-bundle"
+    bundle.mkdir()
+
+    request = UserRequest(
+        raw_text=f"输入目录是 {input_dir}",
+        input_dir=input_dir,
+    )
+    plan = build_agent_plan(request)
+
+    session = PlanningSession(
+        provider_name="fake-provider",
+        request=request,
+        plan=plan,
+        request_explicit_fields=[
+            "input_dir",
+        ],
+    )
+
+    (
+        bundle / "planning_session.json"
+    ).write_text(
+        session.model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+
+    return bundle
+
+
+def write_minimal_pdb(
+    path: Path,
+) -> None:
+    path.write_text(
+        (
+            "ATOM      1  N   ALA A   1      "
+            "0.000   0.000   0.000  1.00 20.00           N\n"
+            "ATOM      2  CA  ALA A   1      "
+            "1.000   0.000   0.000  1.00 20.00           C\n"
+            "END\n"
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_inspect_dataset_uses_current_session_input_dir(
+    tmp_path: Path,
+) -> None:
+    input_dir = tmp_path / "pdbs"
+    input_dir.mkdir()
+
+    write_minimal_pdb(
+        input_dir / "candidate_1.pdb"
+    )
+
+    bundle = create_bundle_with_input_dir(
+        tmp_path,
+        input_dir,
+    )
+
+    result = inspect_dataset(
+        bundle_dir=bundle,
+    )
+
+    assert (
+        result.input_directory
+        == input_dir.resolve()
+    )
+    assert result.processed_file_count == 1
+    assert result.valid_file_count == 1
+    assert result.invalid_file_count == 0
+    assert (
+        result.file_evidence[0].chain_ids
+        == ["A"]
+    )
+
+
+def test_inspect_dataset_does_not_modify_bundle(
+    tmp_path: Path,
+) -> None:
+    input_dir = tmp_path / "pdbs"
+    input_dir.mkdir()
+
+    write_minimal_pdb(
+        input_dir / "candidate_1.pdb"
+    )
+
+    bundle = create_bundle_with_input_dir(
+        tmp_path,
+        input_dir,
+    )
+
+    before = {
+        path.relative_to(bundle): path.read_bytes()
+        for path in bundle.rglob("*")
+        if path.is_file()
+    }
+
+    inspect_dataset(
+        bundle_dir=bundle,
+    )
+
+    after = {
+        path.relative_to(bundle): path.read_bytes()
+        for path in bundle.rglob("*")
+        if path.is_file()
+    }
+
+    assert after == before
+
+
+def test_inspect_dataset_requires_task_input_dir(
+    tmp_path: Path,
+) -> None:
+    bundle = create_incomplete_bundle(
+        tmp_path
+    )
+
+    with pytest.raises(
+        ToolAPIError,
+        match="input_dir",
+    ):
+        inspect_dataset(
+            bundle_dir=bundle,
+        )
+
+
+def test_request_approval_requires_explicit_runtime_confirmation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import protein_design_agent.agent.tool_api as tool_api_module
+
+    called = False
+
+    def fake_create_approval_record(**kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError(
+            "未确认批准时不应进入 approval core"
+        )
+
+    monkeypatch.setattr(
+        tool_api_module,
+        "create_approval_record",
+        fake_create_approval_record,
+    )
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    with pytest.raises(
+        ToolAPIError,
+        match="确认",
+    ):
+        request_approval(
+            bundle_dir=bundle,
+            approved_by="unit-test-user",
+            approval_confirmed=False,
+        )
+
+    assert called is False
+
+
+def test_request_approval_uses_task_bound_paths(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import protein_design_agent.agent.tool_api as tool_api_module
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    sentinel = object()
+    observed = {}
+
+    def fake_create_approval_record(**kwargs):
+        observed.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(
+        tool_api_module,
+        "create_approval_record",
+        fake_create_approval_record,
+    )
+
+    result = request_approval(
+        bundle_dir=bundle,
+        approved_by="unit-test-user",
+        approval_confirmed=True,
+        approval_note="reviewed",
+        acknowledge_smoke_test=True,
+    )
+
+    assert result is sentinel
+
+    assert (
+        observed["prepare_manifest_path"]
+        == (
+            bundle
+            / "agent_prepare_manifest.json"
+        ).resolve()
+    )
+
+    assert (
+        observed["output_path"]
+        == (
+            bundle
+            / "approval.json"
+        ).resolve()
+    )
+
+    assert (
+        observed["approved_by"]
+        == "unit-test-user"
+    )
+    assert observed["approval_note"] == "reviewed"
+    assert (
+        observed["acknowledge_smoke_test"]
+        is True
+    )
+
+
+def test_execute_ranker_requires_explicit_runtime_confirmation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import protein_design_agent.agent.tool_api as tool_api_module
+
+    called = False
+
+    def fake_execute_approved_binderranker(**kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError(
+            "未确认执行时不应进入 local executor"
+        )
+
+    monkeypatch.setattr(
+        tool_api_module,
+        "execute_approved_binderranker",
+        fake_execute_approved_binderranker,
+    )
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    with pytest.raises(
+        ToolAPIError,
+        match="确认",
+    ):
+        execute_ranker(
+            bundle_dir=bundle,
+            execution_confirmed=False,
+        )
+
+    assert called is False
+
+
+def test_execute_ranker_uses_task_bound_approval(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import protein_design_agent.agent.tool_api as tool_api_module
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    approval_path = (
+        bundle / "approval.json"
+    )
+    approval_path.write_text(
+        "{}",
+        encoding="utf-8",
+    )
+
+    sentinel = object()
+    observed = {}
+
+    def fake_execute_approved_binderranker(**kwargs):
+        observed.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(
+        tool_api_module,
+        "execute_approved_binderranker",
+        fake_execute_approved_binderranker,
+    )
+
+    result = execute_ranker(
+        bundle_dir=bundle,
+        execution_confirmed=True,
+    )
+
+    assert result is sentinel
+
+    assert (
+        observed["approval_path"]
+        == approval_path.resolve()
+    )
+
+    assert (
+        observed["confirm_execute"]
+        is True
+    )
+
+
+def test_analyze_results_uses_task_bound_deterministic_analysis(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import protein_design_agent.agent.tool_api as tool_api_module
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    sentinel = object()
+    observed = {}
+
+    def fake_next_analysis_directory(**kwargs):
+        observed["allocation"] = kwargs
+        return (
+            Path("analyses")
+            / "tool_deterministic_0001"
+        )
+
+    def fake_run_analyze_run(**kwargs):
+        observed["analysis"] = kwargs
+        return sentinel
+
+    monkeypatch.setattr(
+        tool_api_module,
+        "next_analysis_directory",
+        fake_next_analysis_directory,
+    )
+    monkeypatch.setattr(
+        tool_api_module,
+        "run_analyze_run",
+        fake_run_analyze_run,
+    )
+
+    result = analyze_results(
+        bundle_dir=bundle,
+    )
+
+    assert result is sentinel
+
+    assert observed["allocation"] == {
+        "bundle_dir": bundle.resolve(),
+        "prefix": "tool_deterministic",
+    }
+
+    assert observed["analysis"] == {
+        "bundle_dir": bundle.resolve(),
+        "analysis_dir": (
+            Path("analyses")
+            / "tool_deterministic_0001"
+        ),
+        "with_model": False,
+    }
+
+
+def test_analyze_results_rejects_missing_bundle(
+    tmp_path: Path,
+) -> None:
+    missing = tmp_path / "missing"
+
+    with pytest.raises(
+        ToolAPIError,
+        match="任务目录不存在",
+    ):
+        analyze_results(
+            bundle_dir=missing,
+        )
+
+
+def test_analyze_results_translates_analysis_failure(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import protein_design_agent.agent.tool_api as tool_api_module
+    from protein_design_agent.agent.analyze_run import (
+        AnalyzeRunError,
+    )
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    monkeypatch.setattr(
+        tool_api_module,
+        "next_analysis_directory",
+        lambda **kwargs: (
+            Path("analyses")
+            / "tool_deterministic_0001"
+        ),
+    )
+
+    def fail_analysis(**kwargs):
+        raise AnalyzeRunError(
+            "deterministic analysis failed"
+        )
+
+    monkeypatch.setattr(
+        tool_api_module,
+        "run_analyze_run",
+        fail_analysis,
+    )
+
+    with pytest.raises(
+        ToolAPIError,
+        match="结果分析",
+    ):
+        analyze_results(
+            bundle_dir=bundle,
+        )

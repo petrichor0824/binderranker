@@ -10,6 +10,10 @@ from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
 
+from protein_design_agent.agent.user_errors import (
+    UserFacingError,
+)
+
 
 SAMPLE_NAME_PATTERN = re.compile(
     r"^[A-Za-z0-9_.-]+$"
@@ -20,7 +24,7 @@ PACKAGED_SAMPLE_NAMES = (
 )
 
 
-class PackagedSampleError(RuntimeError):
+class PackagedSampleError(UserFacingError):
     """无法安全读取或提取包内示例数据。"""
 
 
@@ -47,7 +51,12 @@ def validate_sample_name(
             "未知或无效的包内样例名称："
             f"{sample_name!r}；"
             "可用样例："
-            + ", ".join(PACKAGED_SAMPLE_NAMES)
+            + ", ".join(PACKAGED_SAMPLE_NAMES),
+            public_message=(
+                "未知或无效的包内样例名称。"
+                "可用样例："
+                + ", ".join(PACKAGED_SAMPLE_NAMES)
+            ),
         )
 
     return clean
@@ -71,7 +80,10 @@ def packaged_sample_pdb_names(
     if not sample_root.is_dir():
         raise PackagedSampleError(
             "安装包中缺少样例目录："
-            f"{clean}"
+            f"{clean}",
+            public_message=(
+                f"安装包中缺少样例目录：{clean}。"
+            ),
         )
 
     names = tuple(
@@ -90,7 +102,11 @@ def packaged_sample_pdb_names(
     if not names:
         raise PackagedSampleError(
             f"安装包中的样例 {clean} "
-            "没有 PDB 文件"
+            "没有 PDB 文件",
+            public_message=(
+                f"安装包中的样例 {clean} "
+                "没有 PDB 文件。"
+            ),
         )
 
     return names
@@ -117,13 +133,19 @@ def extract_packaged_sample(
         if not target_root.is_dir():
             raise PackagedSampleError(
                 "样例目标路径不是目录："
-                f"{target_root}"
+                f"{target_root}",
+                public_message=(
+                    "样例目标路径不是目录。"
+                ),
             )
 
         if any(target_root.iterdir()):
             raise PackagedSampleError(
                 "样例目标目录非空，禁止覆盖："
-                f"{target_root}"
+                f"{target_root}",
+                public_message=(
+                    "样例目标目录非空，禁止覆盖。"
+                ),
             )
     else:
         target_root.mkdir(
@@ -168,7 +190,8 @@ def extract_packaged_sample(
             raise
 
         raise PackagedSampleError(
-            f"提取包内样例失败：{exc}"
+            f"提取包内样例失败：{exc}",
+            public_message="样例提取未完成。",
         ) from exc
 
     return PackagedSampleExtraction(

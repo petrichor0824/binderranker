@@ -50,3 +50,79 @@ def test_extract_sample_rejects_nonempty_directory(
     assert result.exit_code == 2
     assert "禁止覆盖" in result.output
     assert (destination / "keep.txt").is_file()
+
+
+def test_extract_sample_hides_raw_oserror(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    destination = tmp_path / "sample"
+
+    def fail_extract(**kwargs):
+        raise OSError(
+            "PRIVATE_SAMPLE_INTERNAL_DETAIL"
+        )
+
+    monkeypatch.setattr(
+        "protein_design_agent.agent.sample_resources."
+        "extract_packaged_sample",
+        fail_extract,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "extract-sample",
+            "--destination",
+            str(destination),
+        ],
+    )
+
+    assert result.exit_code == 2
+
+    assert "当前操作没有完成" in result.output
+    assert "样例提取未完成。" in result.output
+
+    assert (
+        "PRIVATE_SAMPLE_INTERNAL_DETAIL"
+        not in result.output
+    )
+    assert "OSError" not in result.output
+
+
+def test_extract_sample_hides_raw_oserror(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    destination = tmp_path / "sample"
+
+    def fail_extract(**kwargs):
+        raise OSError(
+            "PRIVATE_SAMPLE_INTERNAL_DETAIL"
+        )
+
+    monkeypatch.setattr(
+        "protein_design_agent.agent.sample_resources."
+        "extract_packaged_sample",
+        fail_extract,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "extract-sample",
+            "--destination",
+            str(destination),
+        ],
+    )
+
+    assert result.exit_code == 2
+
+    assert "当前操作没有完成" in result.output
+    assert "样例提取未完成。" in result.output
+
+    assert (
+        "PRIVATE_SAMPLE_INTERNAL_DETAIL"
+        not in result.output
+    )
+    assert "OSError" not in result.output

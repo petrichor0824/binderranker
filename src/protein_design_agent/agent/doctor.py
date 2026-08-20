@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Protein Design Agent 本地环境诊断。
+BinderRanker 本地环境诊断。
 
 原则：
 - 只读；
@@ -27,6 +27,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from protein_design_agent.agent.provider_factory import (
     resolve_provider_profile,
+)
+from protein_design_agent.public_identity import (
+    CLI_NAME,
+    PROJECT_NAME,
 )
 from protein_design_agent.schemas.provider_config import (
     load_model_provider_config,
@@ -307,7 +311,7 @@ def resolve_doctor_context(
                     "但没有进入用户工作区"
                 ),
                 detail=(
-                    "可运行 protein-design-agent init "
+                    f"可运行 {CLI_NAME} init "
                     "--destination <目录>"
                 ),
             ),
@@ -514,6 +518,77 @@ def check_model_profile(
     return checks
 
 
+
+def virtual_environment_activation_hint() -> str:
+    """返回当前平台常见的 venv 激活示例。"""
+    if os.name == "nt":
+        return (
+            "Windows PowerShell 常见 venv 激活示例："
+            r".\.venv\Scripts\Activate.ps1"
+        )
+
+    return (
+        "Linux / macOS / WSL 常见 venv 激活示例："
+        "source .venv/bin/activate"
+    )
+
+
+def check_virtual_environment() -> DoctorCheck:
+    """检查当前 Python 是否运行在虚拟环境中。"""
+    virtual_env = os.environ.get("VIRTUAL_ENV")
+
+    in_virtual_environment = (
+        sys.prefix != sys.base_prefix
+        or bool(virtual_env)
+    )
+
+    if in_virtual_environment:
+        return DoctorCheck(
+            name="virtual_environment",
+            status="PASS",
+            message="当前位于虚拟环境中",
+            detail=virtual_env or sys.prefix,
+        )
+
+    return DoctorCheck(
+        name="virtual_environment",
+        status="WARN",
+        message="当前未检测到虚拟环境",
+        detail=(
+            "建议激活安装 BinderRanker 的 Python 环境。"
+            f"{virtual_environment_activation_hint()}"
+        ),
+    )
+
+
+def check_cli_on_path() -> DoctorCheck:
+    """检查 BinderRanker CLI 是否能从 PATH 解析。"""
+    cli_path = shutil.which(CLI_NAME)
+
+    if cli_path:
+        return DoctorCheck(
+            name="cli",
+            status="PASS",
+            message=(
+                f"{CLI_NAME} CLI 可从 PATH 调用"
+            ),
+            detail=cli_path,
+        )
+
+    return DoctorCheck(
+        name="cli",
+        status="FAIL",
+        message=f"PATH 中找不到 {CLI_NAME}",
+        detail=(
+            "请确认当前 Python 环境已经安装 BinderRanker；"
+            "可运行 python -m pip show binderranker "
+            "检查当前解释器中的安装状态。"
+            f"{virtual_environment_activation_hint()}。"
+            "激活正确环境后重新运行 "
+            f"{CLI_NAME} doctor。"
+        ),
+    )
+
 def run_doctor(
     *,
     project_root: Path | None = None,
@@ -565,58 +640,12 @@ def run_doctor(
             )
         )
 
-    in_virtual_environment = (
-        sys.prefix != sys.base_prefix
-        or bool(
-            os.environ.get("VIRTUAL_ENV")
-        )
+    checks.append(
+        check_virtual_environment()
     )
 
     checks.append(
-        DoctorCheck(
-            name="virtual_environment",
-            status=(
-                "PASS"
-                if in_virtual_environment
-                else "WARN"
-            ),
-            message=(
-                "当前位于虚拟环境中"
-                if in_virtual_environment
-                else (
-                    "当前未检测到虚拟环境"
-                )
-            ),
-            detail=(
-                os.environ.get("VIRTUAL_ENV")
-                or sys.prefix
-            ),
-        )
-    )
-
-    cli_path = shutil.which(
-        "protein-design-agent"
-    )
-
-    checks.append(
-        DoctorCheck(
-            name="cli",
-            status=(
-                "PASS"
-                if cli_path
-                else "FAIL"
-            ),
-            message=(
-                "protein-design-agent CLI "
-                "可从 PATH 调用"
-                if cli_path
-                else (
-                    "PATH 中找不到 "
-                    "protein-design-agent"
-                )
-            ),
-            detail=cli_path,
-        )
+        check_cli_on_path()
     )
 
     checks.append(
@@ -800,7 +829,7 @@ def render_doctor_report(
     """生成终端友好的诊断报告。"""
     lines = [
         "=" * 72,
-        "Protein Design Agent Doctor",
+        f"{PROJECT_NAME} Doctor",
         "=" * 72,
         f"运行模式：{report.context_mode}",
         f"诊断根目录：{report.project_root}",

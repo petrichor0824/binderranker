@@ -12,6 +12,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from protein_design_agent.public_identity import (
+    AGENT_NAME,
+)
 from protein_design_agent.agent.providers.base import (
     StructuredJSONProvider,
 )
@@ -73,7 +76,7 @@ def build_safe_error_context(
     *,
     kind: ErrorKind,
     error: Exception,
-    bundle_dir: Path,
+    bundle_dir: Path | None,
 ) -> dict[str, Any]:
     """只收集诊断需要的确定性事实，不发送 traceback。"""
     context: dict[str, Any] = {
@@ -82,9 +85,15 @@ def build_safe_error_context(
         "error_message": redact_sensitive_text(
             str(error)
         ),
-        "bundle_name": bundle_dir.resolve().name,
         "state": {},
     }
+
+    if bundle_dir is None:
+        return context
+
+    context["bundle_name"] = (
+        bundle_dir.resolve().name
+    )
 
     failure_evidence = collect_failure_evidence(
         bundle_dir=bundle_dir,
@@ -146,6 +155,8 @@ def build_safe_error_context(
 
 def deterministic_actions(
     error_message: str,
+    *,
+    bundle_available: bool = True,
 ) -> list[str]:
     """在模型不可用时提供保守、可执行的检查方向。"""
     lower = error_message.lower()
@@ -211,13 +222,25 @@ def deterministic_actions(
 
     if not actions:
         actions.append(
-            "保留当前 Bundle 和日志，根据原始错误检查"
-            "路径、配置、输入格式及当前任务阶段。"
+            (
+                "保留当前 Bundle 和日志，根据原始错误检查"
+                "路径、配置、输入格式及当前任务阶段。"
+            )
+            if bundle_available
+            else (
+                "检查相关路径、配置、输入格式和运行环境。"
+            )
         )
 
     actions.append(
-        "修复后只重试失败的步骤；除非程序明确要求，"
-        "不要删除已有结果或重新运行已完成步骤。"
+        (
+            "修复后只重试失败的步骤；除非程序明确要求，"
+            "不要删除已有结果或重新运行已完成步骤。"
+        )
+        if bundle_available
+        else (
+            "修复相关输入或配置后，再重试当前操作。"
+        )
     )
 
     return actions
@@ -232,13 +255,17 @@ def build_model_messages(
         {
             "role": "system",
             "content": (
-                "你是 Protein Design Agent 的错误诊断助手。"
+                f"你是 {AGENT_NAME} 的错误诊断助手。"
                 "只能根据给定的确定性错误事实和任务状态"
                 "解释问题，不能执行命令、修改文件、改变科研"
                 "参数或绕过批准机制。"
                 "必须区分确定事实与可能原因。"
                 "不得声称已经检查了未提供的代码、文件或日志。"
                 "不得输出 API Key、Token 或其他凭据。"
+                "不得在面向用户的解释中原样复述异常类名、"
+                "内部路径、manifest 路径、stderr 或技术诊断原文；"
+                "只能把这些事实转化为用户可理解的影响、"
+                "可能原因和可执行建议。"
                 "只输出符合 JSON Schema 的 JSON 对象。"
             ),
         },
@@ -254,6 +281,121 @@ def build_model_messages(
             ),
         },
     ]
+
+
+def collect_model_guidance_sensitive_values(
+    context: dict[str, Any],
+) -> set[str]:
+    """
+    收集模型不得原样回显的具体内部诊断值。
+
+    只针对错误类型、错误原文、stderr 和内部路径，
+    不把 FAILED、BinderRanker 等普通状态词当作敏感词。
+    """
+    values: set[str] = set()
+
+    def add_value(value: object) -> None:
+        if not isinstance(value, str):
+            return
+
+        clean = value.strip()
+
+        if len(clean) < 4:
+            return
+
+        if clean in {
+            "[REDACTED]",
+            "[REDACTED_API_KEY]",
+        }:
+            return
+
+        values.add(clean)
+
+    add_value(context.get("error_type"))
+    add_value(context.get("error_message"))
+
+    evidence = (
+        context.get("failure_evidence")
+        or {}
+    )
+
+    if isinstance(evidence, dict):
+        add_value(
+            evidence.get("error_type")
+        )
+        add_value(
+            evidence.get("error_message")
+        )
+
+        stderr_tail = evidence.get(
+            "stderr_tail"
+        )
+
+        if isinstance(stderr_tail, list):
+            for line in stderr_tail:
+                add_value(line)
+
+        for key, value in evidence.items():
+            if not isinstance(value, str):
+                continue
+
+            lower_key = key.lower()
+
+            is_internal_path = (
+                "path" in lower_key
+                or "manifest" in lower_key
+                or lower_key.endswith("_log")
+            )
+
+            if not is_internal_path:
+                continue
+
+            add_value(value)
+
+            try:
+                name = Path(value).name
+            except (TypeError, ValueError):
+                continue
+
+            add_value(name)
+
+    return values
+
+
+def model_guidance_echoes_sensitive_context(
+    guidance: ModelErrorGuidance,
+    context: dict[str, Any],
+) -> bool:
+    """
+    检查模型是否原样复述内部诊断。
+
+    一旦命中，不做局部清洗；
+    整段模型 guidance 应退回确定性兜底。
+    """
+    rendered_parts = [
+        guidance.explanation,
+        *guidance.possible_causes,
+        *guidance.recommended_actions,
+    ]
+
+    rendered = " ".join(
+        " ".join(part.split())
+        for part in rendered_parts
+    ).casefold()
+
+    for value in (
+        collect_model_guidance_sensitive_values(
+            context
+        )
+    ):
+        normalized = " ".join(
+            value.split()
+        ).casefold()
+
+        if normalized and normalized in rendered:
+            return True
+
+    return False
 
 
 def format_model_guidance(
@@ -301,8 +443,9 @@ def format_error_guidance(
     *,
     kind: ErrorKind,
     error: Exception,
-    bundle_dir: Path,
+    bundle_dir: Path | None,
     provider: object | None,
+    public_message_override: str | None = None,
 ) -> str:
     """生成永不依赖模型成功的用户错误说明。"""
     context = build_safe_error_context(
@@ -317,74 +460,66 @@ def format_error_guidance(
         else "当前操作没有完成。"
     )
 
+    if kind == "REJECTED":
+        impact = (
+            "本次请求没有继续执行。"
+            + (
+                "请根据当前任务状态和提示调整后再继续。"
+                if bundle_dir is not None
+                else "请根据提示调整后再继续。"
+            )
+        )
+    else:
+        impact = (
+            "本次操作没有成功完成。"
+            + (
+                "请先确认当前任务状态和已有产物，"
+                "再决定是否重试。"
+                if bundle_dir is not None
+                else
+                "请检查相关输入和配置后再决定是否重试。"
+            )
+        )
+
     lines = [
         heading,
-        "",
-        "确定性错误：",
-        (
-            f"{context['error_type']}: "
-            f"{context['error_message']}"
-        ),
     ]
 
-    failure_evidence = (
-        context.get("failure_evidence") or {}
+    public_message = (
+        public_message_override.strip()
+        if (
+            isinstance(
+                public_message_override,
+                str,
+            )
+            and public_message_override.strip()
+        )
+        else getattr(
+            error,
+            "public_message",
+            None,
+        )
     )
 
-    if failure_evidence:
+    if (
+        isinstance(public_message, str)
+        and public_message.strip()
+    ):
         lines.extend(
             [
                 "",
-                "已读取的失败证据：",
-                (
-                    "清单："
-                    f"{failure_evidence.get('manifest_path')}"
-                ),
-                (
-                    "错误："
-                    f"{failure_evidence.get('error_type')}："
-                    f"{failure_evidence.get('error_message')}"
-                ),
+                "已确认：",
+                public_message.strip(),
             ]
         )
 
-        if (
-            failure_evidence.get("return_code")
-            is not None
-        ):
-            lines.append(
-                "进程返回码："
-                f"{failure_evidence['return_code']}"
-            )
-
-        missing_outputs = (
-            failure_evidence.get(
-                "missing_outputs"
-            )
-            or []
-        )
-
-        if missing_outputs:
-            lines.append(
-                "缺失产物："
-                + ", ".join(missing_outputs)
-            )
-
-        stderr_tail = (
-            failure_evidence.get(
-                "stderr_tail"
-            )
-            or []
-        )
-
-        if stderr_tail:
-            lines.append(
-                "stderr 末尾（已脱敏）："
-            )
-            lines.extend(
-                f"  {line}"
-                for line in stderr_tail[-8:]
-            )
+    lines.extend(
+        [
+            "",
+            "影响：",
+            impact,
+        ]
+    )
 
     state = context.get("state") or {}
     if state:
@@ -424,7 +559,14 @@ def format_error_guidance(
             )
         except Exception:
             guidance = None
-        else:
+
+        if (
+            guidance is not None
+            and not model_guidance_echoes_sensitive_context(
+                guidance,
+                context,
+            )
+        ):
             lines.extend(
                 format_model_guidance(guidance)
             )
@@ -438,7 +580,10 @@ def format_error_guidance(
                 f"{index}. {action}"
                 for index, action in enumerate(
                     deterministic_actions(
-                        context["error_message"]
+                        context["error_message"],
+                        bundle_available=(
+                            bundle_dir is not None
+                        ),
                     ),
                     start=1,
                 )

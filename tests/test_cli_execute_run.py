@@ -165,9 +165,12 @@ def test_execute_run_reports_execution_error(
 
     def fake_execute(**kwargs):
         raise LocalExecutionError(
-            "一次性批准不能重复使用",
+            "INTERNAL_EXECUTION_GUARD_DETAIL",
             execution_manifest=(
                 execution_manifest
+            ),
+            public_message=(
+                "一次性批准不能重复使用。"
             ),
         )
 
@@ -189,8 +192,12 @@ def test_execute_run_reports_execution_error(
 
     assert result.exit_code == 1
     assert (
-        "一次性批准不能重复使用"
+        "一次性批准不能重复使用。"
         in result.output
+    )
+    assert (
+        "INTERNAL_EXECUTION_GUARD_DETAIL"
+        not in result.output
     )
     assert (
         str(execution_manifest)

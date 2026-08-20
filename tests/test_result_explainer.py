@@ -347,6 +347,8 @@ def test_artifacts_written_and_protected(
         encoding="utf-8"
     )
 
+    assert "# BinderRanker 结果解释" in markdown
+    assert "# Protein Design Agent 结果解释" not in markdown
     assert "SMOKE_TEST_ONLY" in markdown
     assert "candidate_1" in markdown
     assert (
@@ -655,3 +657,244 @@ def test_invalid_explanation_is_repaired_once() -> None:
         "不得添加证据中不存在的相关性"
         in repair_messages[-1]["content"]
     )
+    assert (
+        "真实科学能力边界"
+        in repair_messages[-1]["content"]
+    )
+    assert (
+        "候选骨架排序与分层筛选"
+        in repair_messages[-1]["content"]
+    )
+    assert (
+        "不能替代"
+        in repair_messages[-1]["content"]
+    )
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        (
+            "candidate_1 的 final_score_v4 更高，"
+            "说明结合亲和力更高。"
+        ),
+        (
+            "candidate_1 的工程排名靠前，"
+            "说明结构稳定性更高。"
+        ),
+        (
+            "candidate_1 的结果表明溶解性更好。"
+        ),
+        (
+            "candidate_1 更可能获得实验成功。"
+        ),
+        (
+            "BinderRanker 已经保证 candidate_1 "
+            "是优质 binder。"
+        ),
+        (
+            "Protein Design Agent 可以任意拼接"
+            "或编辑蛋白结构。"
+        ),
+        (
+            "BinderRanker 可以替代 AlphaFold、"
+            "分子模拟和实验验证。"
+        ),
+    ],
+)
+def test_capability_overclaims_are_rejected(
+    claim: str,
+) -> None:
+    payload = build_valid_payload()
+    payload["overall_summary"] = claim
+
+    provider = FakeStructuredProvider(payload)
+
+    with pytest.raises(
+        ResultExplanationError,
+        match="科学能力边界",
+    ):
+        request_result_explanation(
+            provider=provider,
+            evidence=build_evidence(),
+            confirm_model_call=True,
+        )
+
+
+def test_explicit_capability_limitations_are_allowed() -> None:
+    payload = build_valid_payload()
+    statement = (
+        "BinderRanker 的排名不能用于判断结合亲和力、"
+        "稳定性、溶解性或实验成功概率，"
+        "也不能替代 AlphaFold、分子模拟或实验验证。"
+    )
+    payload["overall_summary"] = statement
+
+    provider = FakeStructuredProvider(payload)
+
+    record = request_result_explanation(
+        provider=provider,
+        evidence=build_evidence(),
+        confirm_model_call=True,
+    )
+
+    assert (
+        record.explanation.overall_summary
+        == statement
+    )
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "BinderRanker 可以预测结合亲和力。",
+        "BinderRanker 能够预测蛋白稳定性。",
+        "BinderRanker 可用于预测蛋白溶解性。",
+        "BinderRanker 可以预测 binding affinity。",
+        "candidate_1 的实验成功概率更高。",
+        "这些结果证明 candidate_1 一定会结合靶点。",
+    ],
+)
+def test_capability_prediction_overclaims_are_rejected(
+    claim: str,
+) -> None:
+    payload = build_valid_payload()
+    payload["overall_summary"] = claim
+
+    provider = FakeStructuredProvider(payload)
+
+    with pytest.raises(
+        ResultExplanationError,
+        match="科学能力边界",
+    ):
+        request_result_explanation(
+            provider=provider,
+            evidence=build_evidence(),
+            confirm_model_call=True,
+        )
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "BinderRanker 不能预测结合亲和力。",
+        "当前证据无法判断实验成功概率。",
+    ],
+)
+def test_capability_negated_predictions_are_allowed(
+    statement: str,
+) -> None:
+    payload = build_valid_payload()
+    payload["overall_summary"] = statement
+
+    provider = FakeStructuredProvider(payload)
+
+    record = request_result_explanation(
+        provider=provider,
+        evidence=build_evidence(),
+        confirm_model_call=True,
+    )
+
+    assert (
+        record.explanation.overall_summary
+        == statement
+    )
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "BinderRanker 预测结合亲和力。",
+        "BinderRanker 能预测蛋白稳定性。",
+        "BinderRanker 可预测蛋白溶解性。",
+        "BinderRanker 用于预测 binding affinity。",
+    ],
+)
+def test_capability_prediction_wording_variants_are_rejected(
+    claim: str,
+) -> None:
+    payload = build_valid_payload()
+    payload["overall_summary"] = claim
+
+    provider = FakeStructuredProvider(payload)
+
+    with pytest.raises(
+        ResultExplanationError,
+        match="科学能力边界",
+    ):
+        request_result_explanation(
+            provider=provider,
+            evidence=build_evidence(),
+            confirm_model_call=True,
+        )
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "这些结果不能证明 candidate_1 一定会结合靶点。",
+        "无法判断实验成功概率是否更高。",
+        (
+            "虽然 BinderRanker 不能预测结合亲和力，"
+            "但可以用于当前候选批次内的工程排序。"
+        ),
+    ],
+)
+def test_capability_boundary_safe_wording_is_allowed(
+    statement: str,
+) -> None:
+    payload = build_valid_payload()
+    payload["overall_summary"] = statement
+
+    provider = FakeStructuredProvider(payload)
+
+    record = request_result_explanation(
+        provider=provider,
+        evidence=build_evidence(),
+        confirm_model_call=True,
+    )
+
+    assert record.explanation.overall_summary == statement
+
+
+def test_mixed_safe_and_overclaim_sentence_is_rejected() -> None:
+    payload = build_valid_payload()
+    payload["overall_summary"] = (
+        "虽然不能预测结合亲和力，"
+        "但 candidate_1 的实验成功概率更高。"
+    )
+
+    provider = FakeStructuredProvider(payload)
+
+    with pytest.raises(
+        ResultExplanationError,
+        match="科学能力边界",
+    ):
+        request_result_explanation(
+            provider=provider,
+            evidence=build_evidence(),
+            confirm_model_call=True,
+        )
+
+
+def test_result_explainer_prompt_contains_capability_truth() -> None:
+    payload = build_valid_payload()
+    provider = FakeStructuredProvider(payload)
+
+    request_result_explanation(
+        provider=provider,
+        evidence=build_evidence(),
+        confirm_model_call=True,
+    )
+
+    assert provider.messages is not None
+
+    system_message = provider.messages[0]["content"]
+
+    assert system_message.startswith(
+        "你是 BinderRanker Agent 的科学结果解释模块。"
+    )
+    assert "候选骨架排序与分层筛选" in system_message
+    assert "结合亲和力预测器" in system_message
+    assert "实验成功概率预测器" in system_message
+    assert "不能替代" in system_message

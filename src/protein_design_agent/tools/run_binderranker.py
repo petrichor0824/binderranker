@@ -28,6 +28,10 @@ from typing import Any
 import typer
 from pydantic import ValidationError
 
+from protein_design_agent.path_semantics import (
+    resolve_local_path,
+)
+
 from protein_design_agent.schemas.project_config import (
     ProjectConfig,
     load_project_config,
@@ -462,11 +466,11 @@ def run(
     input_dir: Path = typer.Option(
         ...,
         "--input-dir",
-        exists=True,
+        exists=False,
         file_okay=False,
         dir_okay=True,
         readable=True,
-        resolve_path=True,
+        resolve_path=False,
         help=(
             "传给 Ranker 的标准化 PDB 目录。"
             "单链拼接项目不能直接传原始目录。"
@@ -493,8 +497,13 @@ def run(
 
         binder_chain = get_normalized_binder_chain(project)
 
+        resolved_input_dir = resolve_local_path(
+            input_dir,
+            field_name="input_dir",
+        )
+
         input_summary = validate_ranker_input(
-            input_dir=input_dir,
+            input_dir=resolved_input_dir,
             binder_chain=binder_chain,
             recursive=project.input.recursive,
             max_files=project.safety.max_files,
@@ -514,7 +523,7 @@ def run(
         command = build_ranker_command(
             project,
             ranker_path=ranker_path,
-            input_dir=input_dir.resolve(),
+            input_dir=resolved_input_dir,
             output_prefix=output_prefix,
         )
 
@@ -535,7 +544,7 @@ def run(
         "ranker_version": project.ranking.ranker_version,
         "ranker_path": str(ranker_path),
         "ranker_sha256": ranker_sha256,
-        "input_directory": str(input_dir.resolve()),
+        "input_directory": str(resolved_input_dir),
         "input_summary": input_summary,
         "output_prefix": str(output_prefix),
         "region_policy": project.ranking.region_policy,

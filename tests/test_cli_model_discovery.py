@@ -4,7 +4,7 @@ from typer.testing import CliRunner
 
 import protein_design_agent.cli as cli_module
 from protein_design_agent.agent.model_readiness import (
-    ModelReadinessReport,
+    ModelSetupReport,
 )
 from protein_design_agent.cli import app
 
@@ -20,21 +20,23 @@ def test_default_chat_discovers_workspace_model_config(
 
     captured = {}
 
-    def fake_assess_model_readiness(**kwargs):
+    def fake_assess_model_setup(**kwargs):
         captured.update(kwargs)
 
-        return ModelReadinessReport(
-            status="OFFLINE",
-            message="offline test",
-            network_allowed=False,
+        return ModelSetupReport(
+            status="AVAILABLE",
+            message="local setup ready",
             config_path=kwargs["config_path"],
+            profile_name="test-profile",
+            model_name="test-model",
+            provider=object(),
         )
 
     monkeypatch.setattr(
-        cli_module,
-        "assess_model_readiness",
-        fake_assess_model_readiness,
-    )
+    cli_module,
+    "assess_model_setup",
+    fake_assess_model_setup,
+)
 
     result = runner.invoke(
         app,
@@ -57,4 +59,4 @@ def test_default_chat_discovers_workspace_model_config(
 
     assert expected.is_file()
     assert captured["config_path"] == expected
-    assert captured["allow_network"] is False
+    assert "allow_network" not in captured

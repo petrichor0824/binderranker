@@ -1,18 +1,21 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77.0.3", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "protein-design-agent"
-version = "0.2.0"
-description = "Evidence-driven backbone ranking and conversational triage for protein design"
+name = "binderranker"
+version = "0.3.0"
+description = "Interpretable ranking and layered screening for generated protein backbone candidates"
 readme = "README.md"
-license = { text = "Apache-2.0" }
+authors = [
+    { name = "Zheng Hu" }
+]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 
 classifiers = [
     "Development Status :: 4 - Beta",
-    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -45,7 +48,14 @@ pythonpath = ["src"]
 testpaths = ["tests"]
 
 [project.scripts]
+binderranker = "protein_design_agent.cli:app"
 protein-design-agent = "protein_design_agent.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/petrichor0824/binderranker"
+Repository = "https://github.com/petrichor0824/binderranker"
+Issues = "https://github.com/petrichor0824/binderranker/issues"
+Changelog = "https://github.com/petrichor0824/binderranker/blob/main/CHANGELOG.md"
 
 [tool.setuptools.package-data]
 protein_design_agent = [

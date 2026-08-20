@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Protein Design Agent 自然语言对话控制层。
+BinderRanker Agent 自然语言对话控制层。
 
 职责：
 1. 理解用户自然语言意图；
@@ -15,6 +15,15 @@ Protein Design Agent 自然语言对话控制层。
 """
 
 from __future__ import annotations
+
+from protein_design_agent.agent.user_errors import UserFacingError
+from protein_design_agent.public_identity import (
+    AGENT_NAME,
+)
+from protein_design_agent.agent.capability_truth import (
+    CAPABILITY_TRUTH_PROMPT,
+    capability_safe_reply,
+)
 
 import hashlib
 import json
@@ -62,12 +71,15 @@ DialogueIntent = Literal[
     "HELP",
     "VIEW_STATUS",
     "VIEW_PLAN",
+    "START_TASK",
     "PROVIDE_INFORMATION",
     "REQUEST_DATASET_INSPECTION",
     "REQUEST_APPROVAL",
     "REQUEST_EXECUTION",
     "REQUEST_ANALYSIS",
     "REQUEST_EXPLANATION",
+    "REQUEST_RESET_TASK",
+    "REQUEST_ARCHIVE_TASK",
     "CONFIRM",
     "CANCEL",
     "GENERAL_QUESTION",
@@ -83,10 +95,12 @@ PendingActionName = Literal[
     "EXPLAIN",
     "ADOPT_DATASET_ADVICE",
     "CREATE_DATASET_GROUP_TASKS",
+    "RESET_TASK",
+    "ARCHIVE_TASK",
 ]
 
 
-class ChatDialogueError(RuntimeError):
+class ChatDialogueError(UserFacingError):
     """自然语言对话控制失败。"""
 
 
@@ -191,6 +205,17 @@ EXACT_INTENTS: dict[str, DialogueIntent] = {
     "取消": "CANCEL",
     "算了": "CANCEL",
     "不做了": "CANCEL",
+
+    # 故障恢复必须保留确定性入口：
+    # 即使规划记录损坏，也应允许用户请求恢复。
+    "/reset": "REQUEST_RESET_TASK",
+    "重新开始这个任务": "REQUEST_RESET_TASK",
+    "清空这个任务重新开始": "REQUEST_RESET_TASK",
+    "/archive": "REQUEST_ARCHIVE_TASK",
+    "归档当前任务": "REQUEST_ARCHIVE_TASK",
+    "归档当前任务然后重新开始": (
+        "REQUEST_ARCHIVE_TASK"
+    ),
 
     # 兼容旧命令，但这些词现在只会生成待确认提案。
     "批准计划": "REQUEST_APPROVAL",
@@ -344,7 +369,11 @@ def load_pending_action(
     ) as exc:
         raise ChatDialogueError(
             "待确认动作记录损坏："
-            f"{path}；{exc}"
+            f"{path}；{exc}",
+            public_message=(
+                "待确认动作记录损坏，"
+                "当前确认操作无法继续。"
+            ),
         ) from exc
 
 
@@ -361,7 +390,11 @@ def save_pending_action(
     if path.exists():
         raise ChatDialogueError(
             "当前已有一个动作等待确认。"
-            "请先回答“确认”或“取消”。"
+            "请先回答“确认”或“取消”。",
+            public_message=(
+                "当前已有一个动作等待确认。"
+                "请先回答“确认”或“取消”。"
+            ),
         )
 
     pending = PendingChatAction(
@@ -422,7 +455,8 @@ def missing_information_questions(
     except Exception as exc:
         raise ChatDialogueError(
             "无法读取缺失信息清单："
-            f"{exc}"
+            f"{exc}",
+            public_message="无法读取任务缺失信息。",
         ) from exc
 
     if not isinstance(value, dict):
@@ -496,10 +530,18 @@ def inspect_bundle(
 
     if not bundle.is_dir():
         raise ChatDialogueError(
-            f"Bundle 路径不是目录：{bundle}"
+            f"Bundle 路径不是目录：{bundle}",
+            public_message="指定的 Bundle 路径不是目录。",
         )
 
-    if not any(bundle.iterdir()):
+    # chat/ 只保存对话控制状态，不代表已经形成科研任务。
+    non_chat_items = [
+        item
+        for item in bundle.iterdir()
+        if item.name != "chat"
+    ]
+
+    if not non_chat_items:
         return "EMPTY", None
 
     try:
@@ -508,7 +550,8 @@ def inspect_bundle(
         )
     except Exception as exc:
         raise ChatDialogueError(
-            f"无法检查任务状态：{exc}"
+            f"无法检查任务状态：{exc}",
+            public_message="无法检查任务状态。",
         ) from exc
 
     return report.current_stage, report
@@ -540,7 +583,8 @@ def load_dialogue_context(
         )
     except Exception as exc:
         raise ChatDialogueError(
-            f"无法读取规划会话上下文：{exc}"
+            f"无法读取规划会话上下文：{exc}",
+            public_message="无法读取当前规划会话。",
         ) from exc
 
     explicit_fields = (
@@ -597,7 +641,8 @@ def load_current_plan_evidence(
         )
     except Exception as exc:
         raise ChatDialogueError(
-            f"无法读取当前计划：{exc}"
+            f"无法读取当前计划：{exc}",
+            public_message="无法读取当前计划。",
         ) from exc
 
     workflow_manifest = None
@@ -979,12 +1024,15 @@ def classify_dialogue_intent(
             "VIEW_PLAN",
             "LIST_TASKS",
             "SWITCH_TASK",
+              "START_TASK",
             "PROVIDE_INFORMATION",
             "REQUEST_DATASET_INSPECTION",
             "REQUEST_APPROVAL",
             "REQUEST_EXECUTION",
             "REQUEST_ANALYSIS",
             "REQUEST_EXPLANATION",
+            "REQUEST_RESET_TASK",
+            "REQUEST_ARCHIVE_TASK",
             "CONFIRM",
             "CANCEL",
             "GENERAL_QUESTION",
@@ -1003,14 +1051,14 @@ def classify_dialogue_intent(
         {
             "role": "system",
             "content": (
-                "你是 Protein Design Agent 的"
+                f"你是 {AGENT_NAME} 的"
                 "受控对话意图分类器。"
                 "你只能判断用户意图，不能执行任何动作，"
                 "不能输出 Shell 命令，也不能修改科研参数。"
                 "在 EMPTY 阶段，只有用户明确要求分析、"
                 "排名或处理 PDB，或者主动提供目录、链、"
                 "残基边界等任务信息时，"
-                "才选择 PROVIDE_INFORMATION。"
+                "才选择 START_TASK。"
                 "问候、模型连接测试、程序介绍、使用方法、"
                 "原理、能力、局限和安全机制等内容，"
                 "必须选择 GENERAL_QUESTION 并自然回答。"
@@ -1059,7 +1107,7 @@ def classify_dialogue_intent(
                 "选择 SWITCH_TASK。任务名由后续确定性导航器"
                 "根据真实任务列表验证。"
 
-                "当用户明确要求查看、检查、读取 PDB 文件，"
+                "当已有 NEEDS_INFORMATION 计划，且用户明确要求查看、检查、读取 PDB 文件，"
                 "要求识别多个目录、按目录分组或分别排序，"
                 "或者说自己无法判断并要求 Agent 根据文件分析时，"
                 "选择 REQUEST_DATASET_INSPECTION。"
@@ -1099,6 +1147,8 @@ def classify_dialogue_intent(
                 "统计显著性或正式科研结论。"
 
                 "输出必须严格符合 JSON Schema。"
+                + "\n\n真实科学能力边界：\n"
+                + CAPABILITY_TRUTH_PROMPT
             ),
         },
         {
@@ -1122,7 +1172,8 @@ def classify_dialogue_intent(
 
     except Exception as exc:
         raise ChatDialogueError(
-            f"无法判断用户意图：{exc}"
+            f"无法判断用户意图：{exc}",
+            public_message="无法完成本次自然语言意图解析。",
         ) from exc
 
 
@@ -1146,12 +1197,47 @@ def determine_intent(
 
     if not clean:
         raise ChatDialogueError(
-            "输入内容不能为空"
+            "输入内容不能为空",
+            public_message="输入内容不能为空。",
         )
 
     pending = load_pending_action(
         bundle_dir
     )
+
+    exact = EXACT_INTENTS.get(
+        clean.lower()
+    )
+
+    # 故障恢复入口必须能绕过损坏的科研任务状态。
+    # 否则 planning/manifest 损坏时，用户反而无法 reset/archive。
+    recovery_pending = (
+        pending is not None
+        and pending.action in {
+            "RESET_TASK",
+            "ARCHIVE_TASK",
+        }
+    )
+
+    if (
+        exact in {
+            "REQUEST_RESET_TASK",
+            "REQUEST_ARCHIVE_TASK",
+        }
+        or (
+            exact in {"CONFIRM", "CANCEL"}
+            and recovery_pending
+        )
+    ):
+        return (
+            DialogueDecision(
+                intent=exact,
+                reason="确定性任务恢复入口",
+            ),
+            pending,
+            "RECOVERY",
+            None,
+        )
 
     current_stage, report = inspect_bundle(
         bundle_dir
@@ -1159,10 +1245,6 @@ def determine_intent(
 
     prepare_status = load_prepare_status(
         bundle_dir.resolve()
-    )
-
-    exact = EXACT_INTENTS.get(
-        clean.lower()
     )
 
     if exact is not None:
@@ -1382,7 +1464,10 @@ def inspect_dataset_and_propose_adoption(
     if prepare_status != "NEEDS_INFORMATION":
         raise ChatDialogueError(
             "文件规划建议只用于仍在补充信息的任务；"
-            f"当前状态为 {prepare_status!r}"
+            f"当前状态为 {prepare_status!r}",
+            public_message=(
+                "文件规划建议只用于仍在补充信息的任务。"
+            ),
         )
 
     session_path = (
@@ -1391,7 +1476,8 @@ def inspect_dataset_and_propose_adoption(
 
     if not session_path.is_file():
         raise ChatDialogueError(
-            f"缺少规划会话：{session_path}"
+            f"缺少规划会话：{session_path}",
+            public_message="当前任务缺少规划会话记录。",
         )
 
     try:
@@ -1400,7 +1486,8 @@ def inspect_dataset_and_propose_adoption(
         )
     except Exception as exc:
         raise ChatDialogueError(
-            f"无法读取规划会话：{exc}"
+            f"无法读取规划会话：{exc}",
+            public_message="无法读取规划会话。",
         ) from exc
 
     input_dir = session.request.input_dir
@@ -1409,7 +1496,12 @@ def inspect_dataset_and_propose_adoption(
         raise ChatDialogueError(
             "目前还不知道 PDB 输入目录。"
             "请先告诉我文件位于哪个目录，"
-            "然后我才能进行只读检查。"
+            "然后我才能进行只读检查。",
+            public_message=(
+                "目前还不知道 PDB 输入目录。"
+                "请先提供输入目录，"
+                "然后才能进行只读检查。"
+            ),
         )
 
     from protein_design_agent.agent.dataset_discovery import (
@@ -1427,7 +1519,8 @@ def inspect_dataset_and_propose_adoption(
         )
     except Exception as exc:
         raise ChatDialogueError(
-            f"PDB 目录只读发现失败：{exc}"
+            f"PDB 目录只读发现失败：{exc}",
+            public_message="PDB 目录只读检查未完成。",
         ) from exc
 
     if discovery.layout in {
@@ -1470,13 +1563,20 @@ def inspect_dataset_and_propose_adoption(
             )
         except DatasetGroupingError as exc:
             raise ChatDialogueError(
-                f"无法生成可靠的多数据集分组建议：{exc}"
+                f"无法生成可靠的多数据集分组建议：{exc}",
+                public_message=(
+                    "无法生成可靠的多数据集分组建议。"
+                ),
             ) from exc
 
         if load_pending_action(bundle) is not None:
             raise ChatDialogueError(
                 "当前已有动作等待确认，"
-                "请先确认或取消旧动作"
+                "请先确认或取消旧动作",
+                public_message=(
+                    "当前已有动作等待确认，"
+                    "请先确认或取消旧动作。"
+                ),
             )
 
         from protein_design_agent.agent.dataset_group_tasks import (
@@ -1534,7 +1634,8 @@ def inspect_dataset_and_propose_adoption(
 
     except Exception as exc:
         raise ChatDialogueError(
-            f"PDB 文件只读检查失败：{exc}"
+            f"PDB 文件只读检查失败：{exc}",
+            public_message="PDB 文件只读检查未完成。",
         ) from exc
 
     message = format_dataset_advice(
@@ -1603,7 +1704,8 @@ def maybe_auto_inspect_after_information(
         )
     except Exception as exc:
         raise ChatDialogueError(
-            f"无法读取刚更新的规划会话：{exc}"
+            f"无法读取刚更新的规划会话：{exc}",
+            public_message="无法读取更新后的规划会话。",
         ) from exc
 
     if session.request.input_dir is None:
@@ -1796,6 +1898,88 @@ def proposal_summary(
     return "\n".join(lines)
 
 
+def create_task_recovery_proposal(
+    *,
+    action: PendingActionName,
+    bundle_dir: Path,
+) -> ChatTurnResult:
+    """为 reset/archive 创建受控确认提案。"""
+    from protein_design_agent.agent.task_lifecycle import (
+        TaskLifecycleState,
+        inspect_task_lifecycle,
+    )
+
+    lifecycle = inspect_task_lifecycle(
+        bundle_dir
+    )
+
+    if action == "RESET_TASK":
+        if (
+            lifecycle.state
+            == TaskLifecycleState.VALID_WITH_EVIDENCE
+        ):
+            raise ChatDialogueError(
+                "当前任务包含受保护证据，"
+                "不能直接重置。请改为归档当前任务。",
+                public_message=(
+                    "当前任务包含受保护证据，"
+                    "不能直接重置。请改为归档当前任务。"
+                ),
+            )
+
+        summary = (
+            "你正在请求重新开始当前任务。\n"
+            f"当前生命周期状态：{lifecycle.state.value}\n"
+            "确认后会清除当前 Bundle 中可安全重置的"
+            "不完整任务状态，并重新建立同名空 Bundle。\n"
+            "Bundle 外部的失败审计记录不会被删除。\n\n"
+            "请回答“确认”继续，或回答“取消”放弃。"
+        )
+
+    elif action == "ARCHIVE_TASK":
+        if lifecycle.state == TaskLifecycleState.EMPTY:
+            raise ChatDialogueError(
+                "当前任务为空，空任务无需归档。",
+                public_message=(
+                    "当前任务为空，无需归档。"
+                ),
+            )
+
+        summary = (
+            "你正在请求归档当前任务并重新开始。\n"
+            f"当前生命周期状态：{lifecycle.state.value}\n"
+            "确认后会把当前 Bundle 完整移动到工作区"
+            " archives，并重新建立同名空 Bundle。\n"
+            "该操作不会运行 BinderRanker，"
+            "也不会修改已有科研结果。\n\n"
+            "请回答“确认”继续，或回答“取消”放弃。"
+        )
+
+    else:
+        raise ChatDialogueError(
+            f"不支持的任务恢复动作：{action}",
+            public_message="不支持当前任务恢复操作。",
+        )
+
+    save_pending_action(
+        bundle_dir=bundle_dir,
+        action=action,
+        summary=summary,
+    )
+
+    return ChatTurnResult(
+        action=action,
+        status="AWAITING_CONFIRMATION",
+        message=summary,
+        bundle_dir=bundle_dir.resolve(),
+        artifact_paths={
+            "pending_action": (
+                pending_action_path(bundle_dir)
+            )
+        },
+    )
+
+
 def create_action_proposal(
     *,
     action: PendingActionName,
@@ -1810,14 +1994,19 @@ def create_action_proposal(
         if prepare_status != "READY_FOR_REVIEW":
             raise ChatDialogueError(
                 "当前任务尚未达到 READY_FOR_REVIEW，"
-                "不能批准。"
+                "不能批准。",
+                public_message=(
+                    "当前任务尚未达到 READY_FOR_REVIEW，"
+                    "不能批准。"
+                ),
             )
 
         if report is not None and (
             report.approval_status == "APPROVED"
         ):
             raise ChatDialogueError(
-                "当前任务已经批准。"
+                "当前任务已经批准。",
+                public_message="当前任务已经批准。",
             )
 
     elif action == "EXECUTE":
@@ -1826,7 +2015,11 @@ def create_action_proposal(
         ):
             raise ChatDialogueError(
                 "只有已批准且尚未执行的任务"
-                "才能开始运行。"
+                "才能开始运行。",
+                public_message=(
+                    "只有已批准且尚未执行的任务"
+                    "才能开始运行。"
+                ),
             )
 
     elif action in {
@@ -1838,7 +2031,11 @@ def create_action_proposal(
         ):
             raise ChatDialogueError(
                 "只有 BinderRanker 执行完成后"
-                "才能分析结果。"
+                "才能分析结果。",
+                public_message=(
+                    "只有 BinderRanker 执行完成后"
+                    "才能分析结果。"
+                ),
             )
 
     summary = proposal_summary(
@@ -1910,8 +2107,77 @@ def confirm_pending_action(
 
         raise ChatDialogueError(
             "任务状态在等待确认期间发生了变化。"
-            "旧确认请求已经作废，请重新提出操作。"
+            "旧确认请求已经作废，请重新提出操作。",
+            public_message=(
+                "任务状态在等待确认期间发生了变化。"
+                "旧确认请求已经作废，请重新提出操作。"
+            ),
         )
+
+    if pending.action in {
+        "RESET_TASK",
+        "ARCHIVE_TASK",
+    }:
+        from protein_design_agent.agent.task_recovery import (
+            TaskRecoveryError,
+            archive_task,
+            reset_task,
+        )
+
+        # pending_action 属于交互控制状态，
+        # 不应该被 reset/archive 当作科研证据保留。
+        clear_pending_action(bundle_dir)
+
+        try:
+            if pending.action == "RESET_TASK":
+                recovered = reset_task(
+                    bundle_dir
+                )
+
+                return ChatTurnResult(
+                    action="RESET_TASK",
+                    status="RESET",
+                    message=(
+                        "已收到确认。\n\n"
+                        "当前任务已安全重置。\n"
+                        "原生命周期状态："
+                        f"{recovered.previous_state}\n"
+                        "现在可以开始新的骨架排名任务。"
+                    ),
+                    bundle_dir=(
+                        recovered.bundle_dir
+                    ),
+                )
+
+            archived = archive_task(
+                bundle_dir
+            )
+
+            return ChatTurnResult(
+                action="ARCHIVE_TASK",
+                status="ARCHIVED",
+                message=(
+                    "已收到确认。\n\n"
+                    "当前任务已安全归档，"
+                    "并重新建立同名空 Bundle。\n"
+                    "原生命周期状态："
+                    f"{archived.previous_state}\n"
+                    "归档位置："
+                    f"{archived.archive_dir}"
+                ),
+                bundle_dir=archived.bundle_dir,
+                artifact_paths={
+                    "archive": (
+                        archived.archive_dir
+                    )
+                },
+            )
+
+        except TaskRecoveryError as exc:
+            raise ChatDialogueError(
+                f"任务恢复失败：{exc}",
+                public_message="任务恢复未完成。",
+            ) from exc
 
     _, report = inspect_bundle(
         bundle_dir
@@ -1930,7 +2196,8 @@ def confirm_pending_action(
         except DatasetGroupTaskError as exc:
             clear_pending_action(bundle_dir)
             raise ChatDialogueError(
-                f"无法创建分组任务：{exc}"
+                f"无法创建分组任务：{exc}",
+                public_message="无法创建分组任务。",
             ) from exc
 
         clear_pending_action(bundle_dir)
@@ -1965,7 +2232,8 @@ def confirm_pending_action(
             )
 
             raise ChatDialogueError(
-                f"无法采用文件建议：{exc}"
+                f"无法采用文件建议：{exc}",
+                public_message="无法采用当前文件建议。",
             ) from exc
 
         clear_pending_action(
@@ -2224,7 +2492,8 @@ def process_dialogue_message(
     if intent == "CONFIRM":
         if pending is None:
             raise ChatDialogueError(
-                "当前没有等待确认的动作。"
+                "当前没有等待确认的动作。",
+                public_message="当前没有等待确认的动作。",
             )
 
         return confirm_pending_action(
@@ -2262,6 +2531,18 @@ def process_dialogue_message(
                 f"{pending.action}"
             ),
             bundle_dir=bundle_dir.resolve(),
+        )
+
+    if intent == "REQUEST_RESET_TASK":
+        return create_task_recovery_proposal(
+            action="RESET_TASK",
+            bundle_dir=bundle_dir,
+        )
+
+    if intent == "REQUEST_ARCHIVE_TASK":
+        return create_task_recovery_proposal(
+            action="ARCHIVE_TASK",
+            bundle_dir=bundle_dir,
         )
 
     if pending is not None:
@@ -2333,7 +2614,9 @@ def process_dialogue_message(
                     action="HELP",
                     status="ANSWER",
                     message=(
-                        decision.reply.strip()
+                        capability_safe_reply(
+                            decision.reply
+                        )
                         + pending_reminder
                     ),
                     bundle_dir=(
@@ -2538,7 +2821,11 @@ def process_dialogue_message(
         ):
             raise ChatDialogueError(
                 "只有 BinderRanker 执行完成后"
-                "才能分析结果。"
+                "才能分析结果。",
+                public_message=(
+                    "只有 BinderRanker 执行完成后"
+                    "才能分析结果。"
+                ),
             )
 
         # 确定性分析是只读操作：
@@ -2558,7 +2845,11 @@ def process_dialogue_message(
         if not allow_network:
             raise ChatDialogueError(
                 "生成模型解释需要在启动 Chat 时"
-                "显式允许联网。"
+                "显式允许联网。",
+                public_message=(
+                    "当前 Chat 会话没有允许模型联网，"
+                    "因此不能生成模型解释。"
+                ),
             )
 
         return create_action_proposal(
@@ -2567,7 +2858,7 @@ def process_dialogue_message(
             report=report,
         )
 
-    if intent == "PROVIDE_INFORMATION":
+    if intent in {"START_TASK", "PROVIDE_INFORMATION"}:
         result = process_chat_message(
             message=message,
             bundle_dir=bundle_dir,
@@ -2611,7 +2902,9 @@ def process_dialogue_message(
             return ChatTurnResult(
                 action="HELP",
                 status="ANSWER",
-                message=decision.reply.strip(),
+                message=capability_safe_reply(
+                    decision.reply
+                ),
                 bundle_dir=bundle_dir.resolve(),
             )
 

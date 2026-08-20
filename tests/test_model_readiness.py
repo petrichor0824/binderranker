@@ -3,6 +3,8 @@ from pathlib import Path
 import protein_design_agent.agent.model_readiness as module
 from protein_design_agent.agent.model_readiness import (
     assess_model_readiness,
+    assess_model_setup,
+    finalize_model_readiness,
     format_model_readiness,
     resolve_model_config_path,
 )
@@ -217,4 +219,106 @@ def test_missing_credential_has_safe_guidance(
     assert "read -rsp" in rendered
     assert "export TEST_MODEL_API_KEY" in rendered
     assert str(config.resolve()) in rendered
-    assert "protein-design-agent chat --allow-network" in rendered
+    assert (
+        "binderranker chat --profile test_profile"
+        in rendered
+    )
+    assert "protein-design-agent" not in rendered
+    assert "--allow-network" not in rendered
+    assert (
+        "不需要再运行其他 API Key 设置命令"
+        in rendered
+    )
+    assert (
+        "不要修改命令末尾的 TEST_MODEL_API_KEY"
+        in rendered
+    )
+    assert (
+        "Agent 会询问是否允许本次 Chat 调用模型 API"
+        in rendered
+    )
+
+
+def test_model_setup_can_be_available_without_authorization(
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "models.yaml"
+    write_config(config)
+
+    setup = assess_model_setup(
+        config_path=config,
+        profile_name=None,
+        environment={
+            "TEST_MODEL_API_KEY": "secret",
+        },
+    )
+
+    assert setup.status == "AVAILABLE"
+    assert setup.provider is not None
+    assert setup.profile_name == "test_profile"
+    assert setup.model_name == "test-model"
+
+
+def test_available_setup_can_enter_offline_session(
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "models.yaml"
+    write_config(config)
+
+    setup = assess_model_setup(
+        config_path=config,
+        profile_name=None,
+        environment={
+            "TEST_MODEL_API_KEY": "secret",
+        },
+    )
+
+    readiness = finalize_model_readiness(
+        setup,
+        network_allowed=False,
+    )
+
+    assert readiness.status == "OFFLINE"
+    assert readiness.network_allowed is False
+    assert readiness.provider is None
+    assert readiness.profile_name == "test_profile"
+    assert (
+        "空任务的自然语言创建需要启用模型"
+        in readiness.message
+    )
+
+
+def test_available_setup_can_enter_ready_session(
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "models.yaml"
+    write_config(config)
+
+    setup = assess_model_setup(
+        config_path=config,
+        profile_name=None,
+        environment={
+            "TEST_MODEL_API_KEY": "secret",
+        },
+    )
+
+    readiness = finalize_model_readiness(
+        setup,
+        network_allowed=True,
+    )
+
+    assert readiness.status == "READY"
+    assert readiness.network_allowed is True
+    assert readiness.provider is setup.provider
+
+def test_model_setup_does_not_claim_network_authorization() -> None:
+    setup = assess_model_setup(
+        config_path=None,
+        profile_name=None,
+        environment={},
+    )
+
+    assert setup.status == "NOT_CONFIGURED"
+    assert "已允许联网" not in setup.message
+    assert "用户未允许" not in setup.message
+    assert setup.provider is None

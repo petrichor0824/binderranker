@@ -14,13 +14,13 @@ from protein_design_agent.agent.dataset_advisor import (
     save_dataset_advice,
     sha256_file,
 )
-from protein_design_agent.agent.orchestrator import (
+from protein_design_agent.schemas.planning_session import (
     PlanningSession,
 )
 from protein_design_agent.agent.planner import (
     build_agent_plan,
 )
-from protein_design_agent.agent.resume_planning import (
+from protein_design_agent.agent.planning_session_resume import (
     validate_incomplete_bundle,
 )
 from protein_design_agent.schemas.agent_models import (

@@ -16,25 +16,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from protein_design_agent.path_semantics import (
+    resolve_local_path,
+)
 from protein_design_agent.agent.dataset_advisor import (
     DatasetAdvisorError,
     load_dataset_advice,
     verify_dataset_advice_fresh,
 )
-from protein_design_agent.agent.orchestrator import (
-    PlanningSession,
-)
-from protein_design_agent.agent.planner import (
-    build_agent_plan,
-)
-from protein_design_agent.agent.resume_planning import (
+from protein_design_agent.agent.planning_session_resume import (
     ResumePlanningError,
     ResumePlanningResult,
     SupplementExtraction,
     UserRequestPatch,
-    merge_request_patch,
-    promote_to_ready_for_review,
-    update_incomplete_bundle,
+    apply_validated_request_patch,
     validate_incomplete_bundle,
 )
 
@@ -101,14 +96,28 @@ def adopt_dataset_advice(
             "无法确认建议对应当前任务"
         )
 
+    try:
+        resolved_request_input = resolve_local_path(
+            request_input_dir,
+            field_name="request.input_dir",
+        )
+        resolved_advice_input = resolve_local_path(
+            advice.input_directory,
+            field_name="advice.input_directory",
+        )
+    except ValueError as exc:
+        raise DatasetAdviceAdoptionError(
+            str(exc)
+        ) from exc
+
     if (
-        request_input_dir.resolve()
-        != advice.input_directory.resolve()
+        resolved_request_input
+        != resolved_advice_input
     ):
         raise DatasetAdviceAdoptionError(
             "建议报告的输入目录与当前任务不一致："
-            f"任务={request_input_dir.resolve()}；"
-            f"建议={advice.input_directory.resolve()}"
+            f"任务={resolved_request_input}；"
+            f"建议={resolved_advice_input}"
         )
 
     candidate = dict(
@@ -197,49 +206,6 @@ def adopt_dataset_advice(
         )
     )
 
-    try:
-        (
-            merged_request,
-            accepted_fields,
-        ) = merge_request_patch(
-            old_request=old_session.request,
-            old_missing_information=(
-                old_session.plan
-                .missing_information
-            ),
-            old_explicit_fields=(
-                old_explicit
-            ),
-            patch=patch,
-            supplement_text=(
-                confirmation_text
-            ),
-        )
-    except ResumePlanningError as exc:
-        raise DatasetAdviceAdoptionError(
-            str(exc)
-        ) from exc
-
-    merged_plan = build_agent_plan(
-        merged_request
-    )
-
-    merged_explicit_fields = sorted(
-        old_explicit
-        | set(accepted_fields)
-    )
-
-    merged_session = PlanningSession(
-        provider_name=(
-            old_session.provider_name
-        ),
-        request=merged_request,
-        plan=merged_plan,
-        request_explicit_fields=(
-            merged_explicit_fields
-        ),
-    )
-
     extraction = SupplementExtraction(
         patch=patch,
         evidence={},
@@ -247,60 +213,21 @@ def adopt_dataset_advice(
             "source=FILE_DERIVED",
             "confirmation=USER_CONFIRMED",
             f"dataset_advice={advice_path}",
-            (
-                "file_sha256_verified=true"
-            ),
+            "file_sha256_verified=true",
         ],
     )
 
     try:
-        if merged_plan.status == (
-            "NEEDS_INFORMATION"
-        ):
-            return update_incomplete_bundle(
-                bundle_dir=bundle,
-                previous_session_path=(
-                    session_path
-                ),
-                previous_manifest_path=(
-                    manifest_path
-                ),
-                merged_session=(
-                    merged_session
-                ),
-                supplement_text=(
-                    confirmation_text
-                ),
-                extraction=extraction,
-                accepted_fields=(
-                    accepted_fields
-                ),
-            )
-
-        if merged_plan.status == (
-            "READY_FOR_REVIEW"
-        ):
-            return promote_to_ready_for_review(
-                bundle_dir=bundle,
-                merged_session=(
-                    merged_session
-                ),
-                supplement_text=(
-                    confirmation_text
-                ),
-                extraction=extraction,
-                accepted_fields=(
-                    accepted_fields
-                ),
-                runner=None,
-            )
-
+        return apply_validated_request_patch(
+            bundle_dir=bundle,
+            previous_session_path=session_path,
+            previous_manifest_path=manifest_path,
+            old_session=old_session,
+            supplement_text=confirmation_text,
+            extraction=extraction,
+            runner=None,
+        )
     except ResumePlanningError as exc:
         raise DatasetAdviceAdoptionError(
             str(exc)
         ) from exc
-
-    raise DatasetAdviceAdoptionError(
-        "采用建议后的规划状态不受支持："
-        f"{merged_plan.status}"
-    )

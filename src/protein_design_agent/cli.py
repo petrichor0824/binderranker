@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Protein Design Agent 公开命令行入口。
+BinderRanker 公开命令行入口。
 
 当前 Local Agent v0.1 支持：
 
@@ -27,7 +27,13 @@ Protein Design Agent 公开命令行入口。
 from __future__ import annotations
 
 import json
+import sys
+import tempfile
 import os
+from importlib.metadata import (
+    PackageNotFoundError,
+    version as distribution_version,
+)
 from pathlib import Path
 from typing import Any, Optional
 
@@ -72,13 +78,17 @@ from protein_design_agent.agent.approval import (
     create_approval_record,
 )
 from protein_design_agent.agent.natural_language_prepare import (
+    NaturalLanguagePreparationError,
     prepare_from_natural_language,
 )
 from protein_design_agent.agent.orchestrator import (
     LocalAgentOrchestrator,
+)
+from protein_design_agent.schemas.planning_session import (
     PlanningSession,
 )
 from protein_design_agent.agent.plan_materializer import (
+    PlanMaterializationError,
     materialize_planning_session,
 )
 from protein_design_agent.agent.prepare_pipeline import (
@@ -96,9 +106,15 @@ from protein_design_agent.agent.providers.mock import (
     MockProvider,
 )
 from protein_design_agent.agent.model_readiness import (
-    assess_model_readiness,
+    assess_model_setup,
+    finalize_model_readiness,
     format_model_readiness,
     resolve_model_config_path,
+)
+from protein_design_agent.public_identity import (
+    AGENT_NAME,
+    PROJECT_NAME,
+    SHORT_DESCRIPTION_ZH,
 )
 from protein_design_agent.schemas.provider_config import (
     load_model_provider_config,
@@ -109,10 +125,99 @@ app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
     help=(
-        "Protein Design Agent："
-        "配置驱动、可审核的蛋白骨架排名 Agent。"
+        f"{PROJECT_NAME}：{SHORT_DESCRIPTION_ZH}"
     ),
 )
+
+
+def resolve_cli_version() -> str:
+    """读取当前安装的 BinderRanker distribution 版本。"""
+    try:
+        return distribution_version("binderranker")
+    except PackageNotFoundError:
+        return "unknown"
+
+
+def version_callback(value: bool) -> None:
+    """显示安装版本并正常退出。"""
+    if not value:
+        return
+
+    typer.echo(
+        f"{PROJECT_NAME} {resolve_cli_version()}"
+    )
+    raise typer.Exit()
+
+
+@app.callback()
+def main_callback(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=version_callback,
+        is_eager=True,
+        help="显示 BinderRanker 安装版本并退出。",
+    ),
+) -> None:
+    """BinderRanker 根级命令选项。"""
+
+
+class CLIInputError(ValueError):
+    """
+    CLI 用户输入错误。
+
+    继续继承 ValueError 保持现有兼容性；
+    public_message 仅包含可安全展示的确定事实。
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        public_message: str | None = None,
+    ) -> None:
+        super().__init__(message)
+
+        clean_public_message = (
+            public_message.strip()
+            if isinstance(public_message, str)
+            else None
+        )
+
+        self.public_message = (
+            clean_public_message
+            if clean_public_message
+            else None
+        )
+
+
+class PlanningOutputError(ValueError):
+    """
+    CLI 规划输出错误。
+
+    继续继承 ValueError 保持现有兼容性；
+    public_message 只包含可安全展示的确定事实。
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        public_message: str | None = None,
+    ) -> None:
+        super().__init__(message)
+
+        clean_public_message = (
+            public_message.strip()
+            if isinstance(public_message, str)
+            else None
+        )
+
+        self.public_message = (
+            clean_public_message
+            if clean_public_message
+            else None
+        )
 
 
 def read_user_text(
@@ -126,13 +231,20 @@ def read_user_text(
     两者必须且只能提供一个，避免来源不明确。
     """
     if text is not None and text_file is not None:
-        raise ValueError(
-            "--text 和 --text-file 不能同时使用"
+        raise CLIInputError(
+            "--text 和 --text-file 不能同时使用",
+            public_message=(
+                "--text 和 --text-file "
+                "不能同时使用。"
+            ),
         )
 
     if text is None and text_file is None:
-        raise ValueError(
-            "必须提供 --text 或 --text-file"
+        raise CLIInputError(
+            "必须提供 --text 或 --text-file",
+            public_message=(
+                "必须提供 --text 或 --text-file。"
+            ),
         )
 
     if text_file is not None:
@@ -141,8 +253,11 @@ def read_user_text(
                 encoding="utf-8"
             )
         except OSError as exc:
-            raise ValueError(
-                f"无法读取用户请求文件：{exc}"
+            raise CLIInputError(
+                f"无法读取用户请求文件：{exc}",
+                public_message=(
+                    "用户请求文件无法读取。"
+                ),
             ) from exc
     else:
         assert text is not None
@@ -151,8 +266,11 @@ def read_user_text(
     content = content.strip()
 
     if not content:
-        raise ValueError(
-            "用户请求不能为空"
+        raise CLIInputError(
+            "用户请求不能为空",
+            public_message=(
+                "用户请求不能为空。"
+            ),
         )
 
     return content
@@ -162,19 +280,84 @@ def write_planning_session(
     session: PlanningSession,
     output: Path,
 ) -> Path:
-    """将完整规划会话写成可追溯 JSON。"""
+    """
+    原子写入完整 PlanningSession。
+
+    正式输出在 staging 文件完成写入和结构验证后
+    才通过 replace 发布。
+    """
     output = output.resolve()
-    output.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
+    staged: Path | None = None
 
-    output.write_text(
-        session.model_dump_json(indent=2),
-        encoding="utf-8",
-    )
+    try:
+        output.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
 
-    return output
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix=f".{output.name}.planning-",
+            dir=str(output.parent),
+            delete=False,
+        ) as handle:
+            staged = Path(handle.name)
+            handle.write(
+                session.model_dump_json(
+                    indent=2
+                )
+            )
+
+        reloaded = (
+            PlanningSession.model_validate_json(
+                staged.read_text(
+                    encoding="utf-8"
+                )
+            )
+        )
+
+        if (
+            reloaded.model_dump(mode="json")
+            != session.model_dump(mode="json")
+        ):
+            raise PlanningOutputError(
+                "PlanningSession staging "
+                "写入前后不一致",
+                public_message=(
+                    "规划会话输出未通过"
+                    "一致性验证，因此没有发布。"
+                ),
+            )
+
+        staged.replace(output)
+        staged = None
+
+        return output
+
+    except PlanningOutputError:
+        raise
+
+    except (
+        OSError,
+        ValidationError,
+    ) as exc:
+        raise PlanningOutputError(
+            "PlanningSession 输出失败："
+            f"{exc}",
+            public_message=(
+                "规划会话输出文件写入或验证失败。"
+            ),
+        ) from exc
+
+    finally:
+        if staged is not None:
+            try:
+                staged.unlink(
+                    missing_ok=True
+                )
+            except OSError:
+                pass
 
 
 def print_plan_summary(
@@ -186,7 +369,7 @@ def print_plan_summary(
 
     typer.echo("")
     typer.echo("=" * 60)
-    typer.echo("Protein Design Agent 规划结果")
+    typer.echo(f"{PROJECT_NAME} 规划结果")
     typer.echo("=" * 60)
     typer.echo(
         f"Provider：{session.provider_name}"
@@ -288,16 +471,49 @@ def approve_run_command(
                 acknowledge_smoke_test
             ),
         )
-    except (ValueError, ValidationError) as exc:
+    except (
+        ValueError,
+        ValidationError,
+        OSError,
+    ) as exc:
+        public_message = getattr(
+            exc,
+            "public_message",
+            None,
+        )
+
+        if not (
+            isinstance(public_message, str)
+            and public_message.strip()
+        ):
+            public_message = "任务批准未完成。"
+
+        guidance = format_error_guidance(
+            kind="REJECTED",
+            error=exc,
+            bundle_dir=None,
+            provider=None,
+            public_message_override=(
+                public_message
+            ),
+        )
+
         typer.echo(
-            f"任务批准失败：{exc}",
+            guidance,
             err=True,
         )
+        typer.echo("", err=True)
+        typer.echo(
+            "BinderRanker 执行：否；"
+            "本命令只生成批准记录。",
+            err=True,
+        )
+
         raise typer.Exit(code=2) from exc
 
     typer.echo("")
     typer.echo("=" * 60)
-    typer.echo("Protein Design Agent 批准记录")
+    typer.echo(f"{PROJECT_NAME} 批准记录")
     typer.echo("=" * 60)
     typer.echo(f"状态：{record.status}")
     typer.echo(f"批准 ID：{record.approval_id}")
@@ -403,11 +619,47 @@ def prepare_command(
             )
         )
 
-    except (ValueError, ValidationError) as exc:
+    except (
+        ValueError,
+        ValidationError,
+        OSError,
+    ) as exc:
+        public_message = getattr(
+            exc,
+            "public_message",
+            None,
+        )
+
+        if not (
+            isinstance(public_message, str)
+            and public_message.strip()
+        ):
+            public_message = (
+                "自然语言任务的输入或"
+                "模型配置无法用于本次准备。"
+            )
+
+        guidance = format_error_guidance(
+            kind="REJECTED",
+            error=exc,
+            bundle_dir=None,
+            provider=None,
+            public_message_override=(
+                public_message
+            ),
+        )
+
         typer.echo(
-            f"Agent 准备参数错误：{exc}",
+            guidance,
             err=True,
         )
+        typer.echo("", err=True)
+        typer.echo(
+            "执行边界：尚未调用模型 API，"
+            "也没有启动科学工作流。",
+            err=True,
+        )
+
         raise typer.Exit(code=2) from exc
 
     typer.echo(
@@ -447,16 +699,55 @@ def prepare_command(
         ProviderError,
         AgentPreparationError,
         ValidationError,
+        OSError,
     ) as exc:
+        public_message = getattr(
+            exc,
+            "public_message",
+            None,
+        )
+
+        if not (
+            isinstance(public_message, str)
+            and public_message.strip()
+        ):
+            if isinstance(exc, ProviderError):
+                public_message = (
+                    "模型请求或响应处理"
+                    "没有成功完成。"
+                )
+            else:
+                public_message = (
+                    "自然语言任务准备未完成。"
+                )
+
+        guidance = format_error_guidance(
+            kind="FAILED",
+            error=exc,
+            bundle_dir=bundle_dir,
+            provider=None,
+            public_message_override=(
+                public_message
+            ),
+        )
+
         typer.echo(
-            f"自然语言准备失败：{exc}",
+            guidance,
             err=True,
         )
+        typer.echo("", err=True)
+        typer.echo(
+            "执行边界：本命令只授权模型解析"
+            "和任务准备，不授权执行 BinderRanker，"
+            "也不使用远程科学计算后端。",
+            err=True,
+        )
+
         raise typer.Exit(code=4) from exc
 
     typer.echo("")
     typer.echo("=" * 60)
-    typer.echo("Protein Design Agent 结果")
+    typer.echo(f"{PROJECT_NAME} 结果")
     typer.echo("=" * 60)
     typer.echo(f"状态：{result.status}")
     typer.echo(
@@ -543,16 +834,47 @@ def prepare_session_command(
         ValueError,
         AgentPreparationError,
         ValidationError,
+        OSError,
     ) as exc:
+        public_message = getattr(
+            exc,
+            "public_message",
+            None,
+        )
+
+        if not (
+            isinstance(public_message, str)
+            and public_message.strip()
+        ):
+            public_message = "Agent 准备未完成。"
+
+        guidance = format_error_guidance(
+            kind="FAILED",
+            error=exc,
+            bundle_dir=bundle_dir,
+            provider=None,
+            public_message_override=(
+                public_message
+            ),
+        )
+
         typer.echo(
-            f"Agent 准备失败：{exc}",
+            guidance,
             err=True,
         )
+        typer.echo("", err=True)
+        typer.echo(
+            "执行边界：本命令仅用于准备任务，"
+            "不授权执行 BinderRanker，"
+            "也不使用远程后端。",
+            err=True,
+        )
+
         raise typer.Exit(code=2) from exc
 
     typer.echo("")
     typer.echo("=" * 60)
-    typer.echo("Protein Design Agent 准备完成")
+    typer.echo(f"{PROJECT_NAME} 准备完成")
     typer.echo("=" * 60)
     typer.echo(f"状态：{result.status}")
     typer.echo(f"项目：{result.project_name}")
@@ -628,11 +950,45 @@ def materialize_plan_command(
             provenance_file=provenance,
             overwrite=overwrite,
         )
-    except (ValueError, ValidationError) as exc:
+    except (
+        ValueError,
+        ValidationError,
+        OSError,
+    ) as exc:
+        public_message = getattr(
+            exc,
+            "public_message",
+            None,
+        )
+
+        if not (
+            isinstance(public_message, str)
+            and public_message.strip()
+        ):
+            public_message = "计划落地未完成。"
+
+        guidance = format_error_guidance(
+            kind="FAILED",
+            error=exc,
+            bundle_dir=None,
+            provider=None,
+            public_message_override=(
+                public_message
+            ),
+        )
+
         typer.echo(
-            f"计划落地失败：{exc}",
+            guidance,
             err=True,
         )
+        typer.echo("", err=True)
+        typer.echo(
+            "执行边界：本命令只生成项目配置"
+            "和来源记录，不运行科学工作流，"
+            "也不执行 BinderRanker。",
+            err=True,
+        )
+
         raise typer.Exit(code=2) from exc
 
     typer.echo("计划落地成功")
@@ -651,6 +1007,48 @@ def materialize_plan_command(
 
 
 
+
+def stdin_is_interactive() -> bool:
+    """判断当前标准输入是否支持交互式授权。"""
+    try:
+        return bool(sys.stdin.isatty())
+    except (
+        AttributeError,
+        OSError,
+        ValueError,
+    ):
+        return False
+
+
+def resolve_chat_network_permission(
+    *,
+    explicit_allow_network: bool,
+    setup_status: str,
+) -> bool:
+    """
+    决定本次 Chat 会话是否允许调用模型。
+
+    --allow-network 表示已由高级用户显式授权；
+    普通交互式启动则在本地模型就绪后询问一次。
+    """
+    if explicit_allow_network:
+        return True
+
+    if setup_status != "AVAILABLE":
+        return False
+
+    if not stdin_is_interactive():
+        return False
+
+    return typer.confirm(
+        (
+            "检测到模型配置和 API Key 已就绪。"
+            "是否允许本次 Chat 调用模型 API？"
+            "这可能产生网络请求和 API 费用"
+        ),
+        default=False,
+        abort=False,
+    )
 
 
 @app.command("chat")
@@ -710,7 +1108,7 @@ def chat_command(
     ),
 ) -> None:
     """
-    启动 Protein Design Agent 安全自然语言会话。
+    启动 BinderRanker Agent 安全自然语言会话。
 
     大模型负责理解自然语言和生成受控解释，
     不生成或执行 Shell。
@@ -722,11 +1120,60 @@ def chat_command(
             bundle_dir=bundle_dir,
             task_name=task_name,
         )
-    except ValueError as exc:
+    except (
+        ValueError,
+        OSError,
+    ) as exc:
+        public_message = getattr(
+            exc,
+            "public_message",
+            None,
+        )
+
+        if (
+            bundle_dir is not None
+            and task_name is not None
+        ):
+            public_message = (
+                "--bundle-dir 与 --task "
+                "不能同时使用。"
+            )
+
+        elif not (
+            isinstance(public_message, str)
+            and public_message.strip()
+        ):
+            if isinstance(exc, ValueError):
+                public_message = (
+                    "Chat 任务选择参数无效。"
+                    "请检查任务名称和目标路径。"
+                )
+            else:
+                public_message = (
+                    "Chat 任务目标无法安全解析。"
+                )
+
+        guidance = format_error_guidance(
+            kind="REJECTED",
+            error=exc,
+            bundle_dir=None,
+            provider=None,
+            public_message_override=(
+                public_message
+            ),
+        )
+
         typer.echo(
-            f"ERROR：任务选择无效：{exc}",
+            guidance,
             err=True,
         )
+        typer.echo("", err=True)
+        typer.echo(
+            "执行边界：尚未进入模型 API 调用，"
+            "也没有执行 BinderRanker。",
+            err=True,
+        )
+
         raise typer.Exit(code=2) from exc
 
     resolved_bundle = chat_target.bundle_dir
@@ -751,12 +1198,12 @@ def chat_command(
             chat_target.workspace_dir
         )
 
-        if workspace_root is None:
-            raise RuntimeError(
-                "默认工作空间解析结果缺少根目录"
-            )
-
         try:
+            if workspace_root is None:
+                raise RuntimeError(
+                    "默认工作空间解析结果缺少根目录"
+                )
+
             workspace_report = ensure_workspace(
                 workspace_root
             )
@@ -764,15 +1211,45 @@ def chat_command(
                 parents=True,
                 exist_ok=True,
             )
-        except (
-            WorkspaceInitError,
-            OSError,
-        ) as exc:
+
+        except Exception as exc:
+            public_message = getattr(
+                exc,
+                "public_message",
+                None,
+            )
+
+            if not (
+                isinstance(public_message, str)
+                and public_message.strip()
+            ):
+                public_message = (
+                    "默认工作空间没有成功初始化。"
+                    "请检查当前目录和文件系统权限后重试。"
+                )
+
+            guidance = format_error_guidance(
+                kind="FAILED",
+                error=exc,
+                bundle_dir=None,
+                provider=None,
+                public_message_override=(
+                    public_message
+                ),
+            )
+
             typer.echo(
-                "ERROR：默认工作空间初始化失败："
-                f"{exc}",
+                guidance,
                 err=True,
             )
+            typer.echo("", err=True)
+            typer.echo(
+                "执行边界：Chat 尚未进入模型 API "
+                "调用或科学工作流；"
+                "BinderRanker 没有执行。",
+                err=True,
+            )
+
             raise typer.Exit(
                 code=2
             ) from exc
@@ -782,11 +1259,23 @@ def chat_command(
         workspace_root=workspace_root,
     )
 
-    model_readiness = assess_model_readiness(
-        allow_network=allow_network,
+    model_setup = assess_model_setup(
         config_path=resolved_model_config,
         profile_name=profile,
     )
+
+    session_network_allowed = (
+        resolve_chat_network_permission(
+            explicit_allow_network=allow_network,
+            setup_status=model_setup.status,
+        )
+    )
+
+    model_readiness = finalize_model_readiness(
+        model_setup,
+        network_allowed=session_network_allowed,
+    )
+
 
     provider = model_readiness.provider
     model_calls_enabled = (
@@ -802,7 +1291,7 @@ def chat_command(
 
     typer.echo("")
     typer.echo("=" * 72)
-    typer.echo("Protein Design Agent Chat")
+    typer.echo(f"{AGENT_NAME} Chat")
     typer.echo("=" * 72)
     if workspace_root is not None:
         typer.echo(
@@ -860,7 +1349,11 @@ def chat_command(
                 prompt_suffix=" > ",
             )
 
-        except (EOFError, KeyboardInterrupt):
+        except (
+            EOFError,
+            KeyboardInterrupt,
+            typer.Abort,
+        ):
             typer.echo("")
             typer.echo(
                 "会话已结束。"
@@ -904,7 +1397,7 @@ def chat_command(
                 bundle_dir=resolved_bundle,
                 provider=(
                     provider
-                    if allow_network
+                    if model_calls_enabled
                     else None
                 ),
             )
@@ -920,7 +1413,7 @@ def chat_command(
                 bundle_dir=resolved_bundle,
                 provider=(
                     provider
-                    if allow_network
+                    if model_calls_enabled
                     else None
                 ),
             )
@@ -954,7 +1447,7 @@ def run_status_command(
         file_okay=False,
         dir_okay=True,
         readable=True,
-        help="要检查的 Protein Design Agent bundle。",
+        help=f"要检查的 {PROJECT_NAME} bundle。",
     ),
 ) -> None:
     """
@@ -968,8 +1461,17 @@ def run_status_command(
         )
 
     except RunStatusError as exc:
+        guidance = format_error_guidance(
+            kind="FAILED",
+            error=exc,
+            bundle_dir=bundle_dir,
+            provider=None,
+            public_message_override=(
+                "任务状态检查未完成。"
+            ),
+        )
         typer.echo(
-            f"ERROR：{exc}",
+            guidance,
             err=True,
         )
         raise typer.Exit(code=1) from exc
@@ -989,7 +1491,7 @@ def run_status_command(
         return "未知"
 
     typer.echo("=" * 72)
-    typer.echo("Protein Design Agent 任务状态")
+    typer.echo(f"{PROJECT_NAME} 任务状态")
     typer.echo("=" * 72)
 
     typer.echo(
@@ -1148,8 +1650,30 @@ def execute_run_command(
         )
 
     except LocalExecutionError as exc:
+        public_message = getattr(
+            exc,
+            "public_message",
+            None,
+        )
+        if not (
+            isinstance(public_message, str)
+            and public_message.strip()
+        ):
+            public_message = (
+                "BinderRanker 执行未完成。"
+            )
+
+        guidance = format_error_guidance(
+            kind="FAILED",
+            error=exc,
+            bundle_dir=None,
+            provider=None,
+            public_message_override=(
+                public_message
+            ),
+        )
         typer.echo(
-            f"ERROR：{exc}",
+            guidance,
             err=True,
         )
 
@@ -1160,6 +1684,11 @@ def execute_run_command(
         )
 
         if manifest is not None:
+            typer.echo("", err=True)
+            typer.echo(
+                "恢复信息：",
+                err=True,
+            )
             typer.echo(
                 f"执行清单：{manifest}",
                 err=True,
@@ -1168,8 +1697,17 @@ def execute_run_command(
         raise typer.Exit(code=1) from exc
 
     except Exception as exc:
+        guidance = format_error_guidance(
+            kind="FAILED",
+            error=exc,
+            bundle_dir=None,
+            provider=None,
+            public_message_override=(
+                "BinderRanker 执行未完成。"
+            ),
+        )
         typer.echo(
-            f"ERROR：{exc}",
+            guidance,
             err=True,
         )
         raise typer.Exit(code=1) from exc
@@ -1289,8 +1827,17 @@ def analyze_run_command(
         )
 
     except Exception as exc:
+        guidance = format_error_guidance(
+            kind="FAILED",
+            error=exc,
+            bundle_dir=bundle_dir,
+            provider=None,
+            public_message_override=(
+                "结果分析未完成。"
+            ),
+        )
         typer.echo(
-            f"ERROR：{exc}",
+            guidance,
             err=True,
         )
         raise typer.Exit(code=1) from exc
@@ -1404,8 +1951,17 @@ def explain_run_command(
         )
 
     except Exception as exc:
+        guidance = format_error_guidance(
+            kind="FAILED",
+            error=exc,
+            bundle_dir=bundle_dir,
+            provider=None,
+            public_message_override=(
+                "模型解释未完成。"
+            ),
+        )
         typer.echo(
-            f"ERROR：{exc}",
+            guidance,
             err=True,
         )
         raise typer.Exit(code=1) from exc
@@ -1465,8 +2021,33 @@ def extract_sample_command(
             destination=destination,
             sample_name=sample_name,
         )
-    except (PackagedSampleError, OSError) as exc:
-        typer.echo(f"样例提取失败：{exc}", err=True)
+    except PackagedSampleError as exc:
+        guidance = format_error_guidance(
+            kind="FAILED",
+            error=exc,
+            bundle_dir=None,
+            provider=None,
+        )
+        typer.echo(
+            guidance,
+            err=True,
+        )
+        raise typer.Exit(code=2) from exc
+
+    except OSError as exc:
+        guidance = format_error_guidance(
+            kind="FAILED",
+            error=exc,
+            bundle_dir=None,
+            provider=None,
+            public_message_override=(
+                "样例提取未完成。"
+            ),
+        )
+        typer.echo(
+            guidance,
+            err=True,
+        )
         raise typer.Exit(code=2) from exc
 
     typer.echo(f"样例：{result.sample_name}")
@@ -1507,14 +2088,79 @@ def init_command(
             destination
         )
     except WorkspaceInitError as exc:
+        guidance = format_error_guidance(
+            kind="FAILED",
+            error=exc,
+            bundle_dir=None,
+            provider=None,
+        )
         typer.echo(
-            f"工作区初始化失败：{exc}",
+            guidance,
             err=True,
         )
+
+        if exc.conflicts:
+            typer.echo("", err=True)
+            typer.echo(
+                "恢复信息：",
+                err=True,
+            )
+            typer.echo(
+                "检测到的冲突路径：",
+                err=True,
+            )
+
+            root = (
+                destination
+                .expanduser()
+                .resolve()
+            )
+
+            for conflict in exc.conflicts:
+                try:
+                    displayed = (
+                        conflict
+                        .resolve()
+                        .relative_to(root)
+                    )
+                except ValueError:
+                    displayed = Path(
+                        conflict.name
+                    )
+
+                typer.echo(
+                    f"  - {displayed}",
+                    err=True,
+                )
+
+            typer.echo(
+                "已有冲突内容不会被自动覆盖；"
+                "请确认这些文件后再重试，"
+                "或选择新的工作区目录。",
+                err=True,
+            )
+
         raise typer.Exit(code=2) from exc
+
     except OSError as exc:
+        guidance = format_error_guidance(
+            kind="FAILED",
+            error=exc,
+            bundle_dir=None,
+            provider=None,
+            public_message_override=(
+                "工作区初始化未完成："
+                "文件系统操作失败。"
+            ),
+        )
         typer.echo(
-            f"工作区写入失败：{exc}",
+            guidance,
+            err=True,
+        )
+        typer.echo("", err=True)
+        typer.echo(
+            "恢复信息：请检查目标路径、"
+            "文件权限和目录当前状态后再重试。",
             err=True,
         )
         raise typer.Exit(code=2) from exc
@@ -1619,6 +2265,52 @@ def validate_model_config_command(
             config
         )
 
+    except ValidationError as exc:
+        guidance = format_error_guidance(
+            kind="FAILED",
+            error=exc,
+            bundle_dir=None,
+            provider=None,
+            public_message_override=(
+                "模型配置字段验证未通过。"
+                "请检查必填字段、字段类型、"
+                "active_profile 和 profiles 配置。"
+            ),
+        )
+        typer.echo(
+            guidance,
+            err=True,
+        )
+        typer.echo(
+            "网络访问：否；"
+            "本命令没有调用模型 API。",
+            err=True,
+        )
+        raise typer.Exit(code=2) from exc
+
+    except ValueError as exc:
+        guidance = format_error_guidance(
+            kind="FAILED",
+            error=exc,
+            bundle_dir=None,
+            provider=None,
+            public_message_override=(
+                "模型配置文件无法读取或基础格式无效。"
+                "请检查 YAML 语法和配置文件结构。"
+            ),
+        )
+        typer.echo(
+            guidance,
+            err=True,
+        )
+        typer.echo(
+            "网络访问：否；"
+            "本命令没有调用模型 API。",
+            err=True,
+        )
+        raise typer.Exit(code=2) from exc
+
+    try:
         profile_name, selected = (
             resolve_provider_profile(
                 model_config,
@@ -1626,9 +2318,43 @@ def validate_model_config_command(
             )
         )
 
-    except (ValueError, ValidationError) as exc:
+    except ValueError as exc:
+        requested_profile = (
+            profile
+            if profile is not None
+            else model_config.active_profile
+        )
+        supported_profiles = ", ".join(
+            sorted(model_config.profiles)
+        )
+
+        public_message = (
+            "指定的模型 Profile 不存在："
+            f"{requested_profile!r}。"
+        )
+
+        if supported_profiles:
+            public_message += (
+                "可用 Profile："
+                f"{supported_profiles}。"
+            )
+
+        guidance = format_error_guidance(
+            kind="FAILED",
+            error=exc,
+            bundle_dir=None,
+            provider=None,
+            public_message_override=(
+                public_message
+            ),
+        )
         typer.echo(
-            f"模型配置验证失败：{exc}",
+            guidance,
+            err=True,
+        )
+        typer.echo(
+            "网络访问：否；"
+            "本命令没有调用模型 API。",
             err=True,
         )
         raise typer.Exit(code=2) from exc
@@ -1702,7 +2428,21 @@ def plan_mock_command(
     """
     使用 MockProvider 生成规划。
 
-    完全离线，不访问模型 API。
+    完全离线，不访问模型 API，也不会执行 BinderRanker。
+
+    示例 payload：
+
+    {"project_name":"demo","input_dir":"sample_data/test_two_chain","input_layout":"existing_chains","binder_chain":"A","execute_requested":false}
+
+    核心字段：
+
+    project_name=项目标识；input_dir=候选 PDB 目录；
+    input_layout=输入布局；
+    binder_chain=existing_chains 布局中的 binder 链；
+    execute_requested=仅记录执行请求，不代表批准或执行。
+
+    concatenated_single_chain 布局还需要
+    source_chain 和 target_residue_count。
     """
     try:
         raw_text = read_user_text(
@@ -1710,13 +2450,36 @@ def plan_mock_command(
             text_file=text_file,
         )
 
-        raw_payload = json.loads(
-            payload.read_text(encoding="utf-8")
-        )
+        try:
+            raw_payload = json.loads(
+                payload.read_text(
+                    encoding="utf-8"
+                )
+            )
+        except OSError as exc:
+            raise CLIInputError(
+                f"无法读取 Mock payload：{exc}",
+                public_message=(
+                    "Mock payload 文件无法读取。"
+                ),
+            ) from exc
+        except json.JSONDecodeError as exc:
+            raise CLIInputError(
+                "Mock payload 不是合法 JSON："
+                f"第 {exc.lineno} 行，"
+                f"第 {exc.colno} 列",
+                public_message=(
+                    "Mock payload 不是合法 JSON。"
+                ),
+            ) from exc
 
         if not isinstance(raw_payload, dict):
-            raise ValueError(
-                "Mock payload 最外层必须是 JSON 对象"
+            raise CLIInputError(
+                "Mock payload 最外层必须是 JSON 对象",
+                public_message=(
+                    "Mock payload 最外层"
+                    "必须是 JSON 对象。"
+                ),
             )
 
         provider = MockProvider(raw_payload)
@@ -1739,10 +2502,40 @@ def plan_mock_command(
         ProviderError,
         ValidationError,
     ) as exc:
+        public_message = getattr(
+            exc,
+            "public_message",
+            None,
+        )
+
+        if not (
+            isinstance(public_message, str)
+            and public_message.strip()
+        ):
+            public_message = "Mock 规划未完成。"
+
+        guidance = format_error_guidance(
+            kind="FAILED",
+            error=exc,
+            bundle_dir=None,
+            provider=None,
+            public_message_override=(
+                public_message
+            ),
+        )
+
         typer.echo(
-            f"Mock 规划失败：{exc}",
+            guidance,
             err=True,
         )
+        typer.echo("", err=True)
+        typer.echo(
+            "执行边界：plan-mock 完全离线，"
+            "不调用模型 API，"
+            "也不执行 BinderRanker。",
+            err=True,
+        )
+
         raise typer.Exit(code=2) from exc
 
     print_plan_summary(
@@ -1827,11 +2620,47 @@ def plan_command(
             )
         )
 
-    except (ValueError, ValidationError) as exc:
+    except (
+        ValueError,
+        ValidationError,
+        OSError,
+    ) as exc:
+        public_message = getattr(
+            exc,
+            "public_message",
+            None,
+        )
+
+        if not (
+            isinstance(public_message, str)
+            and public_message.strip()
+        ):
+            public_message = (
+                "规划输入或模型配置"
+                "无法用于本次规划。"
+            )
+
+        guidance = format_error_guidance(
+            kind="REJECTED",
+            error=exc,
+            bundle_dir=None,
+            provider=None,
+            public_message_override=(
+                public_message
+            ),
+        )
+
         typer.echo(
-            f"规划准备失败：{exc}",
+            guidance,
             err=True,
         )
+        typer.echo("", err=True)
+        typer.echo(
+            "执行边界：尚未调用模型 API，"
+            "也没有执行 BinderRanker。",
+            err=True,
+        )
+
         raise typer.Exit(code=2) from exc
 
     typer.echo(
@@ -1879,11 +2708,50 @@ def plan_command(
         ValueError,
         ProviderError,
         ValidationError,
+        OSError,
     ) as exc:
+        public_message = getattr(
+            exc,
+            "public_message",
+            None,
+        )
+
+        if not (
+            isinstance(public_message, str)
+            and public_message.strip()
+        ):
+            if isinstance(exc, ProviderError):
+                public_message = (
+                    "模型请求或响应处理"
+                    "没有成功完成。"
+                )
+            else:
+                public_message = (
+                    "模型规划未完成。"
+                )
+
+        guidance = format_error_guidance(
+            kind="FAILED",
+            error=exc,
+            bundle_dir=None,
+            provider=None,
+            public_message_override=(
+                public_message
+            ),
+        )
+
         typer.echo(
-            f"真实模型规划失败：{exc}",
+            guidance,
             err=True,
         )
+        typer.echo("", err=True)
+        typer.echo(
+            "执行边界：本命令只授权模型解析"
+            "并生成规划，不授权执行 BinderRanker "
+            "或远程科学计算任务。",
+            err=True,
+        )
+
         raise typer.Exit(code=4) from exc
 
     print_plan_summary(

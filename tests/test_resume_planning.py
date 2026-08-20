@@ -5,11 +5,15 @@ from types import SimpleNamespace
 import pytest
 
 import protein_design_agent.agent.resume_planning as module
-from protein_design_agent.agent.orchestrator import (
+import protein_design_agent.agent.planning_session_resume as resume_core
+from protein_design_agent.schemas.planning_session import (
     PlanningSession,
 )
 from protein_design_agent.agent.planner import (
     build_agent_plan,
+)
+from protein_design_agent.agent.planning_session_resume import (
+    resume_planning_session_from_extraction,
 )
 from protein_design_agent.agent.resume_planning import (
     ResumePlanningError,
@@ -216,7 +220,7 @@ def test_still_missing_updates_session(
         result.history_record.is_dir()
     )
 
-    session = module.load_planning_session(
+    session = resume_core.load_planning_session(
         bundle / "planning_session.json"
     )
 
@@ -434,7 +438,7 @@ def test_ready_session_is_promoted(
         )
 
     monkeypatch.setattr(
-        module,
+        resume_core,
         "prepare_agent_run",
         fake_prepare_agent_run,
     )
@@ -458,7 +462,7 @@ def test_ready_session_is_promoted(
         result.history_record.is_dir()
     )
 
-    session = module.load_planning_session(
+    session = resume_core.load_planning_session(
         bundle / "planning_session.json"
     )
 
@@ -525,7 +529,7 @@ def test_prepare_failure_restores_original(
         )
 
     monkeypatch.setattr(
-        module,
+        resume_core,
         "prepare_agent_run",
         failing_prepare,
     )
@@ -555,7 +559,7 @@ def test_prepare_failure_restores_original(
 
 
 def test_system_default_can_be_overridden() -> None:
-    from protein_design_agent.agent.resume_planning import (
+    from protein_design_agent.agent.planning_session_resume import (
         UserRequestPatch,
         merge_request_patch,
     )
@@ -850,8 +854,8 @@ def test_completeness_audit_can_recover_from_earlier_user_text() -> None:
         ],
     )
 
-    primary = module.SupplementExtraction(
-        patch=module.UserRequestPatch(),
+    primary = resume_core.SupplementExtraction(
+        patch=resume_core.UserRequestPatch(),
         evidence={},
     )
 
@@ -914,13 +918,13 @@ def test_completeness_audit_cannot_change_confirmed_field() -> None:
         ],
     )
 
-    primary = module.SupplementExtraction(
-        patch=module.UserRequestPatch(),
+    primary = resume_core.SupplementExtraction(
+        patch=resume_core.UserRequestPatch(),
         evidence={},
     )
 
-    audit = module.SupplementExtraction(
-        patch=module.UserRequestPatch(
+    audit = resume_core.SupplementExtraction(
+        patch=resume_core.UserRequestPatch(
             binder_chain="C",
         ),
         evidence={
@@ -948,8 +952,8 @@ def test_completeness_audit_detects_pass_conflict() -> None:
     """
     session = create_extraction_session()
 
-    primary = module.SupplementExtraction(
-        patch=module.UserRequestPatch(
+    primary = resume_core.SupplementExtraction(
+        patch=resume_core.UserRequestPatch(
             source_chain="A",
         ),
         evidence={
@@ -957,8 +961,8 @@ def test_completeness_audit_detects_pass_conflict() -> None:
         },
     )
 
-    audit = module.SupplementExtraction(
-        patch=module.UserRequestPatch(
+    audit = resume_core.SupplementExtraction(
+        patch=resume_core.UserRequestPatch(
             source_chain="B",
         ),
         evidence={
@@ -1000,7 +1004,7 @@ def test_same_default_values_are_promoted_to_explicit_provenance() -> None:
     assert request.region_policy == "diagnostic"
     assert request.region_filter == "off"
 
-    patch = module.UserRequestPatch(
+    patch = resume_core.UserRequestPatch(
         normalized_target_chain="A",
         normalized_binder_chain="B",
         region_policy="diagnostic",
@@ -1008,7 +1012,7 @@ def test_same_default_values_are_promoted_to_explicit_provenance() -> None:
     )
 
     merged, accepted_fields = (
-        module.merge_request_patch(
+        resume_core.merge_request_patch(
             old_request=request,
             old_missing_information=[],
             old_explicit_fields={
@@ -1057,7 +1061,7 @@ def test_same_already_explicit_value_is_not_a_false_update() -> None:
         normalized_target_chain="A",
     )
 
-    patch = module.UserRequestPatch(
+    patch = resume_core.UserRequestPatch(
         normalized_target_chain="A",
     )
 
@@ -1065,7 +1069,7 @@ def test_same_already_explicit_value_is_not_a_false_update() -> None:
         ResumePlanningError,
         match="没有提供新的可用字段",
     ):
-        module.merge_request_patch(
+        resume_core.merge_request_patch(
             old_request=request,
             old_missing_information=[],
             old_explicit_fields={
@@ -1077,3 +1081,122 @@ def test_same_already_explicit_value_is_not_a_false_update() -> None:
                 "target 仍然叫 A 链"
             ),
         )
+
+def test_resume_from_extraction_does_not_require_provider(
+    tmp_path: Path,
+) -> None:
+    request = UserRequest(
+        raw_text="分析骨架",
+    )
+    bundle = create_incomplete_bundle(
+        tmp_path,
+        request,
+    )
+
+    input_dir = tmp_path / "pdbs"
+    supplement = f"输入目录是 {input_dir}"
+
+    extraction = resume_core.SupplementExtraction(
+        patch=resume_core.UserRequestPatch(
+            input_dir=input_dir,
+        ),
+        evidence={
+            "input_dir": supplement,
+        },
+    )
+
+    result = resume_planning_session_from_extraction(
+        bundle_dir=bundle,
+        supplement_text=supplement,
+        extraction=extraction,
+    )
+
+    assert result.status == "NEEDS_INFORMATION"
+
+    session = resume_core.load_planning_session(
+        bundle / "planning_session.json"
+    )
+    assert session.request.input_dir == input_dir
+
+def test_resume_from_extraction_revalidates_evidence(
+    tmp_path: Path,
+) -> None:
+    request = UserRequest(
+        raw_text="分析骨架",
+    )
+    bundle = create_incomplete_bundle(
+        tmp_path,
+        request,
+    )
+
+    supplement = "输入目录是 /tmp/pdbs"
+
+    extraction = resume_core.SupplementExtraction(
+        patch=resume_core.UserRequestPatch(
+            input_dir=Path("/tmp/pdbs"),
+        ),
+        evidence={
+            "input_dir": "用户从未说过这个目录",
+        },
+    )
+
+    with pytest.raises(
+        ResumePlanningError,
+        match="不是用户",
+    ):
+        resume_planning_session_from_extraction(
+            bundle_dir=bundle,
+            supplement_text=supplement,
+            extraction=extraction,
+        )
+
+def test_apply_validated_request_patch_is_source_agnostic(
+    tmp_path: Path,
+) -> None:
+    request = UserRequest(
+        raw_text="分析骨架",
+    )
+    bundle = create_incomplete_bundle(
+        tmp_path,
+        request,
+    )
+
+    (
+        session_path,
+        manifest_path,
+        old_session,
+    ) = resume_core.validate_incomplete_bundle(
+        bundle
+    )
+
+    input_dir = tmp_path / "pdbs"
+
+    extraction = resume_core.SupplementExtraction(
+        patch=resume_core.UserRequestPatch(
+            input_dir=input_dir,
+        ),
+        evidence={},
+        notes=[
+            "source=FILE_DERIVED",
+            "confirmation=USER_CONFIRMED",
+        ],
+    )
+
+    result = resume_core.apply_validated_request_patch(
+        bundle_dir=bundle,
+        previous_session_path=session_path,
+        previous_manifest_path=manifest_path,
+        old_session=old_session,
+        supplement_text=(
+            f"用户确认采用文件建议：input_dir={input_dir}"
+        ),
+        extraction=extraction,
+        runner=None,
+    )
+
+    assert result.status == "NEEDS_INFORMATION"
+
+    session = resume_core.load_planning_session(
+        bundle / "planning_session.json"
+    )
+    assert session.request.input_dir == input_dir

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 import protein_design_agent.agent.chat_session as module
+from protein_design_agent.agent.providers.mock import MockProvider
 from protein_design_agent.agent.chat_session import (
     ChatSessionError,
     process_chat_message,
@@ -218,6 +219,10 @@ def test_approval_uses_explicit_smoke_ack(
             "acknowledge_smoke_test"
         ]
         is True
+    )
+    assert (
+        captured["approval_note"]
+        == "Approved through BinderRanker Agent chat"
     )
 
 
@@ -621,5 +626,41 @@ def test_chat_reports_model_explanation_fallback(
     )
     assert (
         "自动修正后仍未通过"
-        in result.message
+        not in result.message
     )
+    assert (
+        "ResultExplanationError"
+        not in result.message
+    )
+    assert (
+        "解释错误："
+        not in result.message
+    )
+
+def test_initial_message_reuses_precreated_empty_bundle(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "runs" / "default"
+    bundle.mkdir(parents=True)
+
+    result = process_chat_message(
+        message="分析这个目录",
+        bundle_dir=bundle,
+        provider=MockProvider({}),
+        approved_by="tester",
+        model_config_path=None,
+        profile_name=None,
+        allow_network=True,
+    )
+
+    assert result.action == "PREPARE"
+    assert result.status == "NEEDS_INFORMATION"
+    assert (
+        bundle / "planning_session.json"
+    ).is_file()
+    assert (
+        bundle / "agent_prepare_manifest.json"
+    ).is_file()
+    assert not (
+        bundle / "workflow"
+    ).exists()

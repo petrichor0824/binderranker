@@ -37,6 +37,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from protein_design_agent.public_identity import (
+    AGENT_NAME,
+    PROJECT_NAME,
+)
+from protein_design_agent.agent.capability_truth import (
+    CAPABILITY_TRUTH_PROMPT,
+    find_capability_overclaim,
+)
 from protein_design_agent.agent.failure_analysis import (
     FailureAnalysisSummary,
 )
@@ -924,8 +932,8 @@ def build_result_explainer_messages(
         .model_json_schema()
     )
 
-    system_message = """
-你是 Protein Design Agent 的科学结果解释模块。
+    system_message = f"""
+你是 {AGENT_NAME} 的科学结果解释模块。
 
 你的工作不是重新计算结果，而是根据给定证据：
 1. 综合解释每个候选的优势和局限；
@@ -992,6 +1000,11 @@ def build_result_explainer_messages(
 - 每个候选给出适量 strengths 和 limitations；
 - next_structural_checks 应是可在 PDB/PyMOL 中检查的事项。
 """.strip()
+
+    system_message += (
+        "\n\n真实科学能力边界：\n"
+        + CAPABILITY_TRUTH_PROMPT
+    )
 
     if (
         evidence.get("threshold_analysis_mode")
@@ -1098,7 +1111,6 @@ DIRECT_PRIMARY_SCORE_CLAIM_PATTERN = re.compile(
     r".{0,12}"
     r"(由|来自|包含)"
 )
-
 
 def iter_model_narrative_texts(
     explanation: ResultExplanationPayload,
@@ -1395,6 +1407,29 @@ def validate_generated_claim_boundaries(
                 )
 
 
+def validate_capability_claims(
+    *,
+    explanation: Any,
+) -> None:
+    """
+    阻止模型把 BinderRanker 或 Agent 描述成
+    超出产品真实科学能力边界的预测或验证系统。
+    """
+    for field_name, value in (
+        iter_generated_text_fields(explanation)
+    ):
+        offending_sentence = (
+            find_capability_overclaim(value)
+        )
+
+        if offending_sentence is not None:
+            raise ResultExplanationError(
+                "模型输出超出 BinderRanker / Agent "
+                "真实科学能力边界："
+                f"{field_name}: {offending_sentence}"
+            )
+
+
 def validate_model_narrative(
     *,
     explanation: ResultExplanationPayload,
@@ -1679,6 +1714,10 @@ def validate_model_explanation(
         evidence=evidence,
     )
 
+    validate_capability_claims(
+        explanation=explanation,
+    )
+
     return explanation
 
 
@@ -1738,7 +1777,9 @@ def request_result_explanation(
                     "分析级别、推荐权限或任何证据数值。"
                     "不得添加证据中不存在的相关性、因果关系、"
                     "统计显著性、阈值方向或候选推荐。"
-                    "只输出符合原 JSON Schema 的对象。"
+                    "\n\n真实科学能力边界：\n"
+                    + CAPABILITY_TRUTH_PROMPT
+                    + "\n\n只输出符合原 JSON Schema 的对象。"
                 ),
             },
         ]
@@ -1895,7 +1936,7 @@ def render_result_explanation_markdown(
     }
 
     lines: list[str] = [
-        "# Protein Design Agent 结果解释",
+        f"# {PROJECT_NAME} 结果解释",
         "",
         f"- 项目：`{explanation.project_name}`",
         (

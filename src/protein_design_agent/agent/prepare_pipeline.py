@@ -31,9 +31,11 @@ PlanningSession JSON
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -46,6 +48,9 @@ from protein_design_agent.agent.plan_materializer import (
     sha256_file,
     validate_session_for_materialization,
 )
+from protein_design_agent.agent.user_errors import (
+    UserFacingError,
+)
 
 
 # command、stdout日志、stderr日志 -> 退出码
@@ -55,7 +60,7 @@ WorkflowRunner = Callable[
 ]
 
 
-class AgentPreparationError(RuntimeError):
+class AgentPreparationError(UserFacingError):
     """Agent 准备流水线失败。"""
 
 
@@ -89,8 +94,19 @@ class PreparedAgentRun(BaseModel):
 def protect_bundle_directory(
     bundle_dir: Path,
 ) -> None:
-    """默认禁止使用非空任务目录。"""
+    """
+    禁止覆盖非空任务目录。
+
+    本函数只验证目标位置，不提前创建正式 Bundle。
+    准备工作必须先在同一父目录的 staging 目录完成。
+    """
     if bundle_dir.exists():
+        if not bundle_dir.is_dir():
+            raise ValueError(
+                f"任务路径已经存在且不是目录："
+                f"{bundle_dir}"
+            )
+
         existing_items = list(
             bundle_dir.iterdir()
         )
@@ -100,11 +116,6 @@ def protect_bundle_directory(
                 f"任务目录已经存在且非空，禁止覆盖："
                 f"{bundle_dir}"
             )
-
-    bundle_dir.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
 
 
 def default_workflow_runner(
@@ -168,13 +179,200 @@ def write_json(
     )
 
 
+
+def relocate_staged_metadata(
+    *,
+    staging_dir: Path,
+    bundle_dir: Path,
+) -> None:
+    """
+    将成功准备产物中的 staging 绝对路径改为正式 Bundle 路径。
+
+    这里只修改明确包含运行路径的文本元数据，
+    不修改 PDB 数据和运行日志。
+    """
+    metadata_paths = [
+        staging_dir / "project.provenance.json",
+        (
+            staging_dir
+            / "workflow"
+            / "workflow_manifest.json"
+        ),
+        (
+            staging_dir
+            / "workflow"
+            / "normalized_pdbs"
+            / "normalization_manifest.json"
+        ),
+        (
+            staging_dir
+            / "workflow"
+            / "ranker"
+            / "ranker_execution_plan.json"
+        ),
+        (
+            staging_dir
+            / "workflow"
+            / "ranker"
+            / "run_ranker.sh"
+        ),
+    ]
+
+    old_root = str(staging_dir)
+    new_root = str(bundle_dir)
+
+    for path in metadata_paths:
+        if not path.is_file():
+            continue
+
+        content = path.read_text(
+            encoding="utf-8"
+        )
+
+        if old_root not in content:
+            continue
+
+        path.write_text(
+            content.replace(
+                old_root,
+                new_root,
+            ),
+            encoding="utf-8",
+        )
+
+
+def publish_staged_bundle(
+    *,
+    staging_dir: Path,
+    bundle_dir: Path,
+) -> None:
+    """把完整 staging Bundle 一次性发布到正式位置。"""
+    if bundle_dir.exists():
+        if any(bundle_dir.iterdir()):
+            raise ValueError(
+                f"正式任务目录在准备过程中变为非空："
+                f"{bundle_dir}"
+            )
+
+        bundle_dir.rmdir()
+
+    os.replace(
+        staging_dir,
+        bundle_dir,
+    )
+
+
+def record_prepare_failure(
+    *,
+    bundle_dir: Path,
+    session_path: Path,
+    staging_dir: Path,
+    project_name: str,
+    provider_name: str,
+    error: Exception,
+    return_code: int | None,
+    stdout_log: Path,
+    stderr_log: Path,
+) -> Path:
+    """
+    在正式 Bundle 外保存准备失败审计记录。
+
+    失败记录不会使正式 Bundle 看起来像有效任务。
+    """
+    audit_root = (
+        bundle_dir.parent
+        / ".pda-failures"
+        / bundle_dir.name
+    )
+
+    audit_root.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    failure_dir = Path(
+        tempfile.mkdtemp(
+            prefix="prepare-",
+            dir=str(audit_root),
+        )
+    )
+
+    logs_dir = failure_dir / "logs"
+    logs_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    copied_stdout = None
+    copied_stderr = None
+
+    if stdout_log.is_file():
+        copied_stdout = (
+            logs_dir / "workflow_stdout.log"
+        )
+        shutil.copy2(
+            stdout_log,
+            copied_stdout,
+        )
+
+    if stderr_log.is_file():
+        copied_stderr = (
+            logs_dir / "workflow_stderr.log"
+        )
+        shutil.copy2(
+            stderr_log,
+            copied_stderr,
+        )
+
+    manifest = {
+        "schema_version": "0.1",
+        "status": "FAILED",
+        "project_name": project_name,
+        "provider_name": provider_name,
+        "requested_bundle_directory": str(
+            bundle_dir
+        ),
+        "source_session": str(session_path),
+        "formal_bundle_published": False,
+        "exception_type": type(error).__name__,
+        "error_message": str(error),
+        "return_code": return_code,
+        "stdout_log": (
+            str(copied_stdout)
+            if copied_stdout is not None
+            else None
+        ),
+        "stderr_log": (
+            str(copied_stderr)
+            if copied_stderr is not None
+            else None
+        ),
+        "binderranker_executed": False,
+        "remote_backend_used": False,
+    }
+
+    manifest_path = (
+        failure_dir / "failure_manifest.json"
+    )
+
+    write_json(
+        manifest_path,
+        manifest,
+    )
+
+    return manifest_path
+
 def load_workflow_manifest(
     path: Path,
 ) -> dict[str, Any]:
     """读取骨架排名工作流的 Manifest。"""
     if not path.exists():
         raise AgentPreparationError(
-            f"工作流没有生成 Manifest：{path}"
+            f"工作流没有生成 Manifest：{path}",
+            public_message=(
+                "准备工作流没有生成所需的 "
+                "Workflow Manifest。"
+            ),
         )
 
     try:
@@ -184,12 +382,20 @@ def load_workflow_manifest(
     except json.JSONDecodeError as exc:
         raise AgentPreparationError(
             "工作流 Manifest 不是合法 JSON："
-            f"{exc}"
+            f"{exc}",
+            public_message=(
+                "准备工作流生成的 "
+                "Workflow Manifest 格式无效。"
+            ),
         ) from exc
 
     if not isinstance(data, dict):
         raise AgentPreparationError(
-            "工作流 Manifest 最外层必须是对象"
+            "工作流 Manifest 最外层必须是对象",
+            public_message=(
+                "准备工作流生成的 "
+                "Workflow Manifest 结构无效。"
+            ),
         )
 
     return data
@@ -202,248 +408,381 @@ def prepare_agent_run(
     runner: WorkflowRunner | None = None,
 ) -> PreparedAgentRun:
     """
-    从 PlanningSession 创建完整准备任务。
+    从 PlanningSession 原子地创建完整准备任务。
 
-    本函数会检查和标准化 PDB，
-    但不会真正运行 BinderRanker。
+    所有准备工作先写入同一父目录中的 staging Bundle。
+    只有全部验证通过后，才一次性发布为正式 Bundle。
+    BinderRanker 不会在本阶段真正执行。
     """
     session_path = session_path.resolve()
     bundle_dir = bundle_dir.resolve()
 
-    # 在创建任何输出前，先检查会话是否合法。
+    # 在创建任何输出前先验证 PlanningSession。
     session = load_planning_session(
         session_path
     )
-
     project = validate_session_for_materialization(
         session
     )
 
+    # 这里只检查正式目标是否安全，不提前写入正式 Bundle。
     protect_bundle_directory(
         bundle_dir
     )
 
-    session_copy = (
-        bundle_dir / "planning_session.json"
+    bundle_dir.parent.mkdir(
+        parents=True,
+        exist_ok=True,
     )
 
-    project_config = (
-        bundle_dir / "project.yaml"
-    )
+    staging_dir = Path(
+        tempfile.mkdtemp(
+            prefix=f".{bundle_dir.name}.preparing-",
+            dir=str(bundle_dir.parent),
+        )
+    ).resolve()
 
-    project_provenance = (
-        bundle_dir / "project.provenance.json"
-    )
-
-    workflow_dir = (
-        bundle_dir / "workflow"
-    )
-
-    logs_dir = (
-        bundle_dir / "logs"
-    )
-
+    # 提前定义失败审计需要的路径。
+    # 即使后续在真正启动 workflow 前失败，也能安全记录。
     stdout_log = (
-        logs_dir / "workflow_stdout.log"
+        staging_dir
+        / "logs"
+        / "workflow_stdout.log"
     )
-
     stderr_log = (
-        logs_dir / "workflow_stderr.log"
+        staging_dir
+        / "logs"
+        / "workflow_stderr.log"
     )
+    return_code: int | None = None
 
-    prepare_manifest = (
-        bundle_dir / "agent_prepare_manifest.json"
-    )
-
-    # 保存大模型规划会话的不可变副本。
-    shutil.copy2(
-        session_path,
-        session_copy,
-    )
-
-    if (
-        sha256_file(session_path)
-        != sha256_file(session_copy)
-    ):
-        raise AgentPreparationError(
-            "PlanningSession 复制后的 SHA256 不一致"
+    try:
+        session_copy = (
+            staging_dir / "planning_session.json"
+        )
+        project_config = (
+            staging_dir / "project.yaml"
+        )
+        project_provenance = (
+            staging_dir / "project.provenance.json"
+        )
+        workflow_dir = (
+            staging_dir / "workflow"
+        )
+        logs_dir = (
+            staging_dir / "logs"
+        )
+        stdout_log = (
+            logs_dir / "workflow_stdout.log"
+        )
+        stderr_log = (
+            logs_dir / "workflow_stderr.log"
+        )
+        prepare_manifest = (
+            staging_dir
+            / "agent_prepare_manifest.json"
         )
 
-    materialization = materialize_planning_session(
-        session_path=session_copy,
-        output_config=project_config,
-        provenance_file=project_provenance,
-        overwrite=False,
-    )
+        # 保存规划会话的不可变副本。
+        shutil.copy2(
+            session_path,
+            session_copy,
+        )
 
-    command = [
-        sys.executable,
-        "-m",
-        (
-            "protein_design_agent.workflows."
-            "backbone_ranking_workflow"
-        ),
-        "--config",
-        str(project_config),
-        "--run-dir",
-        str(workflow_dir),
-    ]
+        if (
+            sha256_file(session_path)
+            != sha256_file(session_copy)
+        ):
+            raise AgentPreparationError(
+                "PlanningSession 复制后的 SHA256 不一致",
+                public_message=(
+                    "PlanningSession 副本未通过"
+                    "完整性验证，准备任务已停止。"
+                ),
+            )
 
-    selected_runner = (
-        runner
-        if runner is not None
-        else default_workflow_runner
-    )
+        materialization = materialize_planning_session(
+            session_path=session_copy,
+            output_config=project_config,
+            provenance_file=project_provenance,
+            overwrite=False,
+        )
 
-    return_code = selected_runner(
-        command,
-        stdout_log,
-        stderr_log,
-    )
+        command = [
+            sys.executable,
+            "-m",
+            (
+                "protein_design_agent.workflows."
+                "backbone_ranking_workflow"
+            ),
+            "--config",
+            str(project_config),
+            "--run-dir",
+            str(workflow_dir),
+        ]
 
-    workflow_manifest = (
-        workflow_dir / "workflow_manifest.json"
-    )
+        selected_runner = (
+            runner
+            if runner is not None
+            else default_workflow_runner
+        )
 
-    if return_code != 0:
-        failure_record = {
+        return_code = selected_runner(
+            command,
+            stdout_log,
+            stderr_log,
+        )
+
+        workflow_manifest = (
+            workflow_dir
+            / "workflow_manifest.json"
+        )
+
+        if return_code != 0:
+            raise AgentPreparationError(
+                "骨架排名准备工作流执行失败，"
+                f"退出码={return_code}",
+                public_message=(
+                    "骨架排名准备工作流没有成功完成。"
+                ),
+            )
+
+        workflow_data = load_workflow_manifest(
+            workflow_manifest
+        )
+
+        workflow_status = workflow_data.get(
+            "status"
+        )
+
+        if workflow_status != "READY_FOR_REVIEW":
+            raise AgentPreparationError(
+                "工作流没有停在 READY_FOR_REVIEW；"
+                f"实际状态为 {workflow_status}",
+                public_message=(
+                    "准备工作流没有停在 "
+                    "READY_FOR_REVIEW，"
+                    "因此不能发布正式任务。"
+                ),
+            )
+
+        ranker_plan_path = (
+            workflow_dir
+            / "ranker"
+            / "ranker_execution_plan.json"
+        )
+
+        if not ranker_plan_path.exists():
+            raise AgentPreparationError(
+                "工作流没有生成 BinderRanker 计划："
+                f"{ranker_plan_path}",
+                public_message=(
+                    "准备工作流没有生成 "
+                    "BinderRanker 执行计划。"
+                ),
+            )
+
+        # 准备阶段绝不能产生真正的 Ranker 结果。
+        forbidden_ranker_outputs = [
+            (
+                workflow_dir
+                / "ranker"
+                / "backbone_rank_metrics.csv"
+            ),
+            (
+                workflow_dir
+                / "ranker"
+                / "backbone_rank_scored.csv"
+            ),
+            (
+                workflow_dir
+                / "ranker"
+                / "backbone_rank_ranking.xlsx"
+            ),
+            (
+                workflow_dir
+                / "ranker"
+                / "backbone_rank_report.txt"
+            ),
+        ]
+
+        unexpected_outputs = [
+            output
+            for output in forbidden_ranker_outputs
+            if output.exists()
+        ]
+
+        if unexpected_outputs:
+            formatted = "\n".join(
+                f"- {output}"
+                for output in unexpected_outputs
+            )
+
+            raise AgentPreparationError(
+                "准备阶段意外生成了 Ranker 结果，"
+                "说明执行边界被破坏：\n"
+                f"{formatted}",
+                public_message=(
+                    "准备阶段检测到实际 BinderRanker "
+                    "结果，执行边界可能被破坏，"
+                    "因此拒绝发布正式任务。"
+                ),
+            )
+
+        # 工作流实际在 staging 中运行，因此在正式发布前，
+        # 将可执行元数据里的 staging 绝对路径改成正式路径。
+        relocate_staged_metadata(
+            staging_dir=staging_dir,
+            bundle_dir=bundle_dir,
+        )
+
+        final_session_copy = (
+            bundle_dir / "planning_session.json"
+        )
+        final_project_config = (
+            bundle_dir / "project.yaml"
+        )
+        final_project_provenance = (
+            bundle_dir / "project.provenance.json"
+        )
+        final_workflow_dir = (
+            bundle_dir / "workflow"
+        )
+        final_workflow_manifest = (
+            final_workflow_dir
+            / "workflow_manifest.json"
+        )
+        final_ranker_plan = (
+            final_workflow_dir
+            / "ranker"
+            / "ranker_execution_plan.json"
+        )
+        final_stdout_log = (
+            bundle_dir
+            / "logs"
+            / "workflow_stdout.log"
+        )
+        final_stderr_log = (
+            bundle_dir
+            / "logs"
+            / "workflow_stderr.log"
+        )
+        final_prepare_manifest = (
+            bundle_dir
+            / "agent_prepare_manifest.json"
+        )
+
+        published_command = [
+            item.replace(
+                str(staging_dir),
+                str(bundle_dir),
+            )
+            for item in command
+        ]
+
+        manifest_content = {
             "schema_version": "0.1",
-            "status": "FAILED",
+            "status": "READY_FOR_REVIEW",
             "project_name": project.project_name,
             "provider_name": session.provider_name,
-            "command": command,
-            "return_code": return_code,
-            "stdout_log": str(stdout_log),
-            "stderr_log": str(stderr_log),
+            "bundle_directory": str(bundle_dir),
+            "source_session": str(session_path),
+            "session_copy": str(final_session_copy),
+            "session_sha256": sha256_file(
+                session_copy
+            ),
+            "project_config": str(
+                final_project_config
+            ),
+            "project_config_sha256": (
+                materialization.output_config_sha256
+            ),
+            "project_provenance": str(
+                final_project_provenance
+            ),
+            "workflow_directory": str(
+                final_workflow_dir
+            ),
+            "workflow_manifest": str(
+                final_workflow_manifest
+            ),
+            "workflow_status": workflow_status,
+            "ranker_plan": str(
+                final_ranker_plan
+            ),
+            "stdout_log": str(
+                final_stdout_log
+            ),
+            "stderr_log": str(
+                final_stderr_log
+            ),
+            "command": published_command,
+            "scientific_workflow_executed": False,
             "binderranker_executed": False,
             "remote_backend_used": False,
         }
 
         write_json(
             prepare_manifest,
-            failure_record,
+            manifest_content,
         )
 
-        raise AgentPreparationError(
-            "骨架排名准备工作流执行失败，"
-            f"退出码={return_code}；"
-            f"错误日志：{stderr_log}"
+        # 最后一步才发布正式 Bundle。
+        publish_staged_bundle(
+            staging_dir=staging_dir,
+            bundle_dir=bundle_dir,
         )
 
-    workflow_data = load_workflow_manifest(
-        workflow_manifest
-    )
-
-    workflow_status = workflow_data.get(
-        "status"
-    )
-
-    if workflow_status != "READY_FOR_REVIEW":
-        raise AgentPreparationError(
-            "工作流没有停在 READY_FOR_REVIEW；"
-            f"实际状态为 {workflow_status}"
+        return PreparedAgentRun(
+            project_name=project.project_name,
+            provider_name=session.provider_name,
+            bundle_directory=bundle_dir,
+            session_copy=final_session_copy,
+            project_config=final_project_config,
+            project_provenance=(
+                final_project_provenance
+            ),
+            workflow_directory=(
+                final_workflow_dir
+            ),
+            workflow_manifest=(
+                final_workflow_manifest
+            ),
+            stdout_log=final_stdout_log,
+            stderr_log=final_stderr_log,
+            prepare_manifest=(
+                final_prepare_manifest
+            ),
+            scientific_workflow_executed=False,
+            binderranker_executed=False,
+            remote_backend_used=False,
         )
 
-    ranker_plan_path = (
-        workflow_dir
-        / "ranker"
-        / "ranker_execution_plan.json"
-    )
+    except Exception as exc:
+        # 失败证据保存在正式 Bundle 外部。
+        # 审计写入本身若失败，不得掩盖原始准备异常。
+        try:
+            record_prepare_failure(
+                bundle_dir=bundle_dir,
+                session_path=session_path,
+                staging_dir=staging_dir,
+                project_name=project.project_name,
+                provider_name=session.provider_name,
+                error=exc,
+                return_code=return_code,
+                stdout_log=stdout_log,
+                stderr_log=stderr_log,
+            )
+        except Exception:
+            pass
 
-    if not ranker_plan_path.exists():
-        raise AgentPreparationError(
-            "工作流没有生成 BinderRanker 计划："
-            f"{ranker_plan_path}"
-        )
+        raise
 
-    # 这些结果文件只有真正执行 Ranker 后才应出现。
-    forbidden_ranker_outputs = [
-        workflow_dir
-        / "ranker"
-        / "backbone_rank_metrics.csv",
-        workflow_dir
-        / "ranker"
-        / "backbone_rank_scored.csv",
-        workflow_dir
-        / "ranker"
-        / "backbone_rank_ranking.xlsx",
-        workflow_dir
-        / "ranker"
-        / "backbone_rank_report.txt",
-    ]
-
-    unexpected_outputs = [
-        path
-        for path in forbidden_ranker_outputs
-        if path.exists()
-    ]
-
-    if unexpected_outputs:
-        formatted = "\n".join(
-            f"- {path}"
-            for path in unexpected_outputs
-        )
-
-        raise AgentPreparationError(
-            "准备阶段意外生成了 Ranker 结果，"
-            "说明执行边界被破坏：\n"
-            f"{formatted}"
-        )
-
-    manifest_content = {
-        "schema_version": "0.1",
-        "status": "READY_FOR_REVIEW",
-        "project_name": project.project_name,
-        "provider_name": session.provider_name,
-        "bundle_directory": str(bundle_dir),
-        "source_session": str(session_path),
-        "session_copy": str(session_copy),
-        "session_sha256": sha256_file(
-            session_copy
-        ),
-        "project_config": str(project_config),
-        "project_config_sha256": (
-            materialization.output_config_sha256
-        ),
-        "project_provenance": str(
-            project_provenance
-        ),
-        "workflow_directory": str(
-            workflow_dir
-        ),
-        "workflow_manifest": str(
-            workflow_manifest
-        ),
-        "workflow_status": workflow_status,
-        "ranker_plan": str(
-            ranker_plan_path
-        ),
-        "stdout_log": str(stdout_log),
-        "stderr_log": str(stderr_log),
-        "command": command,
-        "scientific_workflow_executed": False,
-        "binderranker_executed": False,
-        "remote_backend_used": False,
-    }
-
-    write_json(
-        prepare_manifest,
-        manifest_content,
-    )
-
-    return PreparedAgentRun(
-        project_name=project.project_name,
-        provider_name=session.provider_name,
-        bundle_directory=bundle_dir,
-        session_copy=session_copy,
-        project_config=project_config,
-        project_provenance=project_provenance,
-        workflow_directory=workflow_dir,
-        workflow_manifest=workflow_manifest,
-        stdout_log=stdout_log,
-        stderr_log=stderr_log,
-        prepare_manifest=prepare_manifest,
-        scientific_workflow_executed=False,
-        binderranker_executed=False,
-        remote_backend_used=False,
-    )
+    finally:
+        # 成功发布后 staging 已被 os.replace 移走；
+        # 任何失败则在这里清理全部半成品。
+        if staging_dir.exists():
+            shutil.rmtree(
+                staging_dir,
+                ignore_errors=True,
+            )
