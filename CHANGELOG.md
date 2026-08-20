@@ -5,7 +5,7 @@ All notable changes to BinderRanker are documented here.
 Historical entries preserve the project names, CLI commands, and terminology
 used by the corresponding release.
 
-## 0.3.0 - Unreleased
+## 0.3.0 - 2026-08-20
 
 BinderRanker v0.3.0 establishes BinderRanker as the public project identity and
 turns the ranking workflow into a release-ready, auditable software package.
