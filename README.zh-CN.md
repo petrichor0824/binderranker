@@ -353,19 +353,21 @@ BinderRanker 也不能替代：
 
 ## 架构
 
-    BinderRanker Agent
-          ↓
-    BinderRanker Tool API
-          ↓
-    BinderRanker Core
-          ↓
-    BinderRanker Engine
+    CLI / Python 直接使用 ────────┐
+    内置 Agent（可选）────────────┼──> BinderRanker Tool API
+    外部 Agent（可选）────────────┘              ↓
+                                         BinderRanker Core
+                                                   ↓
+                                         BinderRanker Engine
 
 - **BinderRanker Engine**：科学排序与分层筛选核心。
 - **BinderRanker Core**：确定性工作流、安全边界、provenance、
   结果解析和分析。
-- **BinderRanker Tool API**：CLI、Agent 和未来集成使用的受控接口。
+- **BinderRanker Tool API**：直接使用和外部集成共享的稳定受控接口。
 - **BinderRanker Agent**：可选的自然语言交互层。
+
+无论通过哪一种入口，底层使用的都是同一个 BinderRanker 科学能力。
+Agent 接口只改善可访问性与集成体验，不拥有也不重新定义科学行为。
 
 v0.3 期间内部 Python namespace 仍然保持：
 
@@ -408,7 +410,9 @@ BinderRanker 明确区分**工程验证**与**科学验证**。
 - [验证状态与边界](docs/VALIDATION.md)
 - [公开身份与科学表述边界](docs/PUBLIC_IDENTITY.md)
 - [v0.3 架构](docs/V0.3_ARCHITECTURE.md)
-- [v0.3 路线图](docs/V0.3_ROADMAP.md)
+- [架构演进与开发原则](docs/ARCHITECTURE_EVOLUTION.md)
+- [v0.3 之后的执行路线图](docs/POST_V0_3_EXECUTION_ROADMAP.md)
+- [历史 v0.3 路线图](docs/V0.3_ROADMAP.md)
 - [改进 backlog](docs/IMPROVEMENT_BACKLOG.md)
 
 历史 v0.2 规划文档继续保留，用于追踪项目演进过程。
@@ -417,14 +421,15 @@ BinderRanker 明确区分**工程验证**与**科学验证**。
 
 ## 路线图（Roadmap）
 
-v0.3 开发线重点是让 BinderRanker 的候选排序与筛选工作流变得：
-
-- 可复现；
-- 可移植；
-- 可审核；
-- 适合公开分发。
+后续开发依次优先考虑科学排序与筛选能力、可复现性与验证、稳定
+Tool/API 接口，最后才是可选的外部 Agent 生态兼容。Agent 框架扩张
+不是独立产品目标。
 
 当前路线图：
+
+[`docs/POST_V0_3_EXECUTION_ROADMAP.md`](docs/POST_V0_3_EXECUTION_ROADMAP.md)
+
+历史 v0.3 执行记录：
 
 [`docs/V0.3_ROADMAP.md`](docs/V0.3_ROADMAP.md)
 

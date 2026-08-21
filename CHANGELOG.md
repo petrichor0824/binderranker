@@ -7,6 +7,12 @@ used by the corresponding release.
 
 ## Unreleased
 
+### Changed
+
+- Aligned active architecture and roadmap documentation around BinderRanker as
+  a scientific ranking and screening capability; Agent interfaces are now
+  consistently documented as optional access and integration layers.
+
 ## 0.3.1 - 2026-08-21
 
 BinderRanker v0.3.1 is a stabilization release that strengthens scientific
