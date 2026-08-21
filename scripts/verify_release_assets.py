@@ -24,10 +24,10 @@ EXPECTED_LICENSE = "Apache-2.0"
 EXPECTED_REQUIRES_PYTHON = ">=3.10"
 
 CANONICAL_ENTRY_POINT = (
-    "protein_design_agent.cli:app"
+    "protein_design_agent.cli:main"
 )
 LEGACY_ENTRY_POINT = (
-    "protein_design_agent.cli:app"
+    "protein_design_agent.cli:main"
 )
 
 RANKER_SUFFIX = (
