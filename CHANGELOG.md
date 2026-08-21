@@ -9,6 +9,8 @@ used by the corresponding release.
 
 ### Added
 
+- A shared scientific-result validator for candidate identity, required output
+  schema, finite scores, and rank/score consistency.
 - State-aware first-workflow guidance for empty Chat tasks, including explicit
   automatic-workspace initialization status, real-data intake, and the
   packaged engineering smoke path.
@@ -22,6 +24,11 @@ used by the corresponding release.
 
 ### Changed
 
+- Local execution now distinguishes a zero process exit code from scientific
+  success and records semantic validation evidence before `COMPLETED`.
+- Installed-Wheel smoke verification now normalizes the packaged concatenated
+  sample and requires five scientifically valid candidates instead of only
+  checking that output files exist.
 - Public CLI and Chat error/status views now present plain-language progress
   while keeping internal state-machine values in deterministic records and
   model context.
@@ -33,6 +40,9 @@ used by the corresponding release.
 
 ### Fixed
 
+- Result parsing and downstream analysis reject `NaN`, positive infinity,
+  negative infinity, malformed rankings, and candidate-level computation
+  failures rather than silently accepting them as successful output.
 - Published Bundle metadata now relocates JSON-escaped Windows staging paths
   as well as native and POSIX path forms.
 - Generated workspace guidance now includes secure instructions for both

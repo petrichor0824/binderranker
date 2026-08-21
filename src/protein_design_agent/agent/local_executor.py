@@ -43,6 +43,10 @@ from protein_design_agent.agent.execution_guard import (
     load_approval_record,
     verify_approval_for_local_execution,
 )
+from protein_design_agent.agent.scientific_result_validation import (
+    ScientificResultValidationError,
+    validate_scientific_result,
+)
 from protein_design_agent.agent.user_errors import (
     UserFacingError,
 )
@@ -568,6 +572,44 @@ def execute_approved_binderranker(
             ),
         )
 
+    try:
+        scientific_validation = (
+            validate_scientific_result(
+                tuple(verified.expected_outputs)
+            )
+        )
+    except ScientificResultValidationError as exc:
+        failed = failure_manifest(
+            running=running_record,
+            error_type=(
+                "ScientificResultValidationError"
+            ),
+            error_message=str(exc),
+            return_code=return_code,
+        )
+
+        replace_json_atomically(
+            verified.execution_manifest,
+            failed,
+        )
+
+        raise LocalExecutionError(
+            "BinderRanker 进程成功结束，"
+            "但结果未通过科学语义验证："
+            f"{exc}；"
+            f"执行记录："
+            f"{verified.execution_manifest}",
+            execution_manifest=(
+                verified.execution_manifest
+            ),
+            public_message=(
+                "BinderRanker 进程已经结束，"
+                "但结果未通过科学有效性检查；"
+                "本次任务已标为失败，"
+                "且该批准不能直接重试。"
+            ),
+        ) from exc
+
     output_fingerprints = [
         fingerprint_file(path)
         for path in verified.expected_outputs
@@ -590,6 +632,11 @@ def execute_approved_binderranker(
                     output_fingerprints
                 )
             ],
+            "scientific_validation": (
+                scientific_validation.model_dump(
+                    mode="json"
+                )
+            ),
             "binderranker_executed": True,
             "approval_reusable": False,
         }

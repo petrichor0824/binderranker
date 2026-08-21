@@ -8,6 +8,16 @@
 - 本文件不自动扩大当前 Release Scope。
 - 是否进入具体版本，以对应 Roadmap 为准。
 
+## Completed — v0.3.1 Scientific Result Stabilization
+
+### Shared scientific-success semantics
+
+- 原问题：冻结 Ranker 会将候选级异常写入结果行并正常结束进程；执行层和已安装 Wheel 冒烟测试此前主要依赖退出码及文件存在性，可能把“0 个有效候选”误判为成功。
+- 已完成：新增共享结果验证层，统一验证四类输出、候选标识、候选级错误、必需字段、有限数值、连续唯一排名及分数降序关系。
+- 已接入：本地执行完成门、结果解析/分析入口、已安装 Wheel 冒烟验证。
+- 兼容性：冻结 BinderRanker 算法和 Tool API 未修改；仅收紧无效科学结果的成功语义。
+- 完成版本：v0.3.1 stabilization。
+
 ## P1 — v0.4 候选
 
 ### Tool API adoption and runtime integration

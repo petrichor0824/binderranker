@@ -241,6 +241,28 @@ Filter thresholds:
     return bundle
 
 
+def refresh_output_fingerprints(
+    bundle: Path,
+) -> None:
+    execution_path = next(
+        bundle.glob("execution_apr_*.json")
+    )
+    execution = json.loads(
+        execution_path.read_text(
+            encoding="utf-8"
+        )
+    )
+    execution["output_files"] = [
+        fingerprint_file(Path(item["path"]))
+        .model_dump(mode="json")
+        for item in execution["output_files"]
+    ]
+    execution_path.write_text(
+        json.dumps(execution, indent=2),
+        encoding="utf-8",
+    )
+
+
 def test_smoke_test_results_are_suppressed(
     tmp_path: Path,
 ) -> None:
@@ -402,3 +424,51 @@ def test_summary_file_is_protected(
         write_ranker_result_summary(
             bundle_dir=bundle
         )
+
+
+@pytest.mark.parametrize(
+    "non_finite",
+    ["NaN", "Inf", "-Inf"],
+)
+def test_parser_rejects_non_finite_scores(
+    tmp_path: Path,
+    non_finite: str,
+) -> None:
+    bundle = build_bundle(tmp_path)
+    scored = (
+        bundle
+        / "workflow"
+        / "ranker"
+        / "backbone_rank_scored.csv"
+    )
+
+    with scored.open(
+        "r",
+        encoding="utf-8",
+        newline="",
+    ) as handle:
+        reader = csv.DictReader(handle)
+        headers = list(reader.fieldnames or [])
+        rows = list(reader)
+
+    rows[0]["score_safety"] = non_finite
+
+    with scored.open(
+        "w",
+        encoding="utf-8",
+        newline="",
+    ) as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=headers,
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+
+    refresh_output_fingerprints(bundle)
+
+    with pytest.raises(
+        RankerResultParseError,
+        match="必须是有限数值",
+    ):
+        parse_completed_ranker_run(bundle)

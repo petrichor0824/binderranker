@@ -1,3 +1,4 @@
+import csv
 import hashlib
 import json
 import sys
@@ -15,6 +16,10 @@ from protein_design_agent.agent.execution_guard import (
 from protein_design_agent.agent.local_executor import (
     LocalExecutionError,
     execute_approved_binderranker,
+)
+from protein_design_agent.agent.scientific_result_validation import (
+    REQUIRED_FINITE_SCORE_COLUMNS,
+    REQUIRED_SCORED_COLUMNS,
 )
 from protein_design_agent.tools.run_binderranker import (
     expected_output_files,
@@ -233,17 +238,63 @@ def fake_success_runner(
         )
     )
 
-    for output in expected_output_files(
-        output_prefix
-    ):
+    for output in expected_output_files(output_prefix):
         output.parent.mkdir(
             parents=True,
             exist_ok=True,
         )
-        output.write_text(
-            "non-empty test output\n",
-            encoding="utf-8",
-        )
+
+        if output.name.endswith("_metrics.csv"):
+            output.write_text(
+                "pdb_name\ncandidate_1\n",
+                encoding="utf-8",
+            )
+        elif output.name.endswith("_scored.csv"):
+            row = {
+                column: ""
+                for column in REQUIRED_SCORED_COLUMNS
+            }
+            row.update(
+                {
+                    column: "0.5"
+                    for column in (
+                        REQUIRED_FINITE_SCORE_COLUMNS
+                    )
+                }
+            )
+            row.update(
+                {
+                    "pdb_name": "candidate_1",
+                    "filter_level": "BROAD",
+                    "filter_broad_pass": "YES",
+                    "filter_medium_pass": "NO",
+                    "filter_strict_pass": "NO",
+                    "rank_final_score_v4": "1",
+                    "clash_pairs": "0",
+                    "error": "",
+                }
+            )
+
+            with output.open(
+                "w",
+                encoding="utf-8",
+                newline="",
+            ) as handle:
+                writer = csv.DictWriter(
+                    handle,
+                    fieldnames=sorted(
+                        REQUIRED_SCORED_COLUMNS
+                    ),
+                )
+                writer.writeheader()
+                writer.writerow(row)
+        elif output.name.endswith("_ranking.xlsx"):
+            output.write_bytes(b"synthetic workbook")
+        else:
+            output.write_text(
+                "synthetic report\n",
+                encoding="utf-8",
+            )
 
     return 0
 
@@ -294,6 +345,16 @@ def test_successful_local_execution(
     assert manifest["status"] == "COMPLETED"
     assert manifest["return_code"] == 0
     assert len(manifest["output_files"]) == 4
+    assert (
+        manifest["scientific_validation"]
+        ["scientifically_valid"]
+        is True
+    )
+    assert (
+        manifest["scientific_validation"]
+        ["valid_candidate_count"]
+        == 1
+    )
     assert manifest["approval_reusable"] is False
 
     # 同一批准不能执行第二次。
@@ -396,4 +457,83 @@ def test_missing_outputs_are_recorded_as_failed(
     assert len(
         manifest["missing_outputs"]
     ) == 4
+    assert manifest["approval_reusable"] is False
+
+
+def test_zero_valid_candidates_are_recorded_as_failed(
+    tmp_path: Path,
+) -> None:
+    approval = build_approved_bundle(
+        tmp_path
+    )
+
+    def zero_valid_runner(
+        command: list[str],
+        stdout_log: Path,
+        stderr_log: Path,
+        working_directory: Path,
+    ) -> int:
+        result = fake_success_runner(
+            command,
+            stdout_log,
+            stderr_log,
+            working_directory,
+        )
+        output_prefix = output_prefix_from_command(
+            command
+        )
+        scored = Path(
+            f"{output_prefix}_scored.csv"
+        )
+
+        with scored.open(
+            "r",
+            encoding="utf-8",
+            newline="",
+        ) as handle:
+            reader = csv.DictReader(handle)
+            headers = list(reader.fieldnames or [])
+            rows = list(reader)
+
+        rows[0]["error"] = (
+            "No binder residues found for binder_chain=B"
+        )
+
+        with scored.open(
+            "w",
+            encoding="utf-8",
+            newline="",
+        ) as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=headers,
+            )
+            writer.writeheader()
+            writer.writerows(rows)
+
+        return result
+
+    with pytest.raises(
+        LocalExecutionError,
+        match="没有有效候选",
+    ) as captured:
+        execute_approved_binderranker(
+            approval_path=approval,
+            confirm_execute=True,
+            runner=zero_valid_runner,
+        )
+
+    manifest = json.loads(
+        captured.value.execution_manifest.read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert manifest["status"] == "FAILED"
+    assert manifest["return_code"] == 0
+    assert (
+        manifest["error_type"]
+        == "ScientificResultValidationError"
+    )
+    assert "没有有效候选" in manifest["error_message"]
     assert manifest["approval_reusable"] is False

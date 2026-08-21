@@ -10,6 +10,7 @@ from protein_design_agent.tools.run_binderranker import (
     region_settings,
     resolve_ranker,
     sha256_file,
+    validate_ranker_input,
 )
 
 
@@ -113,3 +114,30 @@ def test_diagnostic_region_policy_preserves_original_score() -> None:
     # 冻结 Ranker 中 score_mode=off 表示主分使用原始评分。
     assert settings["region_score_mode"] == "off"
     assert settings["region_filter"] == "off"
+
+
+def test_missing_binder_chain_fails_fast(
+    tmp_path: Path,
+) -> None:
+    input_dir = tmp_path / "normalized"
+    input_dir.mkdir()
+    (input_dir / "candidate_1.pdb").write_text(
+        (
+            "ATOM      1  CA  ALA A   1"
+            "       0.000   0.000   0.000"
+            "  1.00 20.00           C\n"
+            "END\n"
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="binder_chain_missing",
+    ):
+        validate_ranker_input(
+            input_dir,
+            binder_chain="B",
+            recursive=False,
+            max_files=None,
+        )

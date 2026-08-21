@@ -6,6 +6,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import protein_design_agent
@@ -13,22 +14,71 @@ import protein_design_agent
 from protein_design_agent.agent.sample_resources import (
     extract_packaged_sample,
 )
+from protein_design_agent.agent.scientific_result_validation import (
+    validate_scientific_result,
+)
+from protein_design_agent.schemas.project_config import (
+    ProjectConfig,
+)
+from protein_design_agent.tools.normalize_pdb_dataset import (
+    normalize_one_pdb,
+)
 from protein_design_agent.tools.run_binderranker import (
+    expected_output_files,
     resolve_ranker,
+    validate_ranker_input,
 )
 
 
-root = Path("/tmp/pda-wheel-smoke")
+root = (
+    Path(tempfile.gettempdir())
+    / "pda-wheel-smoke"
+)
 shutil.rmtree(root, ignore_errors=True)
 
 input_dir = root / "input"
+normalized_dir = root / "normalized"
 results_dir = root / "results"
+normalized_dir.mkdir(parents=True)
 results_dir.mkdir(parents=True)
 
 sample = extract_packaged_sample(
     destination=input_dir
 )
 assert len(sample.pdb_files) == 5
+
+project = ProjectConfig.model_validate(
+    {
+        "project_name": "wheel_smoke",
+        "input": {
+            "pdb_dir": str(input_dir),
+            "layout": "concatenated_single_chain",
+            "source_chain": "A",
+            "target_residue_count": 132,
+            "target_start_residue": 4,
+            "normalized_target_chain": "A",
+            "normalized_binder_chain": "B",
+        },
+        "ranking": {
+            "region_policy": "off",
+            "region_filter": "off",
+        },
+    }
+)
+
+for source in sample.pdb_files:
+    normalize_one_pdb(
+        source,
+        normalized_dir / source.name,
+        project,
+    )
+
+validate_ranker_input(
+    normalized_dir,
+    binder_chain="B",
+    recursive=False,
+    max_files=None,
+)
 
 ranker, _digest = resolve_ranker(
     "v0.1-expert"
@@ -40,7 +90,7 @@ completed = subprocess.run(
         sys.executable,
         str(ranker),
         "--input_dir",
-        str(input_dir),
+        str(normalized_dir),
         "--output_prefix",
         str(output_prefix),
         "--binder_chain",
@@ -61,15 +111,10 @@ if completed.returncode != 0:
     print(completed.stderr, file=sys.stderr)
     raise SystemExit(completed.returncode)
 
-for suffix in (
-    "metrics.csv",
-    "scored.csv",
-    "ranking.xlsx",
-    "report.txt",
-):
-    output = Path(f"{output_prefix}_{suffix}")
-    assert output.is_file(), output
-    assert output.stat().st_size > 0
+validation = validate_scientific_result(
+    tuple(expected_output_files(output_prefix)),
+    expected_candidate_count=len(sample.pdb_files),
+)
 
 package_path = Path(
     protein_design_agent.__file__
@@ -87,5 +132,7 @@ assert package_path.is_relative_to(environment_root), (
 
 print(
     "PASS: installed Wheel extracted five PDBs "
-    "and completed BinderRanker outside repository"
+    "and produced a scientifically valid BinderRanker "
+    f"result outside repository "
+    f"({validation.valid_candidate_count} valid candidates)"
 )

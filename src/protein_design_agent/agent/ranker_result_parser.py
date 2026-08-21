@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import re
 from collections import Counter
 from pathlib import Path
@@ -37,6 +38,13 @@ from protein_design_agent.agent.approval import (
 from protein_design_agent.agent.result_policy import (
     PoolReportingView,
     build_pool_reporting_view,
+)
+from protein_design_agent.agent.scientific_result_validation import (
+    COMPONENT_SCORE_COLUMNS,
+    KEY_METRIC_COLUMNS,
+    REQUIRED_SCORED_COLUMNS,
+    ScientificResultValidationError,
+    validate_scientific_result,
 )
 
 
@@ -128,67 +136,6 @@ THRESHOLD_RE = re.compile(
 )
 
 
-REQUIRED_SCORED_COLUMNS = {
-    "pdb_name",
-    "filter_level",
-    "filter_broad_pass",
-    "filter_broad_reasons",
-    "filter_medium_pass",
-    "filter_medium_reasons",
-    "filter_strict_pass",
-    "filter_strict_reasons",
-    "final_score_v4",
-    "rank_final_score_v4",
-    "morphology_adaptive_score",
-    "score_line",
-    "score_plane",
-    "score_compact",
-    "score_roughness",
-    "score_microfit",
-    "score_safety",
-    "score_region",
-    "score_hotspot",
-    "effective_weight_sum",
-    "target_effective_coverage",
-    "target_contact_span_norm",
-    "backfacing_cb_far_weight_ratio",
-    "cb_closer_weight_ratio",
-    "binder_field_active_roughness",
-    "contact_map_continuity_score",
-    "contact_map_jump_fraction",
-    "shell_sensitivity_12_vs_8",
-    "clash_pairs",
-    "error",
-}
-
-
-COMPONENT_SCORE_COLUMNS = (
-    "morphology_adaptive_score",
-    "score_line",
-    "score_plane",
-    "score_compact",
-    "score_roughness",
-    "score_microfit",
-    "score_safety",
-    "score_region",
-    "score_hotspot",
-)
-
-
-KEY_METRIC_COLUMNS = (
-    "effective_weight_sum",
-    "target_effective_coverage",
-    "target_contact_span_norm",
-    "backfacing_cb_far_weight_ratio",
-    "cb_closer_weight_ratio",
-    "binder_field_active_roughness",
-    "contact_map_continuity_score",
-    "contact_map_jump_fraction",
-    "shell_sensitivity_12_vs_8",
-    "clash_pairs",
-)
-
-
 def load_json_object(
     path: Path,
     *,
@@ -227,12 +174,20 @@ def parse_float(
     raw = row.get(column, "")
 
     try:
-        return float(raw)
+        value = float(raw)
     except (TypeError, ValueError) as exc:
         raise RankerResultParseError(
             f"候选 {pdb_name} 的 {column} "
             f"不是有效数值：{raw!r}"
         ) from exc
+
+    if not math.isfinite(value):
+        raise RankerResultParseError(
+            f"候选 {pdb_name} 的 {column} "
+            f"必须是有限数值，实际为 {raw!r}"
+        )
+
+    return value
 
 
 def parse_int(
@@ -245,14 +200,23 @@ def parse_int(
     raw = row.get(column, "")
 
     try:
-        value = int(float(raw))
+        numeric = float(raw)
     except (TypeError, ValueError) as exc:
         raise RankerResultParseError(
             f"候选 {pdb_name} 的 {column} "
             f"不是有效整数：{raw!r}"
         ) from exc
 
-    return value
+    if (
+        not math.isfinite(numeric)
+        or not numeric.is_integer()
+    ):
+        raise RankerResultParseError(
+            f"候选 {pdb_name} 的 {column} "
+            f"不是有效整数：{raw!r}"
+        )
+
+    return int(numeric)
 
 
 def parse_yes_no(
@@ -442,6 +406,15 @@ def parse_filter_thresholds(
             threshold_match.group(4)
         )
 
+        if not (
+            math.isfinite(value)
+            and math.isfinite(quantile)
+        ):
+            raise RankerResultParseError(
+                "报告中的过滤阈值必须是有限数值："
+                f"{current_pool}.{metric}"
+            )
+
         if metric in result[current_pool]:
             raise RankerResultParseError(
                 f"报告中重复出现阈值："
@@ -616,12 +589,18 @@ def parse_completed_ranker_run(
             "analysis_scope.pdb_count 无效"
         )
 
-    if len(rows) != expected_count:
-        raise RankerResultParseError(
-            "scored CSV 候选数量与工作流不一致："
-            f"CSV={len(rows)}，"
-            f"工作流={expected_count}"
+    try:
+        validate_scientific_result(
+            tuple(source_files.values()),
+            expected_candidate_count=(
+                expected_count
+            ),
         )
+    except ScientificResultValidationError as exc:
+        raise RankerResultParseError(
+            "BinderRanker 原始结果未通过科学语义验证："
+            f"{exc}"
+        ) from exc
 
     names = [
         str(row["pdb_name"]).strip()
