@@ -65,6 +65,11 @@ from protein_design_agent.agent.run_status import (
     RunStatusReport,
     inspect_run_status,
 )
+from protein_design_agent.agent.user_language import (
+    lifecycle_state_label,
+    pending_action_label,
+    user_status,
+)
 
 
 DialogueIntent = Literal[
@@ -200,7 +205,10 @@ EXACT_INTENTS: dict[str, DialogueIntent] = {
 
     "确认": "CONFIRM",
     "确认继续": "CONFIRM",
+    "确认，继续": "CONFIRM",
     "好的，确认": "CONFIRM",
+    "继续": "CONFIRM",
+    "同意继续": "CONFIRM",
 
     "取消": "CANCEL",
     "算了": "CANCEL",
@@ -234,6 +242,34 @@ def utc_now() -> str:
     return datetime.now(
         timezone.utc
     ).isoformat()
+
+
+def confirmation_prompt(
+    action: PendingActionName,
+) -> str:
+    """为所有待确认动作生成一致、简短的提示。"""
+    label = pending_action_label(action)
+
+    return (
+        f"回复“确认”，继续{label}；"
+        "回复“取消”，放弃本次操作。"
+    )
+
+
+def pending_confirmation_reminder(
+    pending: PendingChatAction,
+) -> str:
+    """在回答插入问题后简短提醒，不重复整段提案。"""
+    label = pending_action_label(
+        pending.action
+    )
+
+    return (
+        f"\n\n待确认仍保留：{label}。\n"
+        + confirmation_prompt(
+            pending.action
+        )
+    )
 
 
 def pending_action_path(
@@ -1435,9 +1471,11 @@ def format_dataset_advice(
                 ),
                 (
                     "假如你确认这些单链结构确实同时包含 "
-                    "target 和 binder，请回答“确认”。"
+                    "target 和 binder，可以采用这项建议。"
                 ),
-                "回答“取消”则不修改任何规划参数。",
+                confirmation_prompt(
+                    "ADOPT_DATASET_ADVICE"
+                ),
             ]
         )
 
@@ -1608,7 +1646,10 @@ def inspect_dataset_and_propose_adoption(
                 preview
                 + "\n\n确认后只会创建相互隔离的任务 "
                 "Bundle，不会批准或执行。"
-                "\n请回答“确认”或“取消”。"
+                "\n"
+                + confirmation_prompt(
+                    "CREATE_DATASET_GROUP_TASKS"
+                )
             ),
             bundle_dir=bundle,
             artifact_paths={
@@ -1853,11 +1894,16 @@ def proposal_summary(
         else None
     )
 
+    label = pending_action_label(action)
+
     if action == "APPROVE":
         lines = [
-            f"你正在请求批准项目：{project}",
-            "批准会冻结配置、数据集指纹和 Ranker 哈希。",
-            "批准本身不会运行 BinderRanker。",
+            f"待确认：{label}",
+            f"项目：{project}",
+            (
+                "影响：冻结配置、数据集指纹和 Ranker 哈希；"
+                "不会运行 BinderRanker。"
+            ),
         ]
 
         if scope == "SMOKE_TEST_ONLY":
@@ -1868,30 +1914,38 @@ def proposal_summary(
 
     elif action == "EXECUTE":
         lines = [
-            f"你正在请求执行项目：{project}",
-            "执行会运行 BinderRanker，"
-            "并永久消耗当前一次性批准。",
+            f"待确认：{label}",
+            f"项目：{project}",
+            (
+                "影响：运行 BinderRanker，"
+                "并消耗当前一次性批准。"
+            ),
         ]
 
     elif action == "ANALYZE":
         lines = [
-            f"你正在请求分析项目：{project}",
-            "这会生成新的确定性结果摘要和失败分析，"
-            "不会调用大模型。",
+            f"待确认：{label}",
+            f"项目：{project}",
+            (
+                "影响：生成新的确定性结果摘要和失败分析；"
+                "不会调用大模型。"
+            ),
         ]
 
     else:
         lines = [
-            f"你正在请求分析并解释项目：{project}",
-            "这会生成确定性分析，"
-            "并调用已配置的大模型生成解释报告。",
+            f"待确认：{label}",
+            f"项目：{project}",
+            (
+                "影响：读取确定性分析结果，"
+                "并调用已配置的大模型生成解释报告。"
+            ),
         ]
 
     lines.extend(
         [
             "",
-            "请回答“确认”继续，"
-            "或回答“取消”放弃。"
+            confirmation_prompt(action),
         ]
     )
 
@@ -1928,12 +1982,13 @@ def create_task_recovery_proposal(
             )
 
         summary = (
-            "你正在请求重新开始当前任务。\n"
-            f"当前生命周期状态：{lifecycle.state.value}\n"
+            "待确认：重新开始当前任务\n"
+            "当前内容："
+            f"{lifecycle_state_label(lifecycle.state.value)}\n"
             "确认后会清除当前 Bundle 中可安全重置的"
             "不完整任务状态，并重新建立同名空 Bundle。\n"
             "Bundle 外部的失败审计记录不会被删除。\n\n"
-            "请回答“确认”继续，或回答“取消”放弃。"
+            + confirmation_prompt("RESET_TASK")
         )
 
     elif action == "ARCHIVE_TASK":
@@ -1946,13 +2001,14 @@ def create_task_recovery_proposal(
             )
 
         summary = (
-            "你正在请求归档当前任务并重新开始。\n"
-            f"当前生命周期状态：{lifecycle.state.value}\n"
+            "待确认：归档当前任务并重新开始\n"
+            "当前内容："
+            f"{lifecycle_state_label(lifecycle.state.value)}\n"
             "确认后会把当前 Bundle 完整移动到工作区"
             " archives，并重新建立同名空 Bundle。\n"
             "该操作不会运行 BinderRanker，"
             "也不会修改已有科研结果。\n\n"
-            "请回答“确认”继续，或回答“取消”放弃。"
+            + confirmation_prompt("ARCHIVE_TASK")
         )
 
     else:
@@ -1996,8 +2052,8 @@ def create_action_proposal(
                 "当前任务尚未达到 READY_FOR_REVIEW，"
                 "不能批准。",
                 public_message=(
-                    "当前任务尚未达到 READY_FOR_REVIEW，"
-                    "不能批准。"
+                    "当前任务计划尚未准备完整，"
+                    "暂时不能批准。请先补齐信息并审核计划。"
                 ),
             )
 
@@ -2138,10 +2194,12 @@ def confirm_pending_action(
                     action="RESET_TASK",
                     status="RESET",
                     message=(
-                        "已收到确认。\n\n"
                         "当前任务已安全重置。\n"
-                        "原生命周期状态："
-                        f"{recovered.previous_state}\n"
+                        "原任务内容："
+                        + lifecycle_state_label(
+                            recovered.previous_state
+                        )
+                        + "\n"
                         "现在可以开始新的骨架排名任务。"
                     ),
                     bundle_dir=(
@@ -2157,11 +2215,13 @@ def confirm_pending_action(
                 action="ARCHIVE_TASK",
                 status="ARCHIVED",
                 message=(
-                    "已收到确认。\n\n"
                     "当前任务已安全归档，"
                     "并重新建立同名空 Bundle。\n"
-                    "原生命周期状态："
-                    f"{archived.previous_state}\n"
+                    "原任务内容："
+                    + lifecycle_state_label(
+                        archived.previous_state
+                    )
+                    + "\n"
                     "归档位置："
                     f"{archived.archive_dir}"
                 ),
@@ -2251,7 +2311,8 @@ def confirm_pending_action(
             message = (
                 "已采用经过文件验证且由你确认的建议。\n\n"
                 "必要信息已经补齐，"
-                "任务现已达到 READY_FOR_REVIEW。"
+                "任务计划已经准备完成，"
+                "可以审核后申请批准。"
             )
 
         return ChatTurnResult(
@@ -2320,14 +2381,7 @@ def confirm_pending_action(
         bundle_dir
     )
 
-    return result.model_copy(
-        update={
-            "message": (
-                "已收到确认。\n\n"
-                + result.message
-            )
-        }
-    )
+    return result
 
 
 def stage_guidance(
@@ -2371,14 +2425,24 @@ def stage_guidance(
         "EXPLAINED",
     }:
         return (
-            f"当前任务已经达到 {current_stage} 阶段。"
+            "当前进度："
+            + user_status(
+                current_stage,
+                area="stage",
+            )
+            + "。"
             "你可以查看状态、阅读结果，"
             "或提出新的分析请求。"
         )
 
     if report is not None:
         return (
-            f"当前任务阶段为 {report.current_stage}。"
+            "当前进度："
+            + user_status(
+                report.current_stage,
+                area="stage",
+            )
+            + "。"
             "请先查看状态，再决定下一步。"
         )
 
@@ -2527,8 +2591,10 @@ def process_dialogue_message(
             action="HELP",
             status="CANCELLED",
             message=(
-                f"已取消待确认动作："
-                f"{pending.action}"
+                "已取消："
+                + pending_action_label(
+                    pending.action
+                )
             ),
             bundle_dir=bundle_dir.resolve(),
         )
@@ -2564,17 +2630,19 @@ def process_dialogue_message(
                 update={
                     "message": (
                         "已收到你的补充或纠正。"
-                        f"原待确认动作 {old_action} 已取消，"
+                        "原待确认的“"
+                        + pending_action_label(
+                            old_action
+                        )
+                        + "”已取消，"
                         "任务已经按新信息重新处理。\n\n"
                         + updated.message
                     )
                 }
             )
 
-        pending_reminder = (
-            "\n\n当前待确认动作仍然保留。"
-            "了解清楚后，你可以回答“确认”继续，"
-            "或回答“取消”放弃。"
+        pending_reminder = pending_confirmation_reminder(
+            pending
         )
 
         if intent == "GENERAL_QUESTION":
@@ -2728,9 +2796,8 @@ def process_dialogue_message(
             action="HELP",
             status="AWAITING_CONFIRMATION",
             message=(
-                pending.summary
-                + "\n\n当前已有一个动作等待确认，"
-                "暂时不会开始其他操作。"
+                "当前操作暂未开始；"
+                "一次只处理一个待确认请求。"
                 + pending_reminder
             ),
             bundle_dir=bundle_dir.resolve(),

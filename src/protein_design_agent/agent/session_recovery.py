@@ -20,21 +20,14 @@ from protein_design_agent.agent.run_status import (
     RunStatusReport,
     inspect_run_status,
 )
+from protein_design_agent.agent.user_language import (
+    pending_action_label,
+    user_scope,
+    user_status,
+)
 from protein_design_agent.schemas.planning_session import (
     PlanningSession,
 )
-
-
-PENDING_ACTION_LABELS = {
-    "APPROVE": "批准计划",
-    "EXECUTE": "执行 BinderRanker",
-    "ANALYZE": "分析结果",
-    "EXPLAIN": "生成模型解释",
-    "ADOPT_DATASET_ADVICE": "采用数据集检查建议",
-    "CREATE_DATASET_GROUP_TASKS": "创建分组任务",
-    "RESET_TASK": "重置当前任务",
-    "ARCHIVE_TASK": "归档当前任务",
-}
 
 
 MISSING_INFORMATION_LABELS = {
@@ -139,20 +132,9 @@ def format_stage_summary(
     if report is None:
         return "现有任务阶段无法可靠读取"
 
-    labels = {
-        "EMPTY": "尚未形成可执行计划",
-        "PREPARED": "计划已准备，等待审查和批准",
-        "APPROVED": "计划已批准，尚未执行",
-        "RUNNING": "BinderRanker 正在执行",
-        "EXECUTION_FAILED": "上次执行没有成功完成",
-        "EXECUTED": "BinderRanker 已执行，等待结果分析",
-        "ANALYZED": "确定性结果分析已完成",
-        "EXPLAINED": "结果分析和模型解释已完成",
-    }
-
-    return labels.get(
+    return user_status(
         report.current_stage,
-        "任务已存在，当前进度未知",
+        area="stage",
     )
 
 
@@ -398,7 +380,9 @@ def format_task_recovery_summary(
         if report.analysis_scope_level:
             lines.append(
                 "• 分析范围："
-                f"{report.analysis_scope_level}"
+                + user_scope(
+                    report.analysis_scope_level
+                )
             )
 
         if report.candidate_count is not None:
@@ -418,9 +402,8 @@ def format_task_recovery_summary(
     pending = snapshot.pending_action
 
     if pending is not None:
-        label = PENDING_ACTION_LABELS.get(
-            pending.action,
-            pending.action,
+        label = pending_action_label(
+            pending.action
         )
         suffix = (
             "仍有效"

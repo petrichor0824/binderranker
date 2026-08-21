@@ -17,6 +17,19 @@ used by the corresponding release.
 - Windows / Python 3.12 CI coverage for the full regression suite and Doctor.
 - Read-only Chat startup recovery summaries reconstructed from deterministic
   Bundle state, explicit planning provenance, and pending confirmations.
+- A deterministic user-language layer for task stages, component statuses,
+  analysis scopes, pending actions, and task lifecycle states.
+
+### Changed
+
+- Public CLI and Chat error/status views now present plain-language progress
+  while keeping internal state-machine values in deterministic records and
+  model context.
+- Error fallbacks use the recorded task stage to recommend one safe next step.
+- Confirmation prompts now use one compact format, accept explicit “继续”
+  language, and avoid repeating the full proposal after status or help queries.
+- Approval and execution remain separate confirmations; deterministic result
+  analysis remains read-only and does not gain an extra confirmation step.
 
 ### Fixed
 
@@ -26,6 +39,8 @@ used by the corresponding release.
   Windows and POSIX users.
 - CLI help payload examples and analysis-manifest tests are portable across
   Windows and POSIX path semantics.
+- Public error facts preserve their business meaning without displaying
+  internal state constants such as `READY_FOR_REVIEW`.
 
 ## 0.3.0 - 2026-08-20
 

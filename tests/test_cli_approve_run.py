@@ -128,7 +128,8 @@ def test_approve_run_command_reports_success(
     )
 
     assert result.exit_code == 0
-    assert "状态：APPROVED" in result.output
+    assert "状态：已批准" in result.output
+    assert "APPROVED" not in result.output
     assert "标准化 PDB 数量：5" in result.output
     assert "没有执行 BinderRanker" in result.output
 
@@ -230,9 +231,10 @@ def test_approve_run_preserves_safe_business_fact(
     assert result.exit_code == 2
 
     assert (
-        "只有 READY_FOR_REVIEW 任务可以批准"
+        "只有计划准备完整并可供审核的任务才能批准"
         in result.output
     )
+    assert "READY_FOR_REVIEW" not in result.output
 
     assert (
         "当前任务状态不允许批准"

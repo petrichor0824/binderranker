@@ -24,6 +24,11 @@ from protein_design_agent.agent.failure_evidence import (
 from protein_design_agent.agent.run_status import (
     inspect_run_status,
 )
+from protein_design_agent.agent.user_language import (
+    format_user_progress,
+    next_safe_action_for_stage,
+    translate_internal_terms,
+)
 
 
 ErrorKind = Literal["REJECTED", "FAILED"]
@@ -404,13 +409,18 @@ def format_model_guidance(
     lines = [
         "",
         "诊断说明：",
-        guidance.explanation,
+        translate_internal_terms(
+            guidance.explanation
+        ),
     ]
 
     if guidance.possible_causes:
         lines.extend(["", "可能原因："])
         lines.extend(
-            f"{index}. {value}"
+            (
+                f"{index}. "
+                + translate_internal_terms(value)
+            )
             for index, value in enumerate(
                 guidance.possible_causes,
                 start=1,
@@ -419,7 +429,10 @@ def format_model_guidance(
 
     lines.extend(["", "建议处理："])
     lines.extend(
-        f"{index}. {value}"
+        (
+            f"{index}. "
+            + translate_internal_terms(value)
+        )
         for index, value in enumerate(
             guidance.recommended_actions,
             start=1,
@@ -509,7 +522,9 @@ def format_error_guidance(
             [
                 "",
                 "已确认：",
-                public_message.strip(),
+                translate_internal_terms(
+                    public_message.strip()
+                ),
             ]
         )
 
@@ -526,17 +541,10 @@ def format_error_guidance(
         lines.extend(
             [
                 "",
-                "当前任务状态：",
-                (
-                    "阶段："
-                    f"{state.get('current_stage')}"
-                ),
-                (
-                    "准备 / 批准 / 执行 / 分析："
-                    f"{state.get('prepare_status')} / "
-                    f"{state.get('approval_status')} / "
-                    f"{state.get('execution_status')} / "
-                    f"{state.get('analysis_status')}"
+                "当前任务进度：",
+                *format_user_progress(
+                    state,
+                    include_explanation=True,
                 ),
             ]
         )
@@ -572,6 +580,25 @@ def format_error_guidance(
             )
             return "\n".join(lines)
 
+    actions = deterministic_actions(
+        context["error_message"],
+        bundle_available=(
+            bundle_dir is not None
+        ),
+    )
+
+    state_action = next_safe_action_for_stage(
+        state.get("current_stage")
+        if state
+        else None
+    )
+
+    if (
+        state_action is not None
+        and state_action not in actions
+    ):
+        actions.insert(0, state_action)
+
     lines.extend(
         [
             "",
@@ -579,12 +606,7 @@ def format_error_guidance(
             *[
                 f"{index}. {action}"
                 for index, action in enumerate(
-                    deterministic_actions(
-                        context["error_message"],
-                        bundle_available=(
-                            bundle_dir is not None
-                        ),
-                    ),
+                    actions,
                     start=1,
                 )
             ],

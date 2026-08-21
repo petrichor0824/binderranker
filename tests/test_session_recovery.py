@@ -167,7 +167,8 @@ def test_prepared_task_recovers_confirmed_context(
         in rendered
     )
     assert "binder 链 B" in rendered
-    assert "分析范围：EXPLORATORY" in rendered
+    assert "分析范围：探索性批内比较" in rendered
+    assert "EXPLORATORY" not in rendered
     assert "已记录候选数：42" in rendered
     assert "查看计划" in rendered
     assert "未使用模型记忆" in rendered
@@ -216,7 +217,11 @@ def test_smoke_scope_boundary_is_restored(
         model_status="READY",
     )
 
-    assert "分析范围：SMOKE_TEST_ONLY" in rendered
+    assert (
+        "分析范围：工程冒烟测试"
+        in rendered
+    )
+    assert "SMOKE_TEST_ONLY" not in rendered
     assert "已记录候选数：5" in rendered
     assert "不能作为正式候选推荐" in rendered
 

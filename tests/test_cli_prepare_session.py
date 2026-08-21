@@ -106,9 +106,10 @@ def test_prepare_session_command_reports_success(
     )
 
     assert result.exit_code == 0
-    assert "READY_FOR_REVIEW" in result.output
-    assert "BinderRanker 已执行：False" in result.output
-    assert "远程后端已使用：False" in result.output
+    assert "状态：计划已准备，等待审核" in result.output
+    assert "READY_FOR_REVIEW" not in result.output
+    assert "BinderRanker 已执行：否" in result.output
+    assert "远程后端已使用：否" in result.output
 
 
 def test_prepare_session_command_reports_failure(
