@@ -15,6 +15,8 @@ used by the corresponding release.
 - Platform-specific secure API Key setup guidance for Windows PowerShell and
   POSIX shells.
 - Windows / Python 3.12 CI coverage for the full regression suite and Doctor.
+- Read-only Chat startup recovery summaries reconstructed from deterministic
+  Bundle state, explicit planning provenance, and pending confirmations.
 
 ### Fixed
 

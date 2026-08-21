@@ -115,6 +115,10 @@ from protein_design_agent.agent.onboarding import (
     format_first_chat_guidance,
     task_is_empty,
 )
+from protein_design_agent.agent.session_recovery import (
+    collect_task_recovery_snapshot,
+    format_task_recovery_summary,
+)
 from protein_design_agent.public_identity import (
     AGENT_NAME,
     PROJECT_NAME,
@@ -1338,11 +1342,13 @@ def chat_command(
         "再等待你确认。"
     )
 
+    current_task_is_empty = task_is_empty(
+        resolved_bundle
+    )
+
     first_chat_guidance = (
         format_first_chat_guidance(
-            task_empty=task_is_empty(
-                resolved_bundle
-            ),
+            task_empty=current_task_is_empty,
             model_status=(
                 model_readiness.status
             ),
@@ -1360,6 +1366,21 @@ def chat_command(
     if first_chat_guidance is not None:
         typer.echo("")
         typer.echo(first_chat_guidance)
+    elif not current_task_is_empty:
+        recovery_snapshot = (
+            collect_task_recovery_snapshot(
+                resolved_bundle
+            )
+        )
+        typer.echo("")
+        typer.echo(
+            format_task_recovery_summary(
+                recovery_snapshot,
+                model_status=(
+                    model_readiness.status
+                ),
+            )
+        )
 
     exit_commands = {
         "退出",

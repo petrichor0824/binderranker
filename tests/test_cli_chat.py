@@ -519,6 +519,45 @@ def test_chat_reuses_default_workspace(
     assert "已存在，安全复用" in second.output
 
 
+def test_chat_recovers_existing_task_on_startup(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    (
+        bundle / "agent_prepare_manifest.json"
+    ).write_text(
+        (
+            '{"status":"READY_FOR_REVIEW",'
+            '"project_name":"resume-demo"}'
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "chat",
+            "--bundle-dir",
+            str(bundle),
+            "--approved-by",
+            "tester",
+        ],
+        input="退出\n",
+    )
+
+    assert result.exit_code == 0
+    assert "恢复上次任务" in result.output
+    assert "项目：resume-demo" in result.output
+    assert (
+        "计划已准备，等待审查和批准"
+        in result.output
+    )
+    assert "未使用模型记忆" in result.output
+    assert "没有执行 BinderRanker" in result.output
+
+
 def test_chat_selects_named_task(
     tmp_path: Path,
     monkeypatch,
