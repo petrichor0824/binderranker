@@ -21,6 +21,10 @@ from pathlib import Path
 from protein_design_agent.agent.user_errors import (
     UserFacingError,
 )
+from protein_design_agent.agent.credential_guidance import (
+    secure_api_key_commands,
+    secure_api_key_setup_summary,
+)
 from protein_design_agent.public_identity import (
     CLI_NAME,
     PROJECT_NAME,
@@ -104,18 +108,24 @@ QUICKSTART_TEMPLATE = f'''# {PROJECT_NAME} 工作区
 
 自然语言任务理解和模型解释需要配置 Provider 和 API Key。
 
+在 Windows PowerShell 中依次运行下面三行；第一行出现提示后再粘贴真实 Key：
+
+    $binderRankerApiKey = Read-Host '请粘贴真实 API Key，然后按回车' -AsSecureString
+    $env:DEEPSEEK_API_KEY = [System.Net.NetworkCredential]::new('', $binderRankerApiKey).Password
+    Remove-Variable binderRankerApiKey
+
 在 Linux、WSL 或 macOS 终端中，复制并运行下面的整行命令：
 
     read -rsp '请粘贴真实 DeepSeek API Key，然后按回车（输入不会显示）：' DEEPSEEK_API_KEY && echo && export DEEPSEEK_API_KEY
 
 操作说明：
 
-1. 先复制上面的整行命令并按回车。
-2. 终端出现提示后，粘贴真实 DeepSeek API Key。
-3. 再按一次回车即可，不需要继续输入其他命令。
+1. 只使用与你的终端匹配的那一组命令。
+2. PowerShell 用户先运行第一行，出现提示后粘贴 Key 并按回车，再运行后两行。
+3. Linux、WSL 或 macOS 用户复制对应的整行命令，出现提示后粘贴 Key 并按回车。
 4. 粘贴 Key 时，屏幕不会显示星号或其他字符，这是正常的安全行为。
 
-不要修改命令末尾的 `DEEPSEEK_API_KEY`。它是模型配置要求的环境变量名，不是填写 API Key 的位置。
+不要修改命令中的 `DEEPSEEK_API_KEY`。它是模型配置要求的环境变量名，不是填写 API Key 的位置。
 
 不要把真实 API Key 写入 YAML、Git、截图、日志、共享 Bundle，或直接写入可能被 Shell 历史记录的命令。
 
@@ -464,8 +474,15 @@ def initialize_workspace(
 
 def render_workspace_init_report(
     report: WorkspaceInitReport,
+    *,
+    platform_name: str | None = None,
 ) -> str:
     """生成终端报告。"""
+    setup_commands = secure_api_key_commands(
+        "DEEPSEEK_API_KEY",
+        platform_name=platform_name,
+    )
+
     lines = [
         "=" * 72,
         f"{PROJECT_NAME} Workspace",
@@ -496,19 +513,19 @@ def render_workspace_init_report(
             "",
             "  设置 DeepSeek API Key：",
             (
-                "  复制并运行下一整行命令；"
-                "出现提示后粘贴真实 Key 并按回车。"
+                "  "
+                + secure_api_key_setup_summary(
+                    platform_name=platform_name,
+                )
             ),
+            *[
+                f"  {command}"
+                for command in setup_commands
+            ],
+            "  输入时不会显示字符；",
             (
-                "  输入时不会显示字符；"
-                "命令末尾的 DEEPSEEK_API_KEY 不要修改。"
-            ),
-            (
-                "  read -rsp "
-                "'请粘贴真实 DeepSeek API Key，"
-                "然后按回车（输入不会显示）：' "
-                "DEEPSEEK_API_KEY && echo && "
-                "export DEEPSEEK_API_KEY"
+                "  命令中的 DEEPSEEK_API_KEY "
+                "不要修改。"
             ),
             "",
             (

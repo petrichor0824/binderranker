@@ -111,6 +111,10 @@ from protein_design_agent.agent.model_readiness import (
     format_model_readiness,
     resolve_model_config_path,
 )
+from protein_design_agent.agent.onboarding import (
+    format_first_chat_guidance,
+    task_is_empty,
+)
 from protein_design_agent.public_identity import (
     AGENT_NAME,
     PROJECT_NAME,
@@ -1334,6 +1338,29 @@ def chat_command(
         "再等待你确认。"
     )
 
+    first_chat_guidance = (
+        format_first_chat_guidance(
+            task_empty=task_is_empty(
+                resolved_bundle
+            ),
+            model_status=(
+                model_readiness.status
+            ),
+            uses_default_workspace=(
+                chat_target.uses_default_workspace
+            ),
+            workspace_status=(
+                workspace_report.status
+                if workspace_report is not None
+                else None
+            ),
+        )
+    )
+
+    if first_chat_guidance is not None:
+        typer.echo("")
+        typer.echo(first_chat_guidance)
+
     exit_commands = {
         "退出",
         "exit",
@@ -2432,7 +2459,13 @@ def plan_mock_command(
 
     示例 payload：
 
-    {"project_name":"demo","input_dir":"sample_data/test_two_chain","input_layout":"existing_chains","binder_chain":"A","execute_requested":false}
+        {
+          "project_name": "demo",
+          "input_dir": "sample_data/test_two_chain",
+          "input_layout": "existing_chains",
+          "binder_chain": "A",
+          "execute_requested": false
+        }
 
     核心字段：
 

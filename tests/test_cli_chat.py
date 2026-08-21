@@ -486,6 +486,15 @@ def test_chat_auto_initializes_default_workspace(
         / "runs"
         / "default"
     ).is_dir()
+    assert (
+        "Chat 已自动初始化工作空间"
+        in result.output
+    )
+    assert "无需先运行" in result.output
+    assert (
+        "binderranker extract-sample"
+        in result.output
+    )
 
 
 def test_chat_reuses_default_workspace(

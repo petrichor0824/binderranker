@@ -5,6 +5,25 @@ All notable changes to BinderRanker are documented here.
 Historical entries preserve the project names, CLI commands, and terminology
 used by the corresponding release.
 
+## Unreleased
+
+### Added
+
+- State-aware first-workflow guidance for empty Chat tasks, including explicit
+  automatic-workspace initialization status, real-data intake, and the
+  packaged engineering smoke path.
+- Platform-specific secure API Key setup guidance for Windows PowerShell and
+  POSIX shells.
+
+### Fixed
+
+- Published Bundle metadata now relocates JSON-escaped Windows staging paths
+  as well as native and POSIX path forms.
+- Generated workspace guidance now includes secure instructions for both
+  Windows and POSIX users.
+- CLI help payload examples and analysis-manifest tests are portable across
+  Windows and POSIX path semantics.
+
 ## 0.3.0 - 2026-08-20
 
 BinderRanker v0.3.0 establishes BinderRanker as the public project identity and
