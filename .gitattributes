@@ -1,0 +1,6 @@
+# Frozen Ranker resources are verified byte-for-byte. Keep their text
+# representation stable when Git checks them out on Windows.
+algorithms/binderranker/v0.1-expert/*.py text eol=lf
+algorithms/binderranker/v0.1-expert/SHA256SUMS text eol=lf
+src/protein_design_agent/resources/binderranker/v0.1-expert/*.py text eol=lf
+src/protein_design_agent/resources/binderranker/v0.1-expert/SHA256SUMS text eol=lf
