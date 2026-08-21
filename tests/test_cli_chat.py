@@ -486,6 +486,15 @@ def test_chat_auto_initializes_default_workspace(
         / "runs"
         / "default"
     ).is_dir()
+    assert (
+        "Chat 已自动初始化工作空间"
+        in result.output
+    )
+    assert "无需先运行" in result.output
+    assert (
+        "binderranker extract-sample"
+        in result.output
+    )
 
 
 def test_chat_reuses_default_workspace(
@@ -508,6 +517,45 @@ def test_chat_reuses_default_workspace(
     assert first.exit_code == 0
     assert second.exit_code == 0
     assert "已存在，安全复用" in second.output
+
+
+def test_chat_recovers_existing_task_on_startup(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    (
+        bundle / "agent_prepare_manifest.json"
+    ).write_text(
+        (
+            '{"status":"READY_FOR_REVIEW",'
+            '"project_name":"resume-demo"}'
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "chat",
+            "--bundle-dir",
+            str(bundle),
+            "--approved-by",
+            "tester",
+        ],
+        input="退出\n",
+    )
+
+    assert result.exit_code == 0
+    assert "恢复上次任务" in result.output
+    assert "项目：resume-demo" in result.output
+    assert (
+        "计划已准备，等待审查和批准"
+        in result.output
+    )
+    assert "未使用模型记忆" in result.output
+    assert "没有执行 BinderRanker" in result.output
 
 
 def test_chat_selects_named_task(

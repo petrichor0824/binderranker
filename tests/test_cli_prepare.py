@@ -171,10 +171,11 @@ def test_prepare_preserves_agent_preparation_fact(
     assert result.exit_code == 4
 
     assert (
-        "准备工作流没有停在 "
-        "READY_FOR_REVIEW"
+        "任务准备流程尚未形成"
+        "可供审核的完整计划"
         in result.output
     )
+    assert "READY_FOR_REVIEW" not in result.output
 
     assert (
         "INTERNAL_PREPARATION_DETAIL"

@@ -18,6 +18,11 @@ from protein_design_agent.agent.run_status import (
     RunStatusReport,
     inspect_run_status,
 )
+from protein_design_agent.agent.user_language import (
+    format_user_progress,
+    translate_internal_terms,
+    user_scope,
+)
 
 
 class ModelStatusNarration(BaseModel):
@@ -135,8 +140,8 @@ def deterministic_summary(
         )
 
     return (
-        f"当前任务处于 {stage} 阶段。"
-        "请以随后列出的确定性状态明细为准。"
+        "当前任务状态需要查看内部审计记录。"
+        "请以随后列出的用户进度说明为准。"
     )
 
 
@@ -330,7 +335,9 @@ def model_summary(
                     f"模型改变了确定性状态字段：{field}"
                 )
 
-        return narration.plain_language_summary.strip()
+        return translate_internal_terms(
+            narration.plain_language_summary.strip()
+        )
 
     except Exception:
         return fallback_summary
@@ -383,24 +390,26 @@ def format_status_narration(
             "最安全的下一步：",
             next_action(facts),
             "",
-            "确定性状态明细：",
+            "任务进度（来自确定性记录）：",
             f"项目：{facts['project_name']}",
-            f"当前阶段：{facts['current_stage']}",
-            (
-                "准备 / 批准 / 执行 / 分析 / 解释："
-                f"{facts['prepare_status']} / "
-                f"{facts['approval_status']} / "
-                f"{facts['execution_status']} / "
-                f"{facts['analysis_status']} / "
-                f"{facts['explanation_status']}"
+            *format_user_progress(
+                facts,
+                include_explanation=True,
             ),
             (
-                "分析级别："
-                f"{facts['analysis_scope_level']}"
+                "结果使用范围："
+                + user_scope(
+                    facts["analysis_scope_level"]
+                )
             ),
             (
                 "候选数量："
-                f"{facts['candidate_count']}"
+                + (
+                    str(facts["candidate_count"])
+                    if facts["candidate_count"]
+                    is not None
+                    else "尚未确定"
+                )
             ),
         ]
     )

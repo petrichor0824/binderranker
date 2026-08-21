@@ -129,16 +129,8 @@ def test_cli_init_shows_secure_api_key_guidance(
 
     assert result.exit_code == 0
     assert "设置 DeepSeek API Key" in result.output
-    assert "read -rsp" in result.output
-    assert (
-        "DEEPSEEK_API_KEY && echo && "
-        "export DEEPSEEK_API_KEY"
-        in result.output
-    )
-    assert (
-        "出现提示后粘贴真实 Key"
-        in result.output
-    )
+    assert "DEEPSEEK_API_KEY" in result.output
+    assert "输入时不会显示字符" in result.output
     assert (
         "DEEPSEEK_API_KEY 不要修改"
         in result.output

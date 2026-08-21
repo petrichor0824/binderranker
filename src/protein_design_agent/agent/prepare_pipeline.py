@@ -221,6 +221,18 @@ def relocate_staged_metadata(
     old_root = str(staging_dir)
     new_root = str(bundle_dir)
 
+    replacements = [
+        (
+            old_root.replace("\\", "\\\\"),
+            new_root.replace("\\", "\\\\"),
+        ),
+        (
+            staging_dir.as_posix(),
+            bundle_dir.as_posix(),
+        ),
+        (old_root, new_root),
+    ]
+
     for path in metadata_paths:
         if not path.is_file():
             continue
@@ -229,16 +241,19 @@ def relocate_staged_metadata(
             encoding="utf-8"
         )
 
-        if old_root not in content:
-            continue
+        relocated = content
 
-        path.write_text(
-            content.replace(
-                old_root,
-                new_root,
-            ),
-            encoding="utf-8",
-        )
+        for source, destination in replacements:
+            relocated = relocated.replace(
+                source,
+                destination,
+            )
+
+        if relocated != content:
+            path.write_text(
+                relocated,
+                encoding="utf-8",
+            )
 
 
 def publish_staged_bundle(

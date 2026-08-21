@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -267,17 +268,20 @@ def test_standalone_explain_discovers_completed_analysis(
         encoding="utf-8",
     )
     manifest.write_text(
-        (
-            "{\n"
-            '  "schema_version": "0.1",\n'
-            '  "status": "COMPLETED",\n'
-            f'  "bundle_dir": "{bundle}",\n'
-            f'  "analysis_dir": "{analysis}",\n'
-            '  "with_model": false,\n'
-            f'  "result_summary_path": "{summary}",\n'
-            f'  "failure_analysis_path": "{failure}"\n'
-            "}\n"
-        ),
+        json.dumps(
+            {
+                "schema_version": "0.1",
+                "status": "COMPLETED",
+                "bundle_dir": str(bundle),
+                "analysis_dir": str(analysis),
+                "with_model": False,
+                "result_summary_path": str(summary),
+                "failure_analysis_path": str(failure),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
         encoding="utf-8",
     )
 

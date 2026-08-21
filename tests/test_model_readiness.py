@@ -213,6 +213,7 @@ def test_missing_credential_has_safe_guidance(
     rendered = format_model_readiness(
         report,
         workspace_root=tmp_path,
+        platform_name="linux",
     )
 
     assert "TEST_MODEL_API_KEY" in rendered
@@ -230,13 +231,39 @@ def test_missing_credential_has_safe_guidance(
         in rendered
     )
     assert (
-        "不要修改命令末尾的 TEST_MODEL_API_KEY"
+        "不要修改命令中的 TEST_MODEL_API_KEY"
         in rendered
     )
     assert (
         "Agent 会询问是否允许本次 Chat 调用模型 API"
         in rendered
     )
+
+
+def test_missing_credential_uses_powershell_on_windows(
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "models.yaml"
+    write_config(config)
+
+    report = assess_model_readiness(
+        allow_network=True,
+        config_path=config,
+        profile_name=None,
+        environment={},
+    )
+
+    rendered = format_model_readiness(
+        report,
+        workspace_root=tmp_path,
+        platform_name="win32",
+    )
+
+    assert "PowerShell" in rendered
+    assert "Read-Host" in rendered
+    assert "-AsSecureString" in rendered
+    assert "$env:TEST_MODEL_API_KEY" in rendered
+    assert "read -rsp" not in rendered
 
 
 def test_model_setup_can_be_available_without_authorization(

@@ -47,6 +47,15 @@ requires it.
 
 **面向生成式蛋白骨架候选的可解释排序与分层筛选工具。**
 
+### Canonical product identity
+
+**BinderRanker is an interpretable ranking and layered screening system for
+generated protein backbone candidates.**
+
+BinderRanker is not an Agent product. It must not be described as a protein
+design Agent, an AI Agent for protein design, or an LLM-powered protein design
+system, except when accurately documenting historical development context.
+
 ---
 
 ## 3. Problem statement
@@ -96,6 +105,16 @@ a conversational Agent.
 
 The public product is **BinderRanker**.
 
+The interaction boundary is:
+
+External Agents
+→ BinderRanker Tool/API interface
+→ BinderRanker scientific capability
+
+Direct CLI/Python use and the optional built-in Agent converge on the same
+Tool API, deterministic Core, and Engine. No interaction layer owns a separate
+scientific implementation.
+
 ### BinderRanker Engine
 
 The scientific ranking and screening engine.
@@ -141,7 +160,7 @@ It may assist with:
 - explanation of deterministic evidence
 - future interactive workflow orchestration
 
-The Agent is a usability and product layer.
+The Agent is an optional usability and interaction layer.
 
 It is not the scientific ranking algorithm.
 
@@ -177,7 +196,8 @@ Avoid using the following as the primary public identity:
 - autonomous protein-design Agent
 
 The word "Agent" remains valid only when referring specifically to the optional
-BinderRanker Agent layer.
+BinderRanker Agent layer, an external integration, or historical development
+context.
 
 ---
 
@@ -280,6 +300,12 @@ When useful, a historical note may explain that the project was later publicly
 repositioned as BinderRanker.
 
 Historical facts must remain historically accurate.
+
+BinderRanker originally explored Agent-based interaction because protein-design
+workflows are complex, many biological researchers do not have programming
+backgrounds, and natural-language interfaces can improve accessibility. This
+motivation remains relevant, but it does not define the current product:
+historical motivation is not current product identity.
 
 ---
 
@@ -461,5 +487,23 @@ an interpretable ranking and layered-screening system for generated protein
 backbone candidates.
 
 The Agent improves accessibility and workflow usability.
+
+The governing principle is:
+
+> BinderRanker is a scientific ranking and screening capability. Agent
+> interfaces are optional interaction layers used to improve accessibility and
+> integration, not the core product.
+
+Future work is prioritized in this order:
+
+1. Scientific ranking and screening capability.
+2. Reproducibility and validation.
+3. Stable Tool/API interfaces.
+4. External Agent ecosystem compatibility.
+
+Generic chatbot capabilities, general-purpose Agent infrastructure, and
+memory/personality/planning expansion are not independent priorities. They are
+in scope only when they directly improve BinderRanker usability without
+competing with the priorities above.
 
 **BinderRanker is the project.**

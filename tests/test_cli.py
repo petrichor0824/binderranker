@@ -1,8 +1,12 @@
 import json
+import os
+import subprocess
+import sys
 from importlib.metadata import (
     version as distribution_version,
 )
 from pathlib import Path
+from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
@@ -10,6 +14,51 @@ from protein_design_agent.cli import app
 
 
 runner = CliRunner()
+
+
+def test_cli_streams_override_legacy_windows_encoding(
+) -> None:
+    repository_root = (
+        Path(__file__).resolve().parents[1]
+    )
+    environment = os.environ.copy()
+    source_root = repository_root / "src"
+    existing_pythonpath = environment.get(
+        "PYTHONPATH",
+        "",
+    )
+
+    environment["PYTHONIOENCODING"] = "cp1252"
+    environment["PYTHONPATH"] = os.pathsep.join(
+        item
+        for item in (
+            str(source_root),
+            existing_pythonpath,
+        )
+        if item
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from protein_design_agent.cli import "
+                "configure_cli_streams; "
+                "configure_cli_streams(); "
+                "print('总体状态：通过')"
+            ),
+        ],
+        cwd=repository_root,
+        env=environment,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.decode("utf-8").strip() == (
+        "总体状态：通过"
+    )
 
 
 def test_cli_reports_installed_distribution_version() -> None:
@@ -175,7 +224,8 @@ def test_complete_mock_plan_is_ready(
     )
 
     assert result.exit_code == 0
-    assert "READY_FOR_REVIEW" in result.output
+    assert "状态：计划已准备，等待审核" in result.output
+    assert "READY_FOR_REVIEW" not in result.output
     assert output.exists()
 
     data = json.loads(
@@ -215,7 +265,8 @@ def test_incomplete_mock_plan_requests_information(
     )
 
     assert result.exit_code == 0
-    assert "NEEDS_INFORMATION" in result.output
+    assert "状态：等待补充任务信息" in result.output
+    assert "NEEDS_INFORMATION" not in result.output
     assert "input_dir" in result.output
     assert "input_layout" in result.output
 
@@ -496,6 +547,62 @@ def test_run_status_error_uses_safe_user_guidance(
         not in result.output
     )
     assert "RunStatusError" not in result.output
+
+
+def test_run_status_translates_internal_states(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    report = SimpleNamespace(
+        project_name="demo",
+        bundle_dir=bundle,
+        current_stage="ANALYZED",
+        prepare_status="READY_FOR_REVIEW",
+        approval_status="APPROVED",
+        execution_status="COMPLETED",
+        analysis_status="COMPLETED",
+        explanation_status="UNAVAILABLE",
+        analysis_scope_level="EXPLORATORY",
+        approval_id="apr_demo",
+        approval_consumed=True,
+        candidate_count=42,
+        formal_candidate_recommendation_allowed=False,
+        thresholds_formally_interpretable=False,
+        analysis_attempts=[],
+        warnings=[],
+    )
+
+    monkeypatch.setattr(
+        "protein_design_agent.cli.inspect_run_status",
+        lambda path: report,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "run-status",
+            "--bundle-dir",
+            str(bundle),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert (
+        "当前进度：确定性结果分析已完成"
+        in result.output
+    )
+    assert "准备：计划已准备，等待审核" in result.output
+    assert "模型解释：暂不可用" in result.output
+    assert (
+        "结果使用范围：探索性批内比较"
+        in result.output
+    )
+    assert "READY_FOR_REVIEW" not in result.output
+    assert "ANALYZED" not in result.output
+    assert "UNAVAILABLE" not in result.output
 
 
 def test_validate_model_config_hides_raw_loader_error(

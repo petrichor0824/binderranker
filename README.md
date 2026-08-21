@@ -33,7 +33,7 @@ existing candidate PDB set.
 BinderRanker is a **prioritization layer**. A high score or strict-layer pass
 is not biological proof.
 
-Current development line: **v0.3.0**
+Current development line: **v0.3.1**
 
 ---
 
@@ -171,7 +171,7 @@ model API key.
     python3 -m venv .venv
     source .venv/bin/activate
     python -m pip install --upgrade pip
-    python -m pip install ./binderranker-0.3.0-py3-none-any.whl
+    python -m pip install ./binderranker-0.3.1-py3-none-any.whl
 
 Verify:
 
@@ -286,18 +286,21 @@ binder*, or *validated hit* require independent downstream evidence.
 
 ## Architecture
 
-    BinderRanker Agent
-          ↓
-    BinderRanker Tool API
-          ↓
-    BinderRanker Core
-          ↓
-    BinderRanker Engine
+    Direct CLI / Python ─────────┐
+    Built-in Agent (optional) ───┼──> BinderRanker Tool API
+    External Agents (optional) ──┘              ↓
+                                      BinderRanker Core
+                                                ↓
+                                      BinderRanker Engine
 
 - **Engine** — scientific ranking and layered screening.
 - **Core** — deterministic workflow, safety, provenance, parsing, and analysis.
-- **Tool API** — controlled interface for CLI, Agent, and future integrations.
+- **Tool API** — stable controlled interface for direct use and integrations.
 - **Agent** — optional conversational interaction.
+
+BinderRanker remains the same scientific capability regardless of the access
+path. Agent interfaces improve accessibility and integration; they do not own
+or redefine scientific behavior.
 
 The internal Python namespace remains `protein_design_agent` during the v0.3
 compatibility transition. It is an implementation detail, not the public
@@ -326,7 +329,9 @@ enrichment analysis, or prospective experimental validation.
 - [Validation](docs/VALIDATION.md)
 - [Public identity and claim policy](docs/PUBLIC_IDENTITY.md)
 - [v0.3 architecture](docs/V0.3_ARCHITECTURE.md)
-- [v0.3 roadmap](docs/V0.3_ROADMAP.md)
+- [Architecture evolution and development principles](docs/ARCHITECTURE_EVOLUTION.md)
+- [Post-v0.3 execution roadmap](docs/POST_V0_3_EXECUTION_ROADMAP.md)
+- [Historical v0.3 roadmap](docs/V0.3_ROADMAP.md)
 - [Improvement backlog](docs/IMPROVEMENT_BACKLOG.md)
 
 Historical v0.2 planning documentation is retained for traceability.
@@ -335,11 +340,12 @@ Historical v0.2 planning documentation is retained for traceability.
 
 ## Roadmap
 
-The v0.3 release line focuses on making BinderRanker's ranking and screening
-workflow reproducible, portable, reviewable, and suitable for public
-distribution.
+Future work prioritizes scientific ranking and screening, reproducibility and
+validation, stable Tool/API interfaces, and then optional external-Agent
+compatibility. Agent framework expansion is not an independent product goal.
 
-See [`docs/V0.3_ROADMAP.md`](docs/V0.3_ROADMAP.md) and
+See [`docs/POST_V0_3_EXECUTION_ROADMAP.md`](docs/POST_V0_3_EXECUTION_ROADMAP.md)
+and
 [`docs/IMPROVEMENT_BACKLOG.md`](docs/IMPROVEMENT_BACKLOG.md).
 
 ---

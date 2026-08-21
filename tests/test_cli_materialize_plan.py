@@ -105,10 +105,11 @@ def test_materialize_plan_preserves_safe_business_fact(
     assert result.exit_code == 2
 
     assert (
-        "只有 READY_FOR_REVIEW 计划"
-        "可以落地为正式项目配置"
+        "只有准备完整并可供审核的计划"
+        "才能落地为正式项目配置"
         in result.output
     )
+    assert "READY_FOR_REVIEW" not in result.output
 
     assert (
         "INTERNAL_MATERIALIZATION_STATE"

@@ -310,6 +310,10 @@ def test_quickstart_explains_secure_api_key_input(
         destination / "QUICKSTART.md"
     ).read_text(encoding="utf-8")
 
+    assert "Windows PowerShell" in quickstart
+    assert "Read-Host" in quickstart
+    assert "-AsSecureString" in quickstart
+    assert "$env:DEEPSEEK_API_KEY" in quickstart
     assert "read -rsp" in quickstart
     assert (
         "DEEPSEEK_API_KEY && echo && "
@@ -317,11 +321,15 @@ def test_quickstart_explains_secure_api_key_input(
         in quickstart
     )
     assert (
-        "终端出现提示后，粘贴真实 DeepSeek API Key"
+        "PowerShell 用户先运行第一行"
         in quickstart
     )
     assert (
-        "不要修改命令末尾的 `DEEPSEEK_API_KEY`"
+        "Linux、WSL 或 macOS 用户复制对应的整行命令"
+        in quickstart
+    )
+    assert (
+        "不要修改命令中的 `DEEPSEEK_API_KEY`"
         in quickstart
     )
     assert (

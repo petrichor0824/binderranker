@@ -98,6 +98,51 @@ def test_model_explains_error(
     assert "建议处理" in text
     assert "不建议立即重试" in text
     assert "确定性兜底说明" not in text
+    assert (
+        "总体：计划已批准，尚未执行"
+        in text
+    )
+    assert "READY_FOR_REVIEW" not in text
+    assert "APPROVED" not in text
+
+
+def test_fallback_includes_state_aware_next_action(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        module,
+        "inspect_run_status",
+        lambda path: type(
+            "Report",
+            (),
+            {
+                "current_stage": "EXECUTED",
+                "prepare_status": (
+                    "READY_FOR_REVIEW"
+                ),
+                "approval_status": "APPROVED",
+                "execution_status": "COMPLETED",
+                "analysis_status": None,
+                "explanation_status": None,
+                "approval_consumed": True,
+            },
+        )(),
+    )
+
+    text = format_error_guidance(
+        kind="FAILED",
+        error=RuntimeError("analysis failed"),
+        bundle_dir=tmp_path,
+        provider=None,
+    )
+
+    assert (
+        "只运行确定性结果分析，"
+        "不需要重跑 BinderRanker"
+        in text
+    )
+    assert "EXECUTED" not in text
 
 
 def test_model_failure_uses_deterministic_fallback(

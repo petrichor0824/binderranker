@@ -5,6 +5,80 @@ All notable changes to BinderRanker are documented here.
 Historical entries preserve the project names, CLI commands, and terminology
 used by the corresponding release.
 
+## Unreleased
+
+### Changed
+
+- Aligned active architecture and roadmap documentation around BinderRanker as
+  a scientific ranking and screening capability; Agent interfaces are now
+  consistently documented as optional access and integration layers.
+
+## 0.3.1 - 2026-08-21
+
+BinderRanker v0.3.1 is a stabilization release that strengthens scientific
+result semantics, installed-package verification, cross-platform reliability,
+and first-workflow usability without changing the frozen scoring algorithm.
+
+### Added
+
+- A shared scientific-result validator for candidate identity, required output
+  schema, finite scores, and rank/score consistency.
+- State-aware first-workflow guidance for empty Chat tasks, including explicit
+  automatic-workspace initialization status, real-data intake, and the
+  packaged engineering smoke path.
+- Platform-specific secure API Key setup guidance for Windows PowerShell and
+  POSIX shells.
+- Windows / Python 3.12 CI coverage for the full regression suite and Doctor.
+- Read-only Chat startup recovery summaries reconstructed from deterministic
+  Bundle state, explicit planning provenance, and pending confirmations.
+- A deterministic user-language layer for task stages, component statuses,
+  analysis scopes, pending actions, and task lifecycle states.
+- Regression coverage for zero-valid-candidate runs, missing binder chains,
+  non-finite scores, malformed ranking output, and unchanged valid rankings.
+
+### Changed
+
+- Local execution now distinguishes a zero process exit code from scientific
+  success and records semantic validation evidence before `COMPLETED`.
+- Installed-Wheel smoke verification now normalizes the packaged concatenated
+  sample and requires five scientifically valid candidates instead of only
+  checking that output files exist.
+- Public CLI and Chat error/status views now present plain-language progress
+  while keeping internal state-machine values in deterministic records and
+  model context.
+- Error fallbacks use the recorded task stage to recommend one safe next step.
+- Confirmation prompts now use one compact format, accept explicit “继续”
+  language, and avoid repeating the full proposal after status or help queries.
+- Approval and execution remain separate confirmations; deterministic result
+  analysis remains read-only and does not gain an extra confirmation step.
+
+### Fixed
+
+- Result parsing and downstream analysis reject `NaN`, positive infinity,
+  negative infinity, malformed rankings, and candidate-level computation
+  failures rather than silently accepting them as successful output.
+- Published Bundle metadata now relocates JSON-escaped Windows staging paths
+  as well as native and POSIX path forms.
+- Generated workspace guidance now includes secure instructions for both
+  Windows and POSIX users.
+- CLI help payload examples and analysis-manifest tests are portable across
+  Windows and POSIX path semantics.
+- Public error facts preserve their business meaning without displaying
+  internal state constants such as `READY_FOR_REVIEW`.
+- Frozen Ranker resources retain LF line endings on Windows checkouts, keeping
+  their audited SHA256 values stable across platforms.
+- CLI entry points switch redirected standard streams to UTF-8 before emitting
+  localized output, including on legacy Windows code pages.
+
+### Validation
+
+- The full regression suite, clean Wheel/sdist build, release-asset checksum
+  verification, clean-environment Wheel installation, and installed-package
+  five-candidate scientific smoke test are required release gates.
+- Platform-dependent POSIX path and symlink-containment tests remain covered by
+  the Linux CI matrix when the local Windows environment intentionally skips
+  them.
+
 ## 0.3.0 - 2026-08-20
 
 BinderRanker v0.3.0 establishes BinderRanker as the public project identity and

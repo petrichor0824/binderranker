@@ -144,7 +144,10 @@ def test_natural_approval_creates_pending_action(
     assert result.status == (
         "AWAITING_CONFIRMATION"
     )
-    assert "请回答“确认”" in result.message
+    assert (
+        "回复“确认”，继续批准计划"
+        in result.message
+    )
     assert called is False
 
     pending = load_pending_action(
@@ -212,7 +215,7 @@ def test_confirmation_calls_deterministic_engine(
     )
 
     result = process_dialogue_message(
-        message="确认",
+        message="继续",
         bundle_dir=bundle,
         provider=FakeDialogueProvider(
             "CONFIRM"
@@ -224,6 +227,7 @@ def test_confirmation_calls_deterministic_engine(
     )
 
     assert result.status == "APPROVED"
+    assert "已收到确认" not in result.message
     assert (
         captured["message"]
         == "批准计划并确认小样本限制"
@@ -603,7 +607,10 @@ def test_natural_language_can_request_read_only_inspection(
     )
     assert "5 个 PDB" in result.message
     assert "不是大模型猜测" in result.message
-    assert "回答“确认”" in result.message
+    assert (
+        "回复“确认”，继续采用文件检查建议"
+        in result.message
+    )
 
     pending = load_pending_action(
         bundle
@@ -752,7 +759,7 @@ def test_question_during_pending_action_is_answered(
 
     assert result.status == "ANSWER"
     assert "不会立即运行" in result.message
-    assert "待确认动作仍然保留" in result.message
+    assert "待确认仍保留：批准计划" in result.message
 
     pending = load_pending_action(
         bundle
@@ -806,8 +813,12 @@ def test_status_can_be_viewed_during_pending_action(
     )
 
     assert result.action == "STATUS"
-    assert "当前阶段：PREPARED" in result.message
-    assert "待确认动作仍然保留" in result.message
+    assert (
+        "总体：计划已准备，等待审查和批准"
+        in result.message
+    )
+    assert "PREPARED" not in result.message
+    assert "待确认仍保留：批准计划" in result.message
 
     assert load_pending_action(
         bundle
@@ -895,7 +906,7 @@ def test_pending_approval_safety_facts_are_deterministic(
     assert "会马上执行" not in result.message
     assert "仍然可以随时修改" not in result.message
 
-    assert "待确认动作仍然保留" in result.message
+    assert "待确认仍保留：批准计划" in result.message
     assert load_pending_action(
         bundle
     ) is not None
@@ -1174,7 +1185,10 @@ def test_information_correction_replaces_pending_action(
         "我刚才说错了，"
         "target 是 A 链，binder 是 B 链。"
     )
-    assert "原待确认动作 APPROVE" in result.message
+    assert (
+        "原待确认的“批准计划”已取消"
+        in result.message
+    )
     assert "取消" in result.message
     assert "已记录 binder 为 B 链" in result.message
     assert load_pending_action(bundle) is None
@@ -1271,7 +1285,7 @@ def test_view_plan_does_not_cancel_pending_action(
 
     assert result.action == "VIEW_PLAN"
     assert load_pending_action(bundle) is not None
-    assert "待确认动作仍然保留" in result.message
+    assert "待确认仍保留：批准计划" in result.message
 
 
 
@@ -1348,13 +1362,16 @@ def test_approval_proposal_displays_plan_before_confirmation(
     assert result.status == "AWAITING_CONFIRMATION"
     assert result.message.startswith("当前任务计划")
     assert "标准化 target 链：A" in result.message
-    assert "批准会冻结配置" in result.message
-    assert "请回答“确认”" in result.message
+    assert "影响：冻结配置" in result.message
+    assert (
+        "回复“确认”，继续批准计划"
+        in result.message
+    )
 
     pending = load_pending_action(bundle)
 
     assert pending is not None
-    assert "你正在请求批准项目：demo" in (
+    assert "待确认：批准计划" in (
         pending.summary
     )
     assert "当前任务计划" not in pending.summary
@@ -1571,7 +1588,7 @@ def test_pending_general_question_capability_overclaim_uses_safe_fallback(
     assert result.status == "ANSWER"
     assert wrong_reply not in result.message
     assert "不能预测结合亲和力" in result.message
-    assert "待确认动作仍然保留" in result.message
+    assert "待确认仍保留：批准计划" in result.message
 
     pending = load_pending_action(bundle)
 

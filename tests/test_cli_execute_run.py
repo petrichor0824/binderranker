@@ -144,7 +144,8 @@ def test_execute_run_success(
         is True
     )
 
-    assert "COMPLETED" in result.output
+    assert "状态：已完成" in result.output
+    assert "COMPLETED" not in result.output
     assert "test_project" in result.output
     assert "apr_test" in result.output
     assert "不能再次使用" in result.output

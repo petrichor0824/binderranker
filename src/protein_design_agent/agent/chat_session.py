@@ -61,6 +61,10 @@ from protein_design_agent.agent.run_status import (
 from protein_design_agent.agent.status_narration import (
     format_status_narration,
 )
+from protein_design_agent.agent.user_language import (
+    format_user_progress,
+    user_scope,
+)
 
 
 ChatAction = Literal[
@@ -500,35 +504,31 @@ def format_status_message(
             public_message="无法检查任务状态。",
         ) from exc
 
+    facts = {
+        "current_stage": report.current_stage,
+        "prepare_status": report.prepare_status,
+        "approval_status": report.approval_status,
+        "execution_status": report.execution_status,
+        "analysis_status": report.analysis_status,
+        "explanation_status": (
+            report.explanation_status
+        ),
+    }
+
     lines = [
         f"项目：{report.project_name}",
-        f"当前阶段：{report.current_stage}",
-        (
-            "准备："
-            f"{report.prepare_status or '未发现'}"
-        ),
-        (
-            "批准："
-            f"{report.approval_status or '未发现'}"
-        ),
-        (
-            "执行："
-            f"{report.execution_status or '未发现'}"
-        ),
-        (
-            "分析："
-            f"{report.analysis_status or '未发现'}"
-        ),
-        (
-            "模型解释："
-            f"{report.explanation_status or '未发现'}"
+        *format_user_progress(
+            facts,
+            include_explanation=True,
         ),
     ]
 
     if report.analysis_scope_level:
         lines.append(
-            "分析级别："
-            f"{report.analysis_scope_level}"
+            "结果使用范围："
+            + user_scope(
+                report.analysis_scope_level
+            )
         )
 
     if report.candidate_count is not None:
@@ -560,7 +560,7 @@ def help_message() -> str:
             "当任务信息不足时，我会主动提问，"
             "不会要求你填写内部字段名。",
             "",
-            "批准、执行和模型分析等动作"
+            "批准、执行和模型解释等动作"
             "不会因为一句模糊的话直接发生。"
             "我会先复述即将进行的操作，"
             "然后请你回答“确认”或“取消”。",
@@ -640,8 +640,8 @@ def process_chat_message(
                 "才能批准；当前状态为 "
                 f"{prepare_status!r}",
                 public_message=(
-                    "当前任务尚未达到 READY_FOR_REVIEW，"
-                    "因此不能批准。"
+                    "当前任务计划尚未准备完整，"
+                    "因此暂时不能批准。"
                 ),
             )
 
@@ -692,12 +692,14 @@ def process_chat_message(
                     "计划已批准，但尚未执行。",
                     f"批准 ID：{record.approval_id}",
                     (
-                        "分析级别："
-                        f"{record.analysis_scope_level}"
+                        "结果使用范围："
+                        + user_scope(
+                            record.analysis_scope_level
+                        )
                     ),
                     (
-                        "请输入“确认执行”"
-                        "才会运行 BinderRanker。"
+                        "下一步：如需运行，请说“开始运行”。"
+                        "系统会单独复述执行影响并再次请求确认。"
                     ),
                 ]
             ),
@@ -1018,14 +1020,8 @@ def process_chat_message(
                 [
                     "任务已经准备完成。",
                     f"项目：{result.project_name}",
-                    "当前状态：READY_FOR_REVIEW",
-                    (
-                        "检查计划后输入“批准计划”。"
-                    ),
-                    (
-                        "小样本任务需要输入"
-                        "“批准计划并确认小样本限制”。"
-                    ),
+                    "当前进度：计划已准备，等待审核。",
+                    "请先查看计划；确认无误后再申请批准。",
                 ]
             )
 
@@ -1094,14 +1090,8 @@ def process_chat_message(
             message_text = "\n".join(
                 [
                     "必要信息已经补齐。",
-                    "当前状态：READY_FOR_REVIEW",
-                    (
-                        "检查计划后输入“批准计划”。"
-                    ),
-                    (
-                        "小样本任务需要输入"
-                        "“批准计划并确认小样本限制”。"
-                    ),
+                    "当前进度：计划已准备，等待审核。",
+                    "请先查看计划；确认无误后再申请批准。",
                 ]
             )
 

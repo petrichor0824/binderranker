@@ -13,7 +13,6 @@
 from __future__ import annotations
 
 import os
-import re
 import shlex
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -23,6 +22,11 @@ from typing import Literal
 from protein_design_agent.agent.provider_factory import (
     build_request_parser_provider,
     resolve_provider_profile,
+)
+from protein_design_agent.agent.credential_guidance import (
+    secure_api_key_commands,
+    secure_api_key_setup_summary,
+    validate_environment_name,
 )
 from protein_design_agent.agent.providers.base import (
     RequestParserProvider,
@@ -322,6 +326,7 @@ def format_model_readiness(
     report: ModelReadinessReport,
     *,
     workspace_root: Path | None = None,
+    platform_name: str | None = None,
 ) -> str:
     """生成不泄露凭据的启动状态和修复指引。"""
     lines = [
@@ -362,28 +367,43 @@ def format_model_readiness(
     if report.status == "MISSING_CREDENTIAL":
         env_name = report.api_key_env
 
-        if (
-            env_name is not None
-            and re.fullmatch(
-                r"[A-Za-z_][A-Za-z0-9_]*",
-                env_name,
+        try:
+            validated_env_name = (
+                validate_environment_name(
+                    env_name
+                    if env_name is not None
+                    else ""
+                )
             )
-        ):
+        except ValueError:
+            validated_env_name = None
+
+        if validated_env_name is not None:
+            setup_commands = (
+                secure_api_key_commands(
+                    validated_env_name,
+                    platform_name=(
+                        platform_name
+                    ),
+                )
+            )
+
             lines.extend([
                 "",
                 "修复步骤：",
                 "1. 退出当前 Chat。",
                 (
-                    "2. 在同一终端复制并运行"
-                    "下面的整行命令："
+                    "2. "
+                    + secure_api_key_setup_summary(
+                        platform_name=(
+                            platform_name
+                        ),
+                    )
                 ),
-                (
-                    "   read -rsp "
-                    "'请粘贴真实 API Key，然后按回车"
-                    "（输入不会显示）：' "
-                    f"{env_name} && echo && "
-                    f"export {env_name}"
-                ),
+                *[
+                    f"   {command}"
+                    for command in setup_commands
+                ],
                 (
                     "3. 终端出现提示后，粘贴真实 "
                     "API Key 并按回车。"
@@ -393,9 +413,10 @@ def format_model_readiness(
                     "这是正常的安全行为。"
                 ),
                 (
-                    "   不要修改命令末尾的 "
-                    f"{env_name}；它是环境变量名，"
-                    "不是填写 API Key 的位置。"
+                    "   不要修改命令中的 "
+                    f"{validated_env_name}；"
+                    "它是环境变量名，不是填写 "
+                    "API Key 的位置。"
                 ),
                 (
                     "4. 不需要再运行其他 "

@@ -96,7 +96,7 @@ def test_model_cannot_change_status() -> None:
     assert rendered == "安全兜底"
 
 
-def test_full_status_message_preserves_raw_facts(
+def test_full_status_message_translates_internal_facts(
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -117,8 +117,11 @@ def test_full_status_message_preserves_raw_facts(
     assert "通俗说明：" in rendered
     assert "仍然有效的产物：" in rendered
     assert "不需要重跑 BinderRanker" in rendered
-    assert "当前阶段：ANALYZED" in rendered
     assert (
-        "COMPLETED / COMPLETED / UNAVAILABLE"
+        "总体：确定性结果分析已完成"
         in rendered
     )
+    assert "执行：已完成" in rendered
+    assert "模型解释：暂不可用" in rendered
+    assert "ANALYZED" not in rendered
+    assert "UNAVAILABLE" not in rendered

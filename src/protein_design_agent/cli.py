@@ -58,6 +58,13 @@ from protein_design_agent.agent.run_status import (
     RunStatusError,
     inspect_run_status,
 )
+from protein_design_agent.agent.user_language import (
+    format_user_progress,
+    plan_step_status_label,
+    translate_internal_terms,
+    user_scope,
+    user_status,
+)
 
 from protein_design_agent.agent.local_executor import (
     LocalExecutionError,
@@ -111,6 +118,14 @@ from protein_design_agent.agent.model_readiness import (
     format_model_readiness,
     resolve_model_config_path,
 )
+from protein_design_agent.agent.onboarding import (
+    format_first_chat_guidance,
+    task_is_empty,
+)
+from protein_design_agent.agent.session_recovery import (
+    collect_task_recovery_snapshot,
+    format_task_recovery_summary,
+)
 from protein_design_agent.public_identity import (
     AGENT_NAME,
     PROJECT_NAME,
@@ -128,6 +143,38 @@ app = typer.Typer(
         f"{PROJECT_NAME}：{SHORT_DESCRIPTION_ZH}"
     ),
 )
+
+
+def configure_cli_streams() -> None:
+    """让重定向的 Windows CLI 输出稳定支持 Unicode。"""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(
+            stream,
+            "reconfigure",
+            None,
+        )
+
+        if not callable(reconfigure):
+            continue
+
+        try:
+            reconfigure(
+                encoding="utf-8",
+                errors="replace",
+            )
+        except (
+            AttributeError,
+            OSError,
+            ValueError,
+        ):
+            # 测试捕获流或宿主包装流可能不允许重配置。
+            continue
+
+
+def main() -> None:
+    """配置安全的文本流后启动公开 CLI。"""
+    configure_cli_streams()
+    app()
 
 
 def resolve_cli_version() -> str:
@@ -374,9 +421,20 @@ def print_plan_summary(
     typer.echo(
         f"Provider：{session.provider_name}"
     )
-    typer.echo(f"状态：{plan.status}")
     typer.echo(
-        f"允许自动执行：{plan.execution_allowed}"
+        "状态："
+        + user_status(
+            plan.status,
+            area="prepare",
+        )
+    )
+    typer.echo(
+        "允许自动执行："
+        + (
+            "是"
+            if plan.execution_allowed
+            else "否"
+        )
     )
 
     if plan.missing_information:
@@ -406,7 +464,12 @@ def print_plan_summary(
 
             typer.echo(
                 f"  {index}. {step.description}"
-                f" [{step.status}{approval}]"
+                " ["
+                + plan_step_status_label(
+                    step.status
+                )
+                + approval
+                + "]"
             )
 
     typer.echo(f"完整计划：{output_path}")
@@ -515,18 +578,31 @@ def approve_run_command(
     typer.echo("=" * 60)
     typer.echo(f"{PROJECT_NAME} 批准记录")
     typer.echo("=" * 60)
-    typer.echo(f"状态：{record.status}")
+    typer.echo(
+        "状态："
+        + user_status(
+            record.status,
+            area="approval",
+        )
+    )
     typer.echo(f"批准 ID：{record.approval_id}")
     typer.echo(f"批准范围：{record.approval_scope}")
     typer.echo(f"批准者：{record.approved_by}")
     typer.echo(f"项目：{record.project_name}")
     typer.echo(f"Provider：{record.provider_name}")
     typer.echo(
-        f"分析级别：{record.analysis_scope_level}"
+        "结果使用范围："
+        + user_scope(
+            record.analysis_scope_level
+        )
     )
     typer.echo(
         "已确认小样本限制："
-        f"{record.smoke_test_acknowledged}"
+        + (
+            "是"
+            if record.smoke_test_acknowledged
+            else "否"
+        )
     )
     typer.echo(
         "标准化 PDB 数量："
@@ -749,7 +825,13 @@ def prepare_command(
     typer.echo("=" * 60)
     typer.echo(f"{PROJECT_NAME} 结果")
     typer.echo("=" * 60)
-    typer.echo(f"状态：{result.status}")
+    typer.echo(
+        "状态："
+        + user_status(
+            result.status,
+            area="prepare",
+        )
+    )
     typer.echo(
         f"Provider：{result.provider_name}"
     )
@@ -787,11 +869,19 @@ def prepare_command(
 
     typer.echo(
         "BinderRanker 已执行："
-        f"{result.binderranker_executed}"
+        + (
+            "是"
+            if result.binderranker_executed
+            else "否"
+        )
     )
     typer.echo(
         "远程后端已使用："
-        f"{result.remote_backend_used}"
+        + (
+            "是"
+            if result.remote_backend_used
+            else "否"
+        )
     )
 
 
@@ -876,7 +966,13 @@ def prepare_session_command(
     typer.echo("=" * 60)
     typer.echo(f"{PROJECT_NAME} 准备完成")
     typer.echo("=" * 60)
-    typer.echo(f"状态：{result.status}")
+    typer.echo(
+        "状态："
+        + user_status(
+            result.status,
+            area="prepare",
+        )
+    )
     typer.echo(f"项目：{result.project_name}")
     typer.echo(f"Provider：{result.provider_name}")
     typer.echo(
@@ -897,15 +993,23 @@ def prepare_session_command(
     )
     typer.echo(
         "BinderRanker 已执行："
-        f"{result.binderranker_executed}"
+        + (
+            "是"
+            if result.binderranker_executed
+            else "否"
+        )
     )
     typer.echo(
         "远程后端已使用："
-        f"{result.remote_backend_used}"
+        + (
+            "是"
+            if result.remote_backend_used
+            else "否"
+        )
     )
     typer.echo("")
     typer.echo(
-        "当前任务已停在 READY_FOR_REVIEW，"
+        "当前任务计划已准备完成，等待审核和批准，"
         "没有真正执行 BinderRanker。"
     )
 
@@ -992,7 +1096,13 @@ def materialize_plan_command(
         raise typer.Exit(code=2) from exc
 
     typer.echo("计划落地成功")
-    typer.echo(f"状态：{result.status}")
+    typer.echo(
+        "状态："
+        + user_status(
+            result.status,
+            area="prepare",
+        )
+    )
     typer.echo(f"项目：{result.project_name}")
     typer.echo(f"Provider：{result.provider_name}")
     typer.echo(f"项目配置：{result.output_config}")
@@ -1330,9 +1440,49 @@ def chat_command(
     )
     typer.echo(
         "你可以直接使用自然语言。"
-        "批准、执行和分析等动作会先复述影响，"
+        "批准、执行和模型解释等动作会先复述影响，"
         "再等待你确认。"
     )
+
+    current_task_is_empty = task_is_empty(
+        resolved_bundle
+    )
+
+    first_chat_guidance = (
+        format_first_chat_guidance(
+            task_empty=current_task_is_empty,
+            model_status=(
+                model_readiness.status
+            ),
+            uses_default_workspace=(
+                chat_target.uses_default_workspace
+            ),
+            workspace_status=(
+                workspace_report.status
+                if workspace_report is not None
+                else None
+            ),
+        )
+    )
+
+    if first_chat_guidance is not None:
+        typer.echo("")
+        typer.echo(first_chat_guidance)
+    elif not current_task_is_empty:
+        recovery_snapshot = (
+            collect_task_recovery_snapshot(
+                resolved_bundle
+            )
+        )
+        typer.echo("")
+        typer.echo(
+            format_task_recovery_summary(
+                recovery_snapshot,
+                model_status=(
+                    model_readiness.status
+                ),
+            )
+        )
 
     exit_commands = {
         "退出",
@@ -1501,41 +1651,43 @@ def run_status_command(
         f"Bundle：{report.bundle_dir}"
     )
     typer.echo(
-        f"当前阶段：{report.current_stage}"
+        "当前进度："
+        + user_status(
+            report.current_stage,
+            area="stage",
+        )
     )
 
     typer.echo("")
-    typer.echo("阶段明细")
+    typer.echo("进度明细")
     typer.echo("-" * 72)
 
-    typer.echo(
-        "准备："
-        f"{report.prepare_status or '未发现'}"
+    progress = format_user_progress(
+        {
+            "current_stage": report.current_stage,
+            "prepare_status": report.prepare_status,
+            "approval_status": report.approval_status,
+            "execution_status": report.execution_status,
+            "analysis_status": report.analysis_status,
+            "explanation_status": (
+                report.explanation_status
+            ),
+        },
+        include_explanation=True,
     )
-    typer.echo(
-        "批准："
-        f"{report.approval_status or '未发现'}"
-    )
-    typer.echo(
-        "执行："
-        f"{report.execution_status or '未发现'}"
-    )
-    typer.echo(
-        "分析："
-        f"{report.analysis_status or '未发现'}"
-    )
-    typer.echo(
-        "模型解释："
-        f"{report.explanation_status or '未发现'}"
-    )
+
+    for line in progress[1:]:
+        typer.echo(line)
 
     typer.echo("")
     typer.echo("任务属性")
     typer.echo("-" * 72)
 
     typer.echo(
-        "分析级别："
-        f"{report.analysis_scope_level or '未知'}"
+        "结果使用范围："
+        + user_scope(
+            report.analysis_scope_level
+        )
     )
 
     typer.echo(
@@ -1588,13 +1740,26 @@ def run_status_command(
         typer.echo("-" * 72)
 
         for attempt in report.analysis_attempts:
+            used_model = show_bool(
+                attempt.with_model,
+                true_text="是",
+                false_text="否",
+            )
+
             typer.echo(
                 f"- {attempt.manifest_path.parent.name}: "
-                f"{attempt.status}; "
-                f"with_model={attempt.with_model}; "
-                f"provider={attempt.provider_name or '无'}; "
-                f"explanation="
-                f"{attempt.explanation_status or '无'}"
+                + user_status(
+                    attempt.status,
+                    area="analysis",
+                )
+                + f"；调用模型：{used_model}；"
+                + "Provider："
+                + (attempt.provider_name or "无")
+                + "；模型解释："
+                + user_status(
+                    attempt.explanation_status,
+                    area="explanation",
+                )
             )
 
     if report.warnings:
@@ -1604,7 +1769,10 @@ def run_status_command(
 
         for warning in report.warnings:
             typer.echo(
-                f"- {warning}"
+                "- "
+                + translate_internal_terms(
+                    warning
+                )
             )
 
 
@@ -1717,7 +1885,11 @@ def execute_run_command(
     typer.echo("=" * 72)
 
     typer.echo(
-        f"状态：{result.status}"
+        "状态："
+        + user_status(
+            result.status,
+            area="execution",
+        )
     )
     typer.echo(
         f"项目：{result.project_name}"
@@ -1845,7 +2017,13 @@ def analyze_run_command(
     typer.echo("=" * 72)
     typer.echo("Ranker 结果分析完成")
     typer.echo("=" * 72)
-    typer.echo(f"状态：{result.status}")
+    typer.echo(
+        "状态："
+        + user_status(
+            result.status,
+            area="analysis",
+        )
+    )
     typer.echo(f"Bundle：{result.bundle_dir}")
     typer.echo(f"分析目录：{result.analysis_dir}")
     typer.echo(f"分析清单：{result.manifest_path}")
@@ -1856,7 +2034,12 @@ def analyze_run_command(
         f"失败分析：{result.failure_analysis_path}"
     )
     typer.echo(
-        f"启用模型：{result.with_model}"
+        "启用模型："
+        + (
+            "是"
+            if result.with_model
+            else "否"
+        )
     )
 
     if result.with_model:
@@ -1970,7 +2153,11 @@ def explain_run_command(
     typer.echo("结果解释完成")
     typer.echo("=" * 72)
     typer.echo(
-        f"状态：{result.status}"
+        "状态："
+        + user_status(
+            result.status,
+            area="explanation",
+        )
     )
     typer.echo(
         f"Provider：{result.provider_name}"
@@ -2432,7 +2619,13 @@ def plan_mock_command(
 
     示例 payload：
 
-    {"project_name":"demo","input_dir":"sample_data/test_two_chain","input_layout":"existing_chains","binder_chain":"A","execute_requested":false}
+        {
+          "project_name": "demo",
+          "input_dir": "sample_data/test_two_chain",
+          "input_layout": "existing_chains",
+          "binder_chain": "A",
+          "execute_requested": false
+        }
 
     核心字段：
 
@@ -2767,4 +2960,4 @@ def plan_command(
 
 
 if __name__ == "__main__":
-    app()
+    main()
