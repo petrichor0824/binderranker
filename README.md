@@ -33,7 +33,7 @@ existing candidate PDB set.
 BinderRanker is a **prioritization layer**. A high score or strict-layer pass
 is not biological proof.
 
-Current development line: **v0.3.0**
+Current development line: **v0.3.1**
 
 ---
 
@@ -171,7 +171,7 @@ model API key.
     python3 -m venv .venv
     source .venv/bin/activate
     python -m pip install --upgrade pip
-    python -m pip install ./binderranker-0.3.0-py3-none-any.whl
+    python -m pip install ./binderranker-0.3.1-py3-none-any.whl
 
 Verify:
 

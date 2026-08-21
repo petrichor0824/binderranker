@@ -7,6 +7,12 @@ used by the corresponding release.
 
 ## Unreleased
 
+## 0.3.1 - 2026-08-21
+
+BinderRanker v0.3.1 is a stabilization release that strengthens scientific
+result semantics, installed-package verification, cross-platform reliability,
+and first-workflow usability without changing the frozen scoring algorithm.
+
 ### Added
 
 - A shared scientific-result validator for candidate identity, required output
@@ -21,6 +27,8 @@ used by the corresponding release.
   Bundle state, explicit planning provenance, and pending confirmations.
 - A deterministic user-language layer for task stages, component statuses,
   analysis scopes, pending actions, and task lifecycle states.
+- Regression coverage for zero-valid-candidate runs, missing binder chains,
+  non-finite scores, malformed ranking output, and unchanged valid rankings.
 
 ### Changed
 
@@ -55,6 +63,15 @@ used by the corresponding release.
   their audited SHA256 values stable across platforms.
 - CLI entry points switch redirected standard streams to UTF-8 before emitting
   localized output, including on legacy Windows code pages.
+
+### Validation
+
+- The full regression suite, clean Wheel/sdist build, release-asset checksum
+  verification, clean-environment Wheel installation, and installed-package
+  five-candidate scientific smoke test are required release gates.
+- Platform-dependent POSIX path and symlink-containment tests remain covered by
+  the Linux CI matrix when the local Windows environment intentionally skips
+  them.
 
 ## 0.3.0 - 2026-08-20
 

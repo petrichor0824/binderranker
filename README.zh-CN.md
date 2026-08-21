@@ -33,7 +33,7 @@ BinderRanker 本身不负责生成候选骨架；它对已有的候选 PDB 集�
 BinderRanker 是一个**候选优先级筛选层**。高分或进入严格筛选层，
 都不能作为生物学成功的直接证明。
 
-当前开发版本线：**v0.3.0**
+当前开发版本线：**v0.3.1**
 
 ---
 
@@ -193,9 +193,9 @@ BinderRanker 根据输入候选数量限制结果可以被解释到什么程度�
     source .venv/bin/activate
     python -m pip install --upgrade pip
 
-安装 BinderRanker v0.3.0 wheel：
+安装 BinderRanker v0.3.1 wheel：
 
-    python -m pip install ./binderranker-0.3.0-py3-none-any.whl
+    python -m pip install ./binderranker-0.3.1-py3-none-any.whl
 
 检查安装：
 
