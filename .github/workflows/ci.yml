@@ -44,6 +44,31 @@ jobs:
           binderranker doctor \
             --project-root "$GITHUB_WORKSPACE"
 
+  windows-tests:
+    name: Tests - Windows Python 3.12
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install -e ".[dev]"
+
+      - name: Run test suite
+        run: pytest -q
+
+      - name: Run source-checkout doctor
+        run: binderranker doctor --project-root "${{ github.workspace }}"
+
   package:
     name: Build release assets and clean-install wheel
     runs-on: ubuntu-latest

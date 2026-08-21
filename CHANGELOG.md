@@ -14,6 +14,7 @@ used by the corresponding release.
   packaged engineering smoke path.
 - Platform-specific secure API Key setup guidance for Windows PowerShell and
   POSIX shells.
+- Windows / Python 3.12 CI coverage for the full regression suite and Doctor.
 
 ### Fixed
 
