@@ -1,4 +1,7 @@
 import json
+import os
+import subprocess
+import sys
 from importlib.metadata import (
     version as distribution_version,
 )
@@ -11,6 +14,51 @@ from protein_design_agent.cli import app
 
 
 runner = CliRunner()
+
+
+def test_cli_streams_override_legacy_windows_encoding(
+) -> None:
+    repository_root = (
+        Path(__file__).resolve().parents[1]
+    )
+    environment = os.environ.copy()
+    source_root = repository_root / "src"
+    existing_pythonpath = environment.get(
+        "PYTHONPATH",
+        "",
+    )
+
+    environment["PYTHONIOENCODING"] = "cp1252"
+    environment["PYTHONPATH"] = os.pathsep.join(
+        item
+        for item in (
+            str(source_root),
+            existing_pythonpath,
+        )
+        if item
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from protein_design_agent.cli import "
+                "configure_cli_streams; "
+                "configure_cli_streams(); "
+                "print('总体状态：通过')"
+            ),
+        ],
+        cwd=repository_root,
+        env=environment,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.decode("utf-8").strip() == (
+        "总体状态：通过"
+    )
 
 
 def test_cli_reports_installed_distribution_version() -> None:

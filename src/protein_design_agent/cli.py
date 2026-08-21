@@ -145,6 +145,38 @@ app = typer.Typer(
 )
 
 
+def configure_cli_streams() -> None:
+    """让重定向的 Windows CLI 输出稳定支持 Unicode。"""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(
+            stream,
+            "reconfigure",
+            None,
+        )
+
+        if not callable(reconfigure):
+            continue
+
+        try:
+            reconfigure(
+                encoding="utf-8",
+                errors="replace",
+            )
+        except (
+            AttributeError,
+            OSError,
+            ValueError,
+        ):
+            # 测试捕获流或宿主包装流可能不允许重配置。
+            continue
+
+
+def main() -> None:
+    """配置安全的文本流后启动公开 CLI。"""
+    configure_cli_streams()
+    app()
+
+
 def resolve_cli_version() -> str:
     """读取当前安装的 BinderRanker distribution 版本。"""
     try:
@@ -2928,4 +2960,4 @@ def plan_command(
 
 
 if __name__ == "__main__":
-    app()
+    main()

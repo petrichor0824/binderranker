@@ -41,6 +41,10 @@ used by the corresponding release.
   Windows and POSIX path semantics.
 - Public error facts preserve their business meaning without displaying
   internal state constants such as `READY_FOR_REVIEW`.
+- Frozen Ranker resources retain LF line endings on Windows checkouts, keeping
+  their audited SHA256 values stable across platforms.
+- CLI entry points switch redirected standard streams to UTF-8 before emitting
+  localized output, including on legacy Windows code pages.
 
 ## 0.3.0 - 2026-08-20
 

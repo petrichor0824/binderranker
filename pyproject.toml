@@ -48,8 +48,8 @@ pythonpath = ["src"]
 testpaths = ["tests"]
 
 [project.scripts]
-binderranker = "protein_design_agent.cli:app"
-protein-design-agent = "protein_design_agent.cli:app"
+binderranker = "protein_design_agent.cli:main"
+protein-design-agent = "protein_design_agent.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/petrichor0824/binderranker"
