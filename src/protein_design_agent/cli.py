@@ -2034,6 +2034,10 @@ def analyze_run_command(
         f"失败分析：{result.failure_analysis_path}"
     )
     typer.echo(
+        "确定性报告："
+        f"{result.deterministic_report_path}"
+    )
+    typer.echo(
         "启用模型："
         + (
             "是"

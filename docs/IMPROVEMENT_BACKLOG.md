@@ -40,6 +40,15 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
 - 不变项：不修改评分、排名、筛选条件、Tool 授权边界或冻结 Ranker 资源。
 - 目标阶段：v0.4.0 Workstream 7 第一切片。
 
+### Sealed human-readable deterministic analysis report
+
+- 原问题：`analyze-run` 已生成结构化结果摘要和失败差距 JSON，但离线用户仍需自行拼接多份产物才能审阅候选排名、分数贡献和允许公开的失败门槛证据。
+- 当前实现：新增不依赖模型或网络的 Markdown 报告，只组合已经验证的结果摘要与失败分析，不重复计算评分、排名、筛选或阈值。
+- 范围策略：`SMOKE_TEST_ONLY` 抑制不稳定的小样本动态阈值和差距；`EXPLORATORY` 与完整数据分析按各自权限展示批内差距，并明确其不代表生物机制。
+- Provenance：完成清单记录报告路径和 SHA256；报告被修改后完整性校验失败；没有报告的旧版分析清单继续按 legacy 语义读取。
+- 不变项：不修改评分、排名、筛选规则、Tool 授权边界或冻结 Ranker 资源。
+- 目标阶段：v0.4.0 Workstream 7 第二切片。
+
 ## P1 — Stable Tool/API boundary
 
 ### Tool API adoption and runtime integration

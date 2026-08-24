@@ -44,6 +44,11 @@ ANALYSIS_SEAL_FIELDS = (
     "execution_manifest_sha256",
 )
 
+OPTIONAL_REPORT_SEAL_FIELDS = (
+    "deterministic_report_path",
+    "deterministic_report_sha256",
+)
+
 
 class AnalysisArtifactError(RuntimeError):
     """无法安全确定分析产物。"""
@@ -62,6 +67,7 @@ class AnalysisArtifacts(BaseModel):
 
     result_summary_path: Path
     failure_analysis_path: Path
+    deterministic_report_path: Path | None = None
 
 
 def path_is_inside_bundle(
@@ -235,6 +241,8 @@ class AnalysisProvenanceSeal(BaseModel):
 
     result_summary_sha256: str
     failure_analysis_sha256: str
+    deterministic_report_path: Path | None = None
+    deterministic_report_sha256: str | None = None
 
     execution_manifest_path: Path
     execution_manifest_sha256: str
@@ -288,6 +296,7 @@ def build_analysis_provenance_seal(
     bundle_dir: Path,
     result_summary_path: Path,
     failure_analysis_path: Path,
+    deterministic_report_path: Path | None = None,
 ) -> AnalysisProvenanceSeal:
     """为一次成功的确定性分析生成完整性封印。"""
     bundle = bundle_dir.resolve()
@@ -304,6 +313,14 @@ def build_analysis_provenance_seal(
         description="失败分析",
     )
 
+    report: Path | None = None
+    if deterministic_report_path is not None:
+        report = validate_artifact_path(
+            path=deterministic_report_path,
+            bundle_dir=bundle,
+            description="确定性分析报告",
+        )
+
     execution = (
         resolve_summary_execution_manifest(
             result_summary_path=summary,
@@ -319,6 +336,12 @@ def build_analysis_provenance_seal(
         failure_analysis_sha256=(
             sha256_file(failure)
         ),
+        deterministic_report_path=report,
+        deterministic_report_sha256=(
+            None
+            if report is None
+            else sha256_file(report)
+        ),
         execution_manifest_path=execution,
         execution_manifest_sha256=(
             sha256_file(execution)
@@ -333,6 +356,7 @@ def verify_analysis_provenance(
     bundle_dir: Path,
     result_summary_path: Path,
     failure_analysis_path: Path,
+    deterministic_report_path: Path | None = None,
 ) -> AnalysisProvenanceStatus:
     """
     验证新版 analysis provenance seal。
@@ -347,7 +371,20 @@ def verify_analysis_provenance(
         not in (None, "")
     }
 
+    report_seal_present = {
+        field
+        for field in OPTIONAL_REPORT_SEAL_FIELDS
+        if manifest.get(field)
+        not in (None, "")
+    }
+
     if not present:
+        if report_seal_present:
+            raise AnalysisArtifactError(
+                "分析清单仅包含确定性报告 seal，"
+                "缺少基础 provenance seal："
+                f"{manifest_path}"
+            )
         return "UNSEALED_LEGACY"
 
     required = set(
@@ -358,6 +395,24 @@ def verify_analysis_provenance(
         raise AnalysisArtifactError(
             "分析清单 provenance seal 不完整："
             f"{manifest_path}"
+        )
+
+    if report_seal_present and (
+        report_seal_present
+        != set(OPTIONAL_REPORT_SEAL_FIELDS)
+    ):
+        raise AnalysisArtifactError(
+            "确定性分析报告 provenance seal 不完整："
+            f"{manifest_path}"
+        )
+
+    if (
+        report_seal_present
+        and deterministic_report_path is None
+    ):
+        raise AnalysisArtifactError(
+            "分析清单声明了确定性报告 seal，"
+            "但没有可验证的报告路径"
         )
 
     completed_at = manifest.get(
@@ -408,7 +463,21 @@ def verify_analysis_provenance(
         ),
     )
 
-    for path, expected, description in checks:
+    mutable_checks = list(checks)
+    if deterministic_report_path is not None:
+        mutable_checks.append(
+            (
+                deterministic_report_path,
+                manifest.get(
+                    "deterministic_report_sha256"
+                ),
+                "确定性分析报告",
+            )
+        )
+
+    for path, expected, description in (
+        mutable_checks
+    ):
         if not isinstance(
             expected,
             str,
@@ -569,6 +638,22 @@ def resolve_analysis_artifacts(
             )
         )
 
+        deterministic_report = None
+        raw_report_path = manifest.get(
+            "deterministic_report_path"
+        )
+        if raw_report_path not in (None, ""):
+            deterministic_report = (
+                resolve_manifest_artifact_path(
+                    raw_path=raw_report_path,
+                    manifest_path=manifest_path,
+                    bundle_dir=bundle,
+                    description=(
+                        "确定性分析报告"
+                    ),
+                )
+            )
+
         provenance_status = (
             verify_analysis_provenance(
                 manifest_path=manifest_path,
@@ -576,6 +661,9 @@ def resolve_analysis_artifacts(
                 bundle_dir=bundle,
                 result_summary_path=summary,
                 failure_analysis_path=failure,
+                deterministic_report_path=(
+                    deterministic_report
+                ),
             )
         )
 
@@ -588,6 +676,9 @@ def resolve_analysis_artifacts(
             ),
             result_summary_path=summary,
             failure_analysis_path=failure,
+            deterministic_report_path=(
+                deterministic_report
+            ),
         )
 
     legacy_summary = (

@@ -437,6 +437,20 @@ def test_standalone_explain_rejects_tampered_sealed_analysis(
         )
         return output_path
 
+    def fake_report(
+        *,
+        result_summary_path,
+        failure_analysis_path,
+        output_path,
+    ):
+        assert result_summary_path.is_file()
+        assert failure_analysis_path.is_file()
+        output_path.write_text(
+            "# Deterministic analysis\n",
+            encoding="utf-8",
+        )
+        return output_path
+
     monkeypatch.setattr(
         analyze_module,
         "write_ranker_result_summary",
@@ -446,6 +460,11 @@ def test_standalone_explain_rejects_tampered_sealed_analysis(
         analyze_module,
         "write_failure_analysis",
         fake_failure,
+    )
+    monkeypatch.setattr(
+        analyze_module,
+        "write_deterministic_analysis_report",
+        fake_report,
     )
 
     analyzed = run_analyze_run(

@@ -7,6 +7,9 @@ import pytest
 from protein_design_agent.agent.approval import (
     fingerprint_file,
 )
+from protein_design_agent.agent.analyze_run import (
+    run_analyze_run,
+)
 from protein_design_agent.agent.ranker_result_parser import (
     RankerResultParseError,
     parse_completed_ranker_run,
@@ -357,13 +360,81 @@ def test_smoke_test_results_are_suppressed(
         .formal_candidate_recommendation_allowed
         is False
     )
-
     assert (
         summary
         .candidates_by_engineering_rank[0]
         .public_filter_level
         is None
     )
+
+
+def test_analyze_run_writes_real_deterministic_report(
+    tmp_path: Path,
+) -> None:
+    bundle = build_bundle(tmp_path)
+    ranker = bundle / "workflow" / "ranker"
+    scored = ranker / "backbone_rank_scored.csv"
+
+    with scored.open(
+        "r",
+        encoding="utf-8",
+        newline="",
+    ) as handle:
+        rows = list(csv.DictReader(handle))
+
+    rows[0]["effective_weight_sum"] = "25"
+    rows[1]["effective_weight_sum"] = "0.5"
+
+    with scored.open(
+        "w",
+        encoding="utf-8",
+        newline="",
+    ) as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=HEADERS,
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+
+    report_txt = ranker / "backbone_rank_report.txt"
+    report_txt.write_text(
+        report_txt.read_text(
+            encoding="utf-8"
+        ).replace(
+            "score_safety 0.6",
+            "score_safety 0.95",
+        ),
+        encoding="utf-8",
+    )
+    refresh_output_fingerprints(bundle)
+
+    result = run_analyze_run(
+        bundle_dir=bundle,
+        analysis_dir=Path(
+            "analyses/integration"
+        ),
+        with_model=False,
+    )
+
+    report = result.deterministic_report_path.read_text(
+        encoding="utf-8"
+    )
+    manifest = json.loads(
+        result.manifest_path.read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert "without a language model" in report
+    assert "morphology_adaptive_score=0.765" in report
+    assert "intentionally suppressed" in report
+    assert manifest["deterministic_report_path"] == str(
+        result.deterministic_report_path
+    )
+    assert len(
+        manifest["deterministic_report_sha256"]
+    ) == 64
 
 
 def test_thresholds_are_parsed(

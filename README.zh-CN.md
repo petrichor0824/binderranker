@@ -142,6 +142,7 @@ Broad、Medium 和 Strict 不是固定的生物物理阈值，
 - failed-gate 信息；
 - threshold-gap 分析；
 - 确定性的结果摘要；
+- 人类可读的确定性分析报告；
 - 配置、执行及文件的来源追踪（provenance）；
 - 可选的、受证据约束的模型解释。
 

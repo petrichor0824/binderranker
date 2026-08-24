@@ -887,6 +887,9 @@ def process_chat_message(
             "failure_analysis": (
                 result.failure_analysis_path
             ),
+            "deterministic_report": (
+                result.deterministic_report_path
+            ),
         }
 
         if (
@@ -947,6 +950,10 @@ def process_chat_message(
                     (
                         "结果摘要："
                         f"{result.result_summary_path}"
+                    ),
+                    (
+                        "确定性报告："
+                        f"{result.deterministic_report_path}"
                     ),
                     (
                         (

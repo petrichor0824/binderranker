@@ -14,6 +14,12 @@ used by the corresponding release.
   scores, and reconstruction errors in deterministic result summaries.
 - Added explicit `AVAILABLE` / `UNAVAILABLE` decomposition semantics so legacy
   reports remain readable without inferring missing scientific evidence.
+- Added a deterministic, human-readable Markdown analysis report that combines
+  validated rankings, public screening status, score contributions, and
+  policy-permitted failed-gate evidence without requiring a model or network.
+- Added SHA256 sealing and artifact resolution for the deterministic report,
+  while preserving support for analysis manifests created before the report
+  existed.
 
 ### Changed
 
@@ -22,6 +28,9 @@ used by the corresponding release.
   consistently documented as optional access and integration layers.
 - Optional model explanations now reuse the same deterministic report-context
   and score-decomposition logic as offline result analysis.
+- `SMOKE_TEST_ONLY` reports now suppress unstable dynamic-threshold details;
+  exploratory and full-dataset reports retain numerical gap evidence with
+  explicit batch-relative interpretation boundaries.
 
 ## 0.3.1 - 2026-08-21
 

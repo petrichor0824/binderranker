@@ -363,6 +363,7 @@ def seal_test_analysis(
     manifest: Path,
     summary: Path,
     failure: Path,
+    deterministic_report: Path | None = None,
 ) -> Path:
     execution = (
         bundle / "execution_apr_test.json"
@@ -407,6 +408,20 @@ def seal_test_analysis(
             ),
         }
     )
+
+    if deterministic_report is not None:
+        payload.update(
+            {
+                "deterministic_report_path": str(
+                    deterministic_report
+                ),
+                "deterministic_report_sha256": (
+                    sha256_for_test(
+                        deterministic_report
+                    )
+                ),
+            }
+        )
 
     write_json(
         manifest,
@@ -481,6 +496,88 @@ def test_sealed_analysis_rejects_tampered_summary(
         )
 
 
+def test_sealed_deterministic_report_is_verified(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    manifest, summary, failure = make_analysis(
+        bundle,
+        "sealed_report",
+        completed_at_utc=(
+            "2026-08-07T02:00:00+00:00"
+        ),
+    )
+    report = (
+        manifest.parent
+        / "binderranker_deterministic_analysis.md"
+    )
+    report.write_text(
+        "# Deterministic analysis\n",
+        encoding="utf-8",
+    )
+
+    seal_test_analysis(
+        bundle=bundle,
+        manifest=manifest,
+        summary=summary,
+        failure=failure,
+        deterministic_report=report,
+    )
+
+    artifacts = resolve_analysis_artifacts(
+        bundle_dir=bundle,
+    )
+
+    assert artifacts.provenance_status == (
+        "SEALED_VERIFIED"
+    )
+    assert artifacts.deterministic_report_path == (
+        report.resolve()
+    )
+
+
+def test_sealed_analysis_rejects_tampered_report(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    manifest, summary, failure = make_analysis(
+        bundle,
+        "tampered_report",
+        completed_at_utc=(
+            "2026-08-07T02:00:00+00:00"
+        ),
+    )
+    report = manifest.parent / "report.md"
+    report.write_text(
+        "original\n",
+        encoding="utf-8",
+    )
+
+    seal_test_analysis(
+        bundle=bundle,
+        manifest=manifest,
+        summary=summary,
+        failure=failure,
+        deterministic_report=report,
+    )
+    report.write_text(
+        "tampered\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        AnalysisArtifactError,
+        match="SHA256 不匹配",
+    ):
+        resolve_analysis_artifacts(
+            bundle_dir=bundle,
+        )
+
+
 def test_partial_provenance_seal_is_rejected(
     tmp_path: Path,
 ) -> None:
@@ -513,6 +610,46 @@ def test_partial_provenance_seal_is_rejected(
     with pytest.raises(
         AnalysisArtifactError,
         match="provenance seal 不完整",
+    ):
+        resolve_analysis_artifacts(
+            bundle_dir=bundle,
+        )
+
+
+def test_report_only_provenance_seal_is_rejected(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    manifest, _summary, _failure = make_analysis(
+        bundle,
+        "report_only",
+        completed_at_utc=(
+            "2026-08-07T02:00:00+00:00"
+        ),
+    )
+    report = manifest.parent / "report.md"
+    report.write_text(
+        "report\n",
+        encoding="utf-8",
+    )
+    payload = json.loads(
+        manifest.read_text(encoding="utf-8")
+    )
+    payload.update(
+        {
+            "deterministic_report_path": str(report),
+            "deterministic_report_sha256": (
+                sha256_for_test(report)
+            ),
+        }
+    )
+    write_json(manifest, payload)
+
+    with pytest.raises(
+        AnalysisArtifactError,
+        match="缺少基础 provenance seal",
     ):
         resolve_analysis_artifacts(
             bundle_dir=bundle,

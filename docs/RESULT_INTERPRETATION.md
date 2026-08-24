@@ -53,6 +53,31 @@ These contributions explain arithmetic inside the ranking formula. They are
 not causal attributions, free-energy components, or evidence that a metric has
 the same importance across targets or candidate batches.
 
+## Read the deterministic analysis report
+
+`binderranker analyze-run` writes
+`binderranker_deterministic_analysis.md` alongside the authoritative JSON
+summary and failure analysis. The Markdown report is generated without a
+language model and does not recompute scores, ranks, filters, or thresholds.
+It presents only evidence that has already passed the structured parsers and
+cross-artifact consistency checks.
+
+The report follows the analysis-scope policy:
+
+- `SMOKE_TEST_ONLY` keeps public screening status but suppresses numerical
+  dynamic-threshold and gap details because a tiny batch does not support
+  stable interpretation;
+- `EXPLORATORY` may show failed gates and numerical threshold gaps as
+  within-batch exploratory evidence;
+- `FULL_DATASET_ANALYSIS` may show the same deterministic evidence under the
+  full-workflow interpretation policy, while still requiring downstream
+  validation.
+
+The report path and SHA256 digest are recorded in the completed analysis
+manifest. Editing the report after completion causes provenance verification
+to fail. Analysis manifests created before this report was introduced remain
+readable as legacy artifacts.
+
 ## Understand strengths and weaknesses
 
 The compact result preview reports the strongest and weakest normalized

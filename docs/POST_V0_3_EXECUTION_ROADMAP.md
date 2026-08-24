@@ -718,6 +718,18 @@ readable with an explicit `UNAVAILABLE` status instead of inferred evidence.
 This slice does not change scoring, ranking, filters, or frozen Ranker
 resources.
 
+The second v0.4 slice adds a sealed, human-readable deterministic analysis
+report for offline and HPC-friendly review. It composes the validated result
+summary and failure-gap analysis without duplicating or recomputing scientific
+logic. Scope policy is enforced in the rendered view: `SMOKE_TEST_ONLY`
+suppresses unstable threshold details, while exploratory and full-dataset
+analyses can expose numerical gaps with explicit batch-relative limitations.
+The report path and SHA256 are included in the completed analysis provenance
+seal, and pre-report manifests remain readable.
+
+This slice also leaves scoring, ranking, filters, Tool authorization, and
+frozen Ranker resources unchanged.
+
 Focus on:
 
 - metric semantics;
