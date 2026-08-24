@@ -20,6 +20,9 @@ used by the corresponding release.
 - Added SHA256 sealing and artifact resolution for the deterministic report,
   while preserving support for analysis manifests created before the report
   existed.
+- Added shared adjacent-candidate score comparisons that reconstruct each
+  recorded rank gap from direct-primary contribution deltas and identify the
+  largest positive and negative arithmetic terms.
 
 ### Changed
 
@@ -31,6 +34,8 @@ used by the corresponding release.
 - `SMOKE_TEST_ONLY` reports now suppress unstable dynamic-threshold details;
   exploratory and full-dataset reports retain numerical gap evidence with
   explicit batch-relative interpretation boundaries.
+- Deterministic Markdown reports now explain adjacent rank differences without
+  presenting contribution deltas as causal, energetic, or biological effects.
 
 ## 0.3.1 - 2026-08-21
 

@@ -5,6 +5,7 @@ import pytest
 from protein_design_agent.agent.score_decomposition import (
     ScoreDecompositionError,
     canonical_primary_score_formula,
+    compare_adjacent_primary_scores,
     decompose_primary_score,
     primary_score_weights,
     validate_primary_score_formula,
@@ -142,4 +143,143 @@ def test_inconsistent_recorded_score_is_rejected() -> None:
             },
             recorded_final_score_v4=0.75,
             region_score_used=False,
+        )
+
+
+def test_adjacent_score_delta_is_reconstructed() -> None:
+    result = compare_adjacent_primary_scores(
+        higher_ranked_candidate="candidate_a",
+        higher_rank=1,
+        higher_ranked_final_score_v4=0.76,
+        higher_ranked_contributions={
+            "score_roughness": 0.02,
+            "morphology_adaptive_score": 0.68,
+            "score_safety": 0.06,
+        },
+        lower_ranked_candidate="candidate_b",
+        lower_rank=2,
+        lower_ranked_final_score_v4=0.68,
+        lower_ranked_contributions={
+            "score_roughness": 0.015,
+            "score_safety": 0.07,
+            "morphology_adaptive_score": 0.595,
+        },
+    )
+
+    assert result.recorded_score_delta == (
+        pytest.approx(0.08)
+    )
+    assert result.reconstructed_score_delta == (
+        pytest.approx(0.08)
+    )
+    assert result.reconstruction_error == (
+        pytest.approx(0.0, abs=1e-15)
+    )
+    assert [
+        item.delta
+        for item in result.contribution_deltas
+    ] == pytest.approx(
+        [0.085, -0.01, 0.005]
+    )
+    assert (
+        result
+        .largest_positive_contribution_delta
+        .metric_key
+        == "morphology_adaptive_score"
+    )
+    assert (
+        result
+        .largest_negative_contribution_delta
+        .metric_key
+        == "score_safety"
+    )
+
+
+def test_adjacent_score_delta_requires_matching_components() -> None:
+    with pytest.raises(
+        ScoreDecompositionError,
+        match="贡献项不完整或不一致",
+    ):
+        compare_adjacent_primary_scores(
+            higher_ranked_candidate="candidate_a",
+            higher_rank=1,
+            higher_ranked_final_score_v4=0.7,
+            higher_ranked_contributions={
+                "score_safety": 0.7,
+            },
+            lower_ranked_candidate="candidate_b",
+            lower_rank=2,
+            lower_ranked_final_score_v4=0.6,
+            lower_ranked_contributions={
+                "score_roughness": 0.6,
+            },
+        )
+
+
+def test_adjacent_score_delta_rejects_inconsistent_arithmetic() -> None:
+    with pytest.raises(
+        ScoreDecompositionError,
+        match="无法重建相邻候选分数差",
+    ):
+        compare_adjacent_primary_scores(
+            higher_ranked_candidate="candidate_a",
+            higher_rank=1,
+            higher_ranked_final_score_v4=0.7,
+            higher_ranked_contributions={
+                "score_safety": 0.7,
+            },
+            lower_ranked_candidate="candidate_b",
+            lower_rank=2,
+            lower_ranked_final_score_v4=0.6,
+            lower_ranked_contributions={
+                "score_safety": 0.5,
+            },
+        )
+
+
+def test_adjacent_score_delta_requires_adjacent_ranks() -> None:
+    with pytest.raises(
+        ScoreDecompositionError,
+        match="连续的相邻排名",
+    ):
+        compare_adjacent_primary_scores(
+            higher_ranked_candidate="candidate_a",
+            higher_rank=1,
+            higher_ranked_final_score_v4=0.7,
+            higher_ranked_contributions={
+                "score_safety": 0.7,
+            },
+            lower_ranked_candidate="candidate_b",
+            lower_rank=3,
+            lower_ranked_final_score_v4=0.6,
+            lower_ranked_contributions={
+                "score_safety": 0.6,
+            },
+        )
+
+
+@pytest.mark.parametrize(
+    "invalid_value",
+    [math.nan, math.inf, -math.inf],
+)
+def test_adjacent_score_delta_rejects_non_finite_values(
+    invalid_value: float,
+) -> None:
+    with pytest.raises(
+        ScoreDecompositionError,
+        match="有限数值",
+    ):
+        compare_adjacent_primary_scores(
+            higher_ranked_candidate="candidate_a",
+            higher_rank=1,
+            higher_ranked_final_score_v4=0.7,
+            higher_ranked_contributions={
+                "score_safety": invalid_value,
+            },
+            lower_ranked_candidate="candidate_b",
+            lower_rank=2,
+            lower_ranked_final_score_v4=0.6,
+            lower_ranked_contributions={
+                "score_safety": 0.6,
+            },
         )

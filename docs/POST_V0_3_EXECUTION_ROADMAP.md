@@ -730,6 +730,19 @@ seal, and pre-report manifests remain readable.
 This slice also leaves scoring, ranking, filters, Tool authorization, and
 frozen Ranker resources unchanged.
 
+The third v0.4 slice adds shared adjacent-rank comparison evidence. Each
+comparison subtracts the lower-ranked candidate's direct-primary contributions
+from the adjacent higher-ranked candidate and requires their sum to reconstruct
+the recorded `final_score_v4` difference. The deterministic report exposes the
+largest positive term, the largest negative offset, all contribution deltas,
+and reconstruction error. Only adjacent pairs are generated, keeping artifact
+growth linear. Single-candidate and legacy/insufficient-evidence cases use
+explicit `NOT_APPLICABLE` or `UNAVAILABLE` semantics.
+
+These comparisons explain arithmetic in the recorded empirical score. They do
+not assert causality, binding energetics, or biological mechanism, and they do
+not change ranking or screening behavior.
+
 Focus on:
 
 - metric semantics;

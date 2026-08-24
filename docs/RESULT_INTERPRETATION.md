@@ -78,6 +78,34 @@ manifest. Editing the report after completion causes provenance verification
 to fail. Analysis manifests created before this report was introduced remain
 readable as legacy artifacts.
 
+## Compare adjacent ranks arithmetically
+
+When primary-score decomposition is available, the result summary and
+deterministic report compare each adjacent rank pair. For rank 1 versus rank
+2, for example, BinderRanker subtracts rank 2 from rank 1 for every recorded
+direct-primary contribution.
+
+The comparison records:
+
+- the recorded `final_score_v4` difference;
+- each direct-primary contribution difference;
+- the sum of those contribution differences;
+- the reconstruction error between the two values;
+- the largest positive and largest negative contribution differences, when
+  present.
+
+A positive contribution difference supports the higher-ranked candidate's
+recorded score advantage. A negative difference is an arithmetic offset: the
+higher-ranked candidate received less from that term but overcame it through
+other terms. These statements describe the recorded empirical ranking formula
+only. They are not causal explanations, energetic decompositions, or evidence
+of a biological mechanism.
+
+Only adjacent ranks are compared by default. This keeps the evidence linear in
+the candidate count and makes each local rank separation directly auditable.
+A single-candidate run is marked `NOT_APPLICABLE`; legacy or insufficient
+formula evidence is marked `UNAVAILABLE` without inferred comparisons.
+
 ## Understand strengths and weaknesses
 
 The compact result preview reports the strongest and weakest normalized

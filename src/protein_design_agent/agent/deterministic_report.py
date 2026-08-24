@@ -22,6 +22,12 @@ from protein_design_agent.agent.ranker_result_parser import (
     CandidateResult,
     RankerResultSummary,
 )
+from protein_design_agent.agent.score_decomposition import (
+    AdjacentCandidateScoreComparison,
+    PrimaryScoreContributionDelta,
+    ScoreDecompositionError,
+    build_adjacent_primary_score_comparisons,
+)
 
 
 REPORT_CANDIDATE_LIMIT = 20
@@ -162,6 +168,67 @@ def validate_report_inputs(
                 "但缺少完整的分解证据"
             )
 
+    comparisons = (
+        summary
+        .adjacent_candidate_score_comparisons
+    )
+    comparison_status = (
+        summary.candidate_comparison_status
+    )
+
+    if comparison_status == "AVAILABLE":
+        if (
+            summary.score_decomposition_status
+            != "AVAILABLE"
+            or summary.candidate_count < 2
+            or len(comparisons)
+            != summary.candidate_count - 1
+            or summary.candidate_comparison_reason
+            is not None
+        ):
+            raise DeterministicReportError(
+                "候选比较状态与分数分解或候选数不一致"
+            )
+
+        try:
+            expected_comparisons = (
+                build_adjacent_primary_score_comparisons(
+                    summary
+                    .candidates_by_engineering_rank
+                )
+            )
+        except ScoreDecompositionError as exc:
+            raise DeterministicReportError(
+                "候选比较证据无法通过共享算术验证"
+            ) from exc
+
+        if comparisons != expected_comparisons:
+            raise DeterministicReportError(
+                "候选比较证据与共享算术结果不一致"
+            )
+
+    elif comparisons:
+        raise DeterministicReportError(
+            "候选比较不可用时不得包含比较记录"
+        )
+
+    elif (
+        comparison_status == "NOT_APPLICABLE"
+        and (
+            summary.candidate_count != 1
+            or summary.score_decomposition_status
+            != "AVAILABLE"
+        )
+    ):
+        raise DeterministicReportError(
+            "候选比较仅在单候选时可标记为不适用"
+        )
+
+    elif not summary.candidate_comparison_reason:
+        raise DeterministicReportError(
+            "不可用或不适用的候选比较必须记录原因"
+        )
+
 
 def markdown_cell(value: object) -> str:
     """Escape one compact Markdown table cell."""
@@ -192,6 +259,43 @@ def format_contributions(
             .primary_score_contributions
             .items()
         )
+    )
+
+
+def format_signed_number(value: float) -> str:
+    """Render a signed arithmetic difference."""
+    return f"{float(value):+.6g}"
+
+
+def format_contribution_delta(
+    delta: PrimaryScoreContributionDelta,
+) -> str:
+    """Render one direct-primary contribution difference."""
+    return (
+        f"{delta.metric_key}="
+        f"{format_signed_number(delta.delta)}"
+    )
+
+
+def format_largest_delta(
+    delta: PrimaryScoreContributionDelta | None,
+) -> str:
+    """Render an optional leading arithmetic difference."""
+    if delta is None:
+        return "none"
+
+    return format_contribution_delta(delta)
+
+
+def format_comparison_pair(
+    comparison: AdjacentCandidateScoreComparison,
+) -> str:
+    """Render the ordered candidate names and ranks for one comparison."""
+    return (
+        f"#{comparison.higher_rank} "
+        f"{comparison.higher_ranked_candidate} → "
+        f"#{comparison.lower_rank} "
+        f"{comparison.lower_ranked_candidate}"
     )
 
 
@@ -378,6 +482,101 @@ def build_deterministic_analysis_markdown(
                 f"The table shows the first {len(candidates)} candidates; "
                 f"{omitted} additional candidates remain available in the "
                 "authoritative JSON artifacts.",
+            ]
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Adjacent rank differences",
+            "",
+            "Each row subtracts the lower-ranked candidate from the "
+            "adjacent higher-ranked candidate. Positive contribution "
+            "deltas support the recorded score difference; negative "
+            "deltas are arithmetic offsets. They are not causal or "
+            "biophysical explanations.",
+            "",
+        ]
+    )
+
+    if summary.candidate_comparison_status == "AVAILABLE":
+        visible_comparisons = (
+            summary
+            .adjacent_candidate_score_comparisons[
+                :max(len(candidates) - 1, 0)
+            ]
+        )
+
+        if visible_comparisons:
+            lines.extend(
+                [
+                    "| Adjacent pair | Recorded score delta | "
+                    "Largest positive contribution delta | "
+                    "Largest negative contribution delta | "
+                    "All contribution deltas | Reconstruction error |",
+                    "|---|---:|---|---|---|---:|",
+                ]
+            )
+
+            for comparison in visible_comparisons:
+                all_deltas = "; ".join(
+                    format_contribution_delta(
+                        item
+                    )
+                    for item in (
+                        comparison
+                        .contribution_deltas
+                    )
+                )
+                positive_delta = format_largest_delta(
+                    comparison
+                    .largest_positive_contribution_delta
+                )
+                negative_delta = format_largest_delta(
+                    comparison
+                    .largest_negative_contribution_delta
+                )
+                lines.append(
+                    "| "
+                    f"{markdown_cell(format_comparison_pair(comparison))} | "
+                    f"{format_number(comparison.recorded_score_delta)} | "
+                    f"{markdown_cell(positive_delta)} | "
+                    f"{markdown_cell(negative_delta)} | "
+                    f"{markdown_cell(all_deltas)} | "
+                    f"{format_number(comparison.reconstruction_error)} |"
+                )
+        else:
+            lines.append(
+                "The candidate display limit leaves no adjacent pair "
+                "visible in this report."
+            )
+
+        hidden_comparisons = (
+            len(
+                summary
+                .adjacent_candidate_score_comparisons
+            )
+            - len(visible_comparisons)
+        )
+        if hidden_comparisons > 0:
+            lines.extend(
+                [
+                    "",
+                    f"{hidden_comparisons} additional adjacent comparisons "
+                    "remain available in the authoritative result-summary "
+                    "JSON.",
+                ]
+            )
+    else:
+        reason = (
+            summary.candidate_comparison_reason
+            or "No validated candidate-comparison evidence was recorded."
+        )
+        lines.extend(
+            [
+                "- Comparison status: "
+                f"`{summary.candidate_comparison_status}`",
+                f"- Reason: {markdown_cell(reason)}",
             ]
         )
 

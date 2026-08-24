@@ -49,6 +49,16 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
 - 不变项：不修改评分、排名、筛选规则、Tool 授权边界或冻结 Ranker 资源。
 - 目标阶段：v0.4.0 Workstream 7 第二切片。
 
+### Deterministic adjacent-rank comparison evidence
+
+- 原问题：已有主分分解能够解释单个候选的分数来源，但用户仍需手工相减才能回答“候选 A 为什么在经验评分公式中排在相邻候选 B 前面”。
+- 当前实现：共享分解层逐项计算相邻候选的直接主分贡献差值，并要求差值之和精确重建记录的 `final_score_v4` 差；同时记录最大正向项、最大负向抵消项和重建误差。
+- 规模边界：默认只比较相邻排名，产物数量为 `N-1`，避免生成所有候选两两比较的平方级数据。
+- 兼容性：单候选明确标记为 `NOT_APPLICABLE`；旧结果或缺少分解证据明确标记为 `UNAVAILABLE`，不推断缺失比较。
+- 科学边界：贡献差只解释经验排名公式中的算术差异，不代表因果、结合能分解或生物机制。
+- 不变项：不修改评分、排名、筛选规则、Tool 授权边界或冻结 Ranker 资源。
+- 目标阶段：v0.4.0 Workstream 7 第三切片。
+
 ## P1 — Stable Tool/API boundary
 
 ### Tool API adoption and runtime integration

@@ -29,7 +29,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from protein_design_agent.agent.approval import (
     FileFingerprint,
@@ -52,7 +52,9 @@ from protein_design_agent.agent.scientific_result_validation import (
     validate_scientific_result,
 )
 from protein_design_agent.agent.score_decomposition import (
+    AdjacentCandidateScoreComparison,
     ScoreDecompositionError,
+    build_adjacent_primary_score_comparisons,
     decompose_primary_score,
     validate_primary_score_formula,
 )
@@ -115,7 +117,7 @@ class CandidateResult(BaseModel):
 class RankerResultSummary(BaseModel):
     """一次 Ranker 执行的安全结构化摘要。"""
 
-    schema_version: str = "0.2"
+    schema_version: str = "0.3"
     status: Literal["PARSED"] = "PARSED"
 
     project_name: str
@@ -147,6 +149,18 @@ class RankerResultSummary(BaseModel):
         float,
     ] = Field(default_factory=dict)
 
+    candidate_comparison_status: Literal[
+        "AVAILABLE",
+        "UNAVAILABLE",
+        "NOT_APPLICABLE",
+    ] = "UNAVAILABLE"
+    candidate_comparison_reason: str | None = (
+        "No validated candidate-comparison evidence was recorded."
+    )
+    adjacent_candidate_score_comparisons: list[
+        AdjacentCandidateScoreComparison
+    ] = Field(default_factory=list)
+
     candidates_by_engineering_rank: list[
         CandidateResult
     ]
@@ -155,6 +169,84 @@ class RankerResultSummary(BaseModel):
     result_use: str
 
     source_files: dict[str, Path]
+
+    @model_validator(mode="after")
+    def validate_candidate_comparison_contract(
+        self,
+    ) -> "RankerResultSummary":
+        """Keep candidate-comparison state complete and self-consistent."""
+        candidates = (
+            self.candidates_by_engineering_rank
+        )
+        comparisons = (
+            self
+            .adjacent_candidate_score_comparisons
+        )
+
+        if len(candidates) != self.candidate_count:
+            raise ValueError(
+                "候选列表长度与 candidate_count 不一致"
+            )
+
+        if self.candidate_comparison_status == "AVAILABLE":
+            if (
+                self.score_decomposition_status
+                != "AVAILABLE"
+                or self.candidate_count < 2
+                or len(comparisons)
+                != self.candidate_count - 1
+                or self.candidate_comparison_reason
+                is not None
+            ):
+                raise ValueError(
+                    "AVAILABLE 候选比较状态缺少完整证据"
+                )
+
+            try:
+                expected = (
+                    build_adjacent_primary_score_comparisons(
+                        candidates
+                    )
+                )
+            except ScoreDecompositionError as exc:
+                raise ValueError(
+                    "候选比较无法通过共享算术验证"
+                ) from exc
+
+            if comparisons != expected:
+                raise ValueError(
+                    "候选比较记录与共享算术结果不一致"
+                )
+
+        elif comparisons:
+            raise ValueError(
+                "非 AVAILABLE 状态不得包含候选比较"
+            )
+
+        elif (
+            self.candidate_comparison_status
+            == "NOT_APPLICABLE"
+            and (
+                self.candidate_count != 1
+                or self.score_decomposition_status
+                != "AVAILABLE"
+            )
+        ):
+            raise ValueError(
+                "NOT_APPLICABLE 仅适用于"
+                "分解可用的单候选结果"
+            )
+
+        elif (
+            self.candidate_comparison_status
+            != "AVAILABLE"
+            and not self.candidate_comparison_reason
+        ):
+            raise ValueError(
+                "不可用或不适用的候选比较必须记录原因"
+            )
+
+        return self
 
 
 POOL_HEADER_RE = re.compile(
@@ -987,6 +1079,45 @@ def parse_completed_ranker_run(
             f"实际为 {actual_ranks}"
         )
 
+    comparisons: list[
+        AdjacentCandidateScoreComparison
+    ] = []
+    comparison_status: Literal[
+        "AVAILABLE",
+        "UNAVAILABLE",
+        "NOT_APPLICABLE",
+    ]
+    comparison_reason: str | None
+
+    if decomposition_status != "AVAILABLE":
+        comparison_status = "UNAVAILABLE"
+        comparison_reason = (
+            "主分分解不可用，因此不能生成"
+            "候选间主分贡献差值："
+            f"{decomposition_reason}"
+        )
+    elif len(candidates) < 2:
+        comparison_status = "NOT_APPLICABLE"
+        comparison_reason = (
+            "当前只有一个有效候选，"
+            "不存在相邻排名可比较"
+        )
+    else:
+        try:
+            comparisons = (
+                build_adjacent_primary_score_comparisons(
+                    candidates
+                )
+            )
+        except ScoreDecompositionError as exc:
+            raise RankerResultParseError(
+                "相邻候选主分比较无效："
+                f"{exc}"
+            ) from exc
+
+        comparison_status = "AVAILABLE"
+        comparison_reason = None
+
     thresholds = parse_filter_thresholds(
         source_files["report_txt"]
     )
@@ -1028,6 +1159,15 @@ def parse_completed_ranker_run(
         region_score_used=region_score_used,
         primary_score_formula=primary_formula,
         primary_score_weights=score_weights,
+        candidate_comparison_status=(
+            comparison_status
+        ),
+        candidate_comparison_reason=(
+            comparison_reason
+        ),
+        adjacent_candidate_score_comparisons=(
+            comparisons
+        ),
         candidates_by_engineering_rank=(
             candidates
         ),

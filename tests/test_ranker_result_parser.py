@@ -12,6 +12,7 @@ from protein_design_agent.agent.analyze_run import (
 )
 from protein_design_agent.agent.ranker_result_parser import (
     RankerResultParseError,
+    RankerResultSummary,
     parse_completed_ranker_run,
     write_ranker_result_summary,
 )
@@ -287,7 +288,7 @@ def test_smoke_test_results_are_suppressed(
     )
 
     assert summary.status == "PARSED"
-    assert summary.schema_version == "0.2"
+    assert summary.schema_version == "0.3"
     assert summary.candidate_count == 2
     assert (
         summary.score_decomposition_status
@@ -327,6 +328,43 @@ def test_smoke_test_results_are_suppressed(
     assert (
         first.primary_score_reconstruction_error
         == pytest.approx(0.0)
+    )
+
+    assert (
+        summary.candidate_comparison_status
+        == "AVAILABLE"
+    )
+    assert summary.candidate_comparison_reason is None
+    assert len(
+        summary
+        .adjacent_candidate_score_comparisons
+    ) == 1
+    comparison = (
+        summary
+        .adjacent_candidate_score_comparisons[0]
+    )
+    assert comparison.higher_ranked_candidate == (
+        "candidate_1"
+    )
+    assert comparison.lower_ranked_candidate == (
+        "candidate_2"
+    )
+    assert comparison.recorded_score_delta == (
+        pytest.approx(0.1)
+    )
+    assert comparison.reconstructed_score_delta == (
+        pytest.approx(0.1)
+    )
+    assert (
+        comparison
+        .largest_positive_contribution_delta
+        .metric_key
+        == "morphology_adaptive_score"
+    )
+    assert (
+        comparison
+        .largest_negative_contribution_delta
+        is None
     )
 
     assert (
@@ -428,6 +466,9 @@ def test_analyze_run_writes_real_deterministic_report(
 
     assert "without a language model" in report
     assert "morphology_adaptive_score=0.765" in report
+    assert "## Adjacent rank differences" in report
+    assert "#1 candidate_1 → #2 candidate_2" in report
+    assert "morphology_adaptive_score=+0.085" in report
     assert "intentionally suppressed" in report
     assert manifest["deterministic_report_path"] == str(
         result.deterministic_report_path
@@ -460,6 +501,75 @@ def test_thresholds_are_parsed(
     assert (
         summary.thresholds_formally_interpretable
         is False
+    )
+
+
+def test_single_candidate_comparison_is_not_applicable(
+    tmp_path: Path,
+) -> None:
+    bundle = build_bundle(tmp_path)
+    ranker = bundle / "workflow" / "ranker"
+    scored = ranker / "backbone_rank_scored.csv"
+
+    with scored.open(
+        "r",
+        encoding="utf-8",
+        newline="",
+    ) as handle:
+        reader = csv.DictReader(handle)
+        headers = list(reader.fieldnames or [])
+        first = next(reader)
+
+    with scored.open(
+        "w",
+        encoding="utf-8",
+        newline="",
+    ) as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=headers,
+        )
+        writer.writeheader()
+        writer.writerow(first)
+
+    (
+        ranker / "backbone_rank_metrics.csv"
+    ).write_text(
+        "pdb_name\ncandidate_1\n",
+        encoding="utf-8",
+    )
+
+    workflow_manifest = (
+        bundle
+        / "workflow"
+        / "workflow_manifest.json"
+    )
+    workflow = json.loads(
+        workflow_manifest.read_text(
+            encoding="utf-8"
+        )
+    )
+    workflow["analysis_scope"]["pdb_count"] = 1
+    workflow_manifest.write_text(
+        json.dumps(workflow),
+        encoding="utf-8",
+    )
+    refresh_output_fingerprints(bundle)
+
+    summary = parse_completed_ranker_run(
+        bundle
+    )
+
+    assert summary.candidate_count == 1
+    assert (
+        summary.candidate_comparison_status
+        == "NOT_APPLICABLE"
+    )
+    assert summary.candidate_comparison_reason
+    assert (
+        summary
+        .adjacent_candidate_score_comparisons
+        == []
     )
 
 
@@ -686,6 +796,16 @@ def test_legacy_report_without_formula_is_compatible(
     assert summary.score_decomposition_reason
     assert summary.region_score_used is None
     assert summary.primary_score_weights == {}
+    assert (
+        summary.candidate_comparison_status
+        == "UNAVAILABLE"
+    )
+    assert summary.candidate_comparison_reason
+    assert (
+        summary
+        .adjacent_candidate_score_comparisons
+        == []
+    )
     assert all(
         not candidate.primary_score_contributions
         for candidate in (
@@ -693,6 +813,61 @@ def test_legacy_report_without_formula_is_compatible(
             .candidates_by_engineering_rank
         )
     )
+
+
+def test_legacy_summary_without_comparison_fields_is_compatible(
+    tmp_path: Path,
+) -> None:
+    summary = parse_completed_ranker_run(
+        build_bundle(tmp_path)
+    )
+    payload = summary.model_dump(
+        mode="json"
+    )
+    payload["schema_version"] = "0.2"
+    payload.pop("candidate_comparison_status")
+    payload.pop("candidate_comparison_reason")
+    payload.pop(
+        "adjacent_candidate_score_comparisons"
+    )
+
+    loaded = RankerResultSummary.model_validate(
+        payload
+    )
+
+    assert loaded.schema_version == "0.2"
+    assert (
+        loaded.candidate_comparison_status
+        == "UNAVAILABLE"
+    )
+    assert loaded.candidate_comparison_reason
+    assert (
+        loaded
+        .adjacent_candidate_score_comparisons
+        == []
+    )
+
+
+def test_summary_rejects_tampered_candidate_comparison(
+    tmp_path: Path,
+) -> None:
+    summary = parse_completed_ranker_run(
+        build_bundle(tmp_path)
+    )
+    payload = summary.model_dump(
+        mode="json"
+    )
+    payload[
+        "adjacent_candidate_score_comparisons"
+    ][0]["recorded_score_delta"] = 0.2
+
+    with pytest.raises(
+        ValueError,
+        match="候选比较记录与共享算术结果不一致",
+    ):
+        RankerResultSummary.model_validate(
+            payload
+        )
 
 
 def test_parser_rejects_inconsistent_primary_score(
