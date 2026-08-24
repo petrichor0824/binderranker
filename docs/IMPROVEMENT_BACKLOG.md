@@ -29,6 +29,17 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
 - 兼容性：冻结 BinderRanker 算法和 Tool API 未修改；仅收紧无效科学结果的成功语义。
 - 完成版本：v0.3.1 stabilization。
 
+## In progress — v0.4 Scientific Transparency
+
+### Shared deterministic primary-score decomposition
+
+- 原问题：候选主分贡献此前只在可选模型解释路径临时计算，离线确定性结果摘要没有公开统一的公式、权重、贡献和重建证据。
+- 当前实现：从指标本体读取本次运行的审计权重；共享层计算候选直接主分项贡献，并验证其总和能重建记录的 `final_score_v4`。
+- 接入范围：确定性结果解析与可选模型解释共用同一逻辑；新报告公开分解证据，旧报告以 `UNAVAILABLE` 明确降级且不推断缺失公式。
+- 科学边界：贡献仅表示经验排序公式中的算术项，不是因果归因、结合能分解或跨靶点通用的重要性声明。
+- 不变项：不修改评分、排名、筛选条件、Tool 授权边界或冻结 Ranker 资源。
+- 目标阶段：v0.4.0 Workstream 7 第一切片。
+
 ## P1 — Stable Tool/API boundary
 
 ### Tool API adoption and runtime integration

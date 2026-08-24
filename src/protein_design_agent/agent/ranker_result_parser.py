@@ -39,12 +39,22 @@ from protein_design_agent.agent.result_policy import (
     PoolReportingView,
     build_pool_reporting_view,
 )
+from protein_design_agent.agent.ranker_report_context import (
+    RankerReportContextError,
+    parse_boolean_flag as parse_ranker_boolean_flag,
+    parse_ranker_report_context,
+)
 from protein_design_agent.agent.scientific_result_validation import (
     COMPONENT_SCORE_COLUMNS,
     KEY_METRIC_COLUMNS,
     REQUIRED_SCORED_COLUMNS,
     ScientificResultValidationError,
     validate_scientific_result,
+)
+from protein_design_agent.agent.score_decomposition import (
+    ScoreDecompositionError,
+    decompose_primary_score,
+    validate_primary_score_formula,
 )
 
 
@@ -88,13 +98,24 @@ class CandidateResult(BaseModel):
     component_scores: dict[str, float]
     key_metrics: dict[str, float]
 
+    primary_score_contributions: dict[
+        str,
+        float,
+    ] = Field(default_factory=dict)
+    reconstructed_final_score_v4: (
+        float | None
+    ) = None
+    primary_score_reconstruction_error: (
+        float | None
+    ) = None
+
     row_error: str | None = None
 
 
 class RankerResultSummary(BaseModel):
     """一次 Ranker 执行的安全结构化摘要。"""
 
-    schema_version: str = "0.1"
+    schema_version: str = "0.2"
     status: Literal["PARSED"] = "PARSED"
 
     project_name: str
@@ -113,6 +134,18 @@ class RankerResultSummary(BaseModel):
         dict[str, FilterThreshold],
     ]
     thresholds_formally_interpretable: bool
+
+    score_decomposition_status: Literal[
+        "AVAILABLE",
+        "UNAVAILABLE",
+    ] = "UNAVAILABLE"
+    score_decomposition_reason: str | None = None
+    region_score_used: bool | None = None
+    primary_score_formula: str | None = None
+    primary_score_weights: dict[
+        str,
+        float,
+    ] = Field(default_factory=dict)
 
     candidates_by_engineering_rank: list[
         CandidateResult
@@ -664,6 +697,90 @@ def parse_completed_ranker_run(
         )
     )
 
+    try:
+        report_context = (
+            parse_ranker_report_context(
+                source_files["report_txt"],
+                require_final_formula=False,
+            )
+        )
+    except RankerReportContextError as exc:
+        raise RankerResultParseError(
+            "Ranker 报告上下文无法解析："
+            f"{exc}"
+        ) from exc
+
+    region_score_used: bool | None = None
+    primary_formula: str | None = None
+    score_weights: dict[str, float] = {}
+    decomposition_status: Literal[
+        "AVAILABLE",
+        "UNAVAILABLE",
+    ] = "UNAVAILABLE"
+    decomposition_reason: str | None = None
+
+    raw_region_score_used = (
+        report_context.run_config.get(
+            "region_score_used"
+        )
+    )
+
+    if raw_region_score_used is None:
+        decomposition_reason = (
+            "Ranker 报告未记录 region_score_used；"
+            "保留旧结果兼容性，不推断主分公式"
+        )
+    else:
+        try:
+            region_score_used = (
+                parse_ranker_boolean_flag(
+                    raw_region_score_used,
+                    field_name=(
+                        "region_score_used"
+                    ),
+                )
+            )
+        except RankerReportContextError as exc:
+            raise RankerResultParseError(
+                "主分分解上下文无效："
+                f"{exc}"
+            ) from exc
+
+        formula_key = (
+            "final_score_v4_region"
+            if region_score_used
+            else "final_score_v4_original"
+        )
+        primary_formula = (
+            report_context.score_formulas.get(
+                formula_key
+            )
+        )
+
+        if primary_formula is None:
+            decomposition_reason = (
+                "Ranker 报告未记录本次运行使用的"
+                f" {formula_key} 公式；"
+                "保留旧结果兼容性，不推断主分公式"
+            )
+        else:
+            try:
+                score_weights = (
+                    validate_primary_score_formula(
+                        primary_formula,
+                        region_score_used=(
+                            region_score_used
+                        )
+                    )
+                )
+            except ScoreDecompositionError as exc:
+                raise RankerResultParseError(
+                    "主分分解上下文无效："
+                    f"{exc}"
+                ) from exc
+
+            decomposition_status = "AVAILABLE"
+
     candidates: list[
         CandidateResult
     ] = []
@@ -736,6 +853,34 @@ def parse_completed_ranker_run(
             or ""
         ).strip()
 
+        final_score_v4 = parse_float(
+            row,
+            "final_score_v4",
+            pdb_name=pdb_name,
+        )
+
+        decomposition = None
+        if decomposition_status == "AVAILABLE":
+            try:
+                decomposition = (
+                    decompose_primary_score(
+                        component_scores=(
+                            component_scores
+                        ),
+                        recorded_final_score_v4=(
+                            final_score_v4
+                        ),
+                        region_score_used=bool(
+                            region_score_used
+                        ),
+                    )
+                )
+            except ScoreDecompositionError as exc:
+                raise RankerResultParseError(
+                    "候选主分无法重建："
+                    f"{pdb_name} / {exc}"
+                ) from exc
+
         candidates.append(
             CandidateResult(
                 pdb_name=pdb_name,
@@ -743,11 +888,7 @@ def parse_completed_ranker_run(
                     engineering_rank
                 ),
                 final_score_v4=(
-                    parse_float(
-                        row,
-                        "final_score_v4",
-                        pdb_name=pdb_name,
-                    )
+                    final_score_v4
                 ),
                 raw_filter_level=(
                     raw_filter_level
@@ -796,6 +937,27 @@ def parse_completed_ranker_run(
                     component_scores
                 ),
                 key_metrics=key_metrics,
+                primary_score_contributions=(
+                    {}
+                    if decomposition is None
+                    else decomposition.contributions
+                ),
+                reconstructed_final_score_v4=(
+                    None
+                    if decomposition is None
+                    else (
+                        decomposition
+                        .reconstructed_final_score_v4
+                    )
+                ),
+                primary_score_reconstruction_error=(
+                    None
+                    if decomposition is None
+                    else (
+                        decomposition
+                        .reconstruction_error
+                    )
+                ),
                 row_error=(
                     raw_error or None
                 ),
@@ -857,6 +1019,15 @@ def parse_completed_ranker_run(
             pool_reporting.policy
             .formal_interpretation_allowed
         ),
+        score_decomposition_status=(
+            decomposition_status
+        ),
+        score_decomposition_reason=(
+            decomposition_reason
+        ),
+        region_score_used=region_score_used,
+        primary_score_formula=primary_formula,
+        primary_score_weights=score_weights,
         candidates_by_engineering_rank=(
             candidates
         ),

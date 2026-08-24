@@ -7,11 +7,21 @@ used by the corresponding release.
 
 ## Unreleased
 
+### Added
+
+- Added a shared, model-independent primary-score decomposition layer that
+  exposes audited weights, per-candidate weighted contributions, reconstructed
+  scores, and reconstruction errors in deterministic result summaries.
+- Added explicit `AVAILABLE` / `UNAVAILABLE` decomposition semantics so legacy
+  reports remain readable without inferring missing scientific evidence.
+
 ### Changed
 
 - Aligned active architecture and roadmap documentation around BinderRanker as
   a scientific ranking and screening capability; Agent interfaces are now
   consistently documented as optional access and integration layers.
+- Optional model explanations now reuse the same deterministic report-context
+  and score-decomposition logic as offline result analysis.
 
 ## 0.3.1 - 2026-08-21
 

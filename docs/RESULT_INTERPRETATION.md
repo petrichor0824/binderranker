@@ -29,6 +29,30 @@ BinderRanker configuration and current batch normalization. It does not mean:
 Score differences should be interpreted together with component scores,
 filter results, and structural inspection.
 
+## Verify the deterministic score decomposition
+
+New result summaries expose `score_decomposition_status` before presenting
+candidate-level primary-score contributions.
+
+When the status is `AVAILABLE`, inspect:
+
+- `primary_score_formula`, the formula recorded for the active scoring mode;
+- `primary_score_weights`, the audited direct-component weights;
+- `primary_score_contributions`, each candidate's weight multiplied by its
+  recorded component score;
+- `reconstructed_final_score_v4` and
+  `primary_score_reconstruction_error`, which verify that the contributions
+  reproduce the recorded ranking score.
+
+A result whose recorded score cannot be reconstructed is rejected by the
+parser. When the status is `UNAVAILABLE`, the report predates the necessary
+formula context or does not contain it; the ranking remains readable, but
+BinderRanker does not guess a decomposition.
+
+These contributions explain arithmetic inside the ranking formula. They are
+not causal attributions, free-energy components, or evidence that a metric has
+the same importance across targets or candidate batches.
+
 ## Understand strengths and weaknesses
 
 The compact result preview reports the strongest and weakest normalized

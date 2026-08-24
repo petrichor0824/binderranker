@@ -16,6 +16,19 @@ When region scoring is enabled:
 
 The three morphology-mode scores are first combined through target-dependent dynamic weights to form `morphology_adaptive_score`.
 
+## Deterministic contribution decomposition
+
+For reports that record the active region-scoring flag and the corresponding primary-score formula, the deterministic result summary exposes:
+
+- the recorded primary-score formula;
+- the audited direct-component weights;
+- each candidate's `weight × component score` contribution;
+- the reconstructed `final_score_v4` and reconstruction error.
+
+The reconstructed contributions must sum to the recorded `final_score_v4` within the parser tolerance. A mismatch is rejected instead of entering downstream explanation. Older reports that do not contain the required context remain readable, but their decomposition status is `UNAVAILABLE` and BinderRanker does not infer missing formula evidence.
+
+A contribution is an arithmetic term in BinderRanker's empirical ranking formula. It is not a causal attribution, binding-energy decomposition, or statement of universal biophysical importance.
+
 ## Role definitions
 
 - **Primary score**: the value used for final ranking.

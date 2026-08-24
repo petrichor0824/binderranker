@@ -698,11 +698,25 @@ Each tutorial should include:
 
 # Workstream 7 — Scientific transparency and score explanation
 
+Target: v0.4.0.
+
+Status: in progress.
+
 ## Objective
 
 Users should understand why candidates rank differently without turning documentation into unsupported biological certainty.
 
 Current public source already exposes scoring formulas and metrics.
+
+The first v0.4 slice establishes a shared, model-independent primary-score
+decomposition layer. Deterministic result summaries now expose the active
+formula, audited weights, per-candidate weighted contributions, reconstructed
+score, and reconstruction error when the report provides sufficient evidence.
+The optional model explainer delegates to the same logic. Legacy reports stay
+readable with an explicit `UNAVAILABLE` status instead of inferred evidence.
+
+This slice does not change scoring, ranking, filters, or frozen Ranker
+resources.
 
 Focus on:
 
