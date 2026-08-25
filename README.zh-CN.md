@@ -402,8 +402,10 @@ BinderRanker 明确区分**工程验证**与**科学验证**。
 - 前瞻性实验验证。
 
 v0.4 之后的开发首先建立带 SHA256 封存、并显式防止 target 泄漏的
-benchmark 输入契约。通过该契约只表示数据完整性与 split 结构有效，
-不表示 BinderRanker 已被证明能够改善下游结果。
+benchmark 输入契约，以及确定性的固定预算 BinderRanker/baseline 对照。
+对照指标排除 calibration 数据，并显式保留无法定义的 campaign 统计量。
+这些能力用于审计回顾性证据；合成数据或仅通过契约验证，不表示
+BinderRanker 已被证明能够改善真实下游结果。
 
 ---
 
@@ -414,6 +416,7 @@ benchmark 输入契约。通过该契约只表示数据完整性与 split 结构
 - [结果解读](docs/RESULT_INTERPRETATION.md)
 - [验证状态与边界](docs/VALIDATION.md)
 - [Benchmark 输入契约](docs/BENCHMARK_CONTRACT.md)
+- [固定预算 Benchmark 指标](docs/BENCHMARK_METRICS.md)
 - [公开身份与科学表述边界](docs/PUBLIC_IDENTITY.md)
 - [v0.3 架构](docs/V0.3_ARCHITECTURE.md)
 - [架构演进与开发原则](docs/ARCHITECTURE_EVOLUTION.md)

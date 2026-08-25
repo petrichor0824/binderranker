@@ -98,6 +98,24 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
 - 不变项：不修改评分、排名、筛选规则、冻结 Ranker 资源、Tool 授权边界
   或 Agent 架构。
 
+### Fixed-budget BinderRanker/baseline metrics
+
+- 原问题：通过 benchmark 输入门禁后，项目仍缺少共享、可审计的固定预算
+  对照计算；一次性脚本容易混入 calibration 数据、隐藏零阳性分母或遗漏
+  baseline。
+- 当前实现：只接受并重新校验 `ValidatedBenchmarkBundle`；按 manifest 预算
+  在每个 evaluation campaign 内分别选择候选，同时输出 BinderRanker 与
+  baseline 的 hits、precision、recall、enrichment 和 success，再给出 pooled
+  count 汇总。
+- 未定义语义：零阳性 campaign 的 recall、enrichment 及相应 delta 明确标记
+  `UNAVAILABLE`，不填 0、无穷或默认值；pooled 报告仍保留无阳性 campaign
+  数量。
+- 证据边界：报告固定声明为回顾性描述，不能单独证明跨 target 泛化、因果
+  效果或真实生物学成功；真实 campaign 数据与统计不确定性评审仍待后续。
+- 不变项：不修改评分、排名、筛选规则、冻结 Ranker 资源、Tool 授权边界
+  或 Agent 架构。
+- 目标阶段：v0.5.0 Workstream 8 Phase 2。
+
 ## P1 — Stable Tool/API boundary
 
 ### Tool API adoption and runtime integration

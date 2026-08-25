@@ -170,10 +170,11 @@ This entry point does not execute BinderRanker, tune parameters, compute
 enrichment, or create performance claims. It only admits or rejects benchmark
 inputs and returns normalized deterministic records.
 
-## 7. Next phase
+## 7. Downstream fixed-budget phase
 
-The next v0.5 phase will compute fixed-budget metrics only from a
-`ValidatedBenchmarkBundle`. Evaluation metrics will exclude calibration rows,
+The v0.5 fixed-budget metric layer computes only from a revalidated
+`ValidatedBenchmarkBundle`. Evaluation metrics exclude calibration rows,
 report BinderRanker and baseline results side by side, preserve undefined
 metric states explicitly, and avoid turning a retrospective association into a
-causal or generalizable biological claim.
+causal or generalizable biological claim. See
+[`BENCHMARK_METRICS.md`](BENCHMARK_METRICS.md).

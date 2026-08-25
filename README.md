@@ -323,8 +323,11 @@ retrospective design-campaign comparison, complex-prediction evaluation,
 enrichment analysis, or prospective experimental validation.
 
 Post-v0.4 development begins that work with a sealed, leakage-aware benchmark
-input contract. Passing this contract establishes dataset integrity and split
-consistency only; it is not evidence that BinderRanker improves outcomes.
+input contract and a deterministic fixed-budget BinderRanker/baseline
+comparison. The comparison excludes calibration rows and preserves undefined
+campaign statistics explicitly. These facilities make retrospective evidence
+auditable; synthetic or contract-only validation is not evidence that
+BinderRanker improves real outcomes.
 
 ---
 
@@ -335,6 +338,7 @@ consistency only; it is not evidence that BinderRanker improves outcomes.
 - [Result interpretation](docs/RESULT_INTERPRETATION.md)
 - [Validation](docs/VALIDATION.md)
 - [Benchmark contract](docs/BENCHMARK_CONTRACT.md)
+- [Fixed-budget benchmark metrics](docs/BENCHMARK_METRICS.md)
 - [Public identity and claim policy](docs/PUBLIC_IDENTITY.md)
 - [v0.3 architecture](docs/V0.3_ARCHITECTURE.md)
 - [Architecture evolution and development principles](docs/ARCHITECTURE_EVOLUTION.md)

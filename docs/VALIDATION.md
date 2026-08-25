@@ -73,8 +73,9 @@ The clean installation verifies that:
 - BinderRanker can complete the packaged smoke test outside the repository;
 - the v0.4 metric-documentation and scientific-interpretation modules import
   from the installed Wheel and build the complete 20-metric contract;
-- the v0.5 scientific-validation package imports from the installed Wheel and
-  validates a synthetic SHA256-sealed benchmark bundle outside the checkout;
+- the v0.5 scientific-validation package imports from the installed Wheel,
+  validates a synthetic SHA256-sealed benchmark bundle outside the checkout,
+  and computes its evaluation-only fixed-budget BinderRanker/baseline report;
 - offline Chat initializes safely without a model credential;
 - compatibility workspace initialization remains functional;
 - Doctor can inspect the installed environment.
@@ -143,6 +144,13 @@ later metric artifacts can identify the exact admitted benchmark contract.
 This is engineering validation of scientific benchmark inputs. It does not
 establish enrichment, generalization, biological causality, or predictive
 accuracy. See [`BENCHMARK_CONTRACT.md`](BENCHMARK_CONTRACT.md).
+
+The downstream fixed-budget evaluator revalidates the sealed bundle before
+use, excludes all calibration rows, computes campaign and pooled BinderRanker
+and baseline metrics side by side, and represents zero-positive campaign
+recall/enrichment as explicitly unavailable. Its immutable report is bound to
+the manifest and dataset hashes and marks generalization and causality as not
+established. See [`BENCHMARK_METRICS.md`](BENCHMARK_METRICS.md).
 
 ## 4. Claims not established by v0.4 engineering validation
 

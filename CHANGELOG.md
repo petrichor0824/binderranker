@@ -17,12 +17,19 @@ used by the corresponding release.
   binary outcomes, comparable budgets, and calibration/evaluation target
   isolation. This gate validates benchmark inputs but does not make performance
   or biological claims.
+- Added immutable fixed-budget benchmark reports that compare BinderRanker and
+  the manifest-declared baseline campaign by campaign and in count-pooled
+  summaries, using evaluation rows only.
+- Added explicit `AVAILABLE` / `UNAVAILABLE` states for recall and enrichment
+  when an individual campaign has no positive outcomes, plus report-level
+  retrospective claim boundaries and sealed-input identity checks.
 
 ### Validation
 
 - Extended the clean installed-Wheel smoke test to import the v0.5 scientific
-  validation package and validate a synthetic sealed benchmark bundle outside
-  the source checkout.
+  validation package, validate a synthetic sealed benchmark bundle, and
+  compute fixed-budget BinderRanker/baseline metrics outside the source
+  checkout.
 
 ## 0.4.0 - 2026-08-25
 

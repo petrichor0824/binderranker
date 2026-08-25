@@ -6,6 +6,7 @@ DOCS = (
     "docs/METRICS.md",
     "docs/RESULT_INTERPRETATION.md",
     "docs/BENCHMARK_CONTRACT.md",
+    "docs/BENCHMARK_METRICS.md",
 )
 
 
@@ -67,3 +68,22 @@ def test_benchmark_contract_preserves_scientific_boundaries() -> None:
 
     for value in required_contract_text:
         assert value in contract
+
+
+def test_benchmark_metrics_preserve_scientific_boundaries() -> None:
+    metrics = Path(
+        "docs/BENCHMARK_METRICS.md"
+    ).read_text(encoding="utf-8")
+
+    required_metric_text = (
+        "EVALUATION",
+        "CALIBRATION",
+        "enrichment_factor_at_k",
+        "NO_POSITIVE_OUTCOMES_IN_CAMPAIGN",
+        "DESCRIPTIVE_RETROSPECTIVE_ONLY",
+        "generalization_established=false",
+        "does not by itself establish",
+    )
+
+    for value in required_metric_text:
+        assert value in metrics

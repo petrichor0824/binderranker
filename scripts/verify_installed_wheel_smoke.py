@@ -33,6 +33,7 @@ from protein_design_agent.schemas.project_config import (
     ProjectConfig,
 )
 from protein_design_agent.scientific_validation import (
+    evaluate_fixed_budget_metrics,
     validate_benchmark_bundle,
 )
 from protein_design_agent.tools.normalize_pdb_dataset import (
@@ -285,6 +286,14 @@ assert (
     .candidate_count
     == 4
 )
+benchmark_report = evaluate_fixed_budget_metrics(
+    benchmark_validation
+)
+assert benchmark_report.calibration_excluded is True
+assert benchmark_report.evaluation_campaign_count == 1
+assert benchmark_report.evaluation_candidate_count == 2
+assert benchmark_report.pooled_comparisons[0].binderranker.hits_at_k == 1
+assert benchmark_report.pooled_comparisons[0].baseline.hits_at_k == 0
 
 package_path = Path(
     protein_design_agent.__file__
@@ -306,5 +315,5 @@ print(
     f"result outside repository "
     f"({validation.valid_candidate_count} valid candidates; "
     "scientific interpretation modules available; "
-    "benchmark contract validated)"
+    "benchmark contract and fixed-budget metrics validated)"
 )

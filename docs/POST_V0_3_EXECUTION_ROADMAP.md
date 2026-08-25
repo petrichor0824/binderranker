@@ -791,8 +791,9 @@ A polished paper-grade calibration rationale/ablation document may be deferred u
 
 Target: v0.5.0.
 
-Status: Phase 1 benchmark input contract implemented on the v0.5 development
-branch; metric computation and empirical benchmark evidence remain pending.
+Status: Phase 1 benchmark input contract and Phase 2 fixed-budget metric layer
+implemented on v0.5 development branches; real empirical benchmark evidence,
+uncertainty analysis, and scientific interpretation remain pending.
 
 ## Objective
 
@@ -842,6 +843,13 @@ Compute BinderRanker and baseline results side by side only from a validated
 bundle. Calibration rows must not enter reported evaluation metrics. Undefined
 metric states, campaign heterogeneity, and scientific claim boundaries must be
 preserved rather than replaced with optimistic defaults.
+
+Implementation status: complete on the v0.5 fixed-budget metrics branch. The
+immutable report revalidates sealed inputs, computes campaign-level and pooled
+hits, precision, recall, enrichment, and success for BinderRanker and the
+declared baseline, and explicitly marks zero-positive campaign recall and
+enrichment as unavailable. Synthetic regression fixtures validate arithmetic
+and packaging only; they are not empirical BinderRanker performance evidence.
 
 ---
 
