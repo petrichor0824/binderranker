@@ -51,6 +51,10 @@ from protein_design_agent.agent.scientific_result_validation import (
     ScientificResultValidationError,
     validate_scientific_result,
 )
+from protein_design_agent.agent.scientific_interpretation import (
+    ScientificInterpretationContract,
+    build_scientific_interpretation_contract,
+)
 from protein_design_agent.agent.score_decomposition import (
     AdjacentCandidateScoreComparison,
     ScoreDecompositionError,
@@ -117,7 +121,7 @@ class CandidateResult(BaseModel):
 class RankerResultSummary(BaseModel):
     """一次 Ranker 执行的安全结构化摘要。"""
 
-    schema_version: str = "0.3"
+    schema_version: str = "0.4"
     status: Literal["PARSED"] = "PARSED"
 
     project_name: str
@@ -148,6 +152,17 @@ class RankerResultSummary(BaseModel):
         str,
         float,
     ] = Field(default_factory=dict)
+
+    scientific_interpretation_status: Literal[
+        "AVAILABLE",
+        "UNAVAILABLE",
+    ] = "UNAVAILABLE"
+    scientific_interpretation_reason: str | None = (
+        "No sealed scientific-interpretation contract was recorded."
+    )
+    scientific_interpretation_contract: (
+        ScientificInterpretationContract | None
+    ) = None
 
     candidate_comparison_status: Literal[
         "AVAILABLE",
@@ -244,6 +259,59 @@ class RankerResultSummary(BaseModel):
         ):
             raise ValueError(
                 "不可用或不适用的候选比较必须记录原因"
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_scientific_interpretation_contract(
+        self,
+    ) -> "RankerResultSummary":
+        """Keep the sealed interpretation contract tied to run facts."""
+        contract = (
+            self.scientific_interpretation_contract
+        )
+
+        if (
+            self.scientific_interpretation_status
+            == "AVAILABLE"
+        ):
+            if (
+                contract is None
+                or self.score_decomposition_status
+                != "AVAILABLE"
+                or self.region_score_used is None
+                or self.scientific_interpretation_reason
+                is not None
+            ):
+                raise ValueError(
+                    "AVAILABLE 科学解释状态缺少完整契约证据"
+                )
+
+            expected = (
+                build_scientific_interpretation_contract(
+                    region_score_used=(
+                        self.region_score_used
+                    ),
+                    pool_reporting_policy=(
+                        self.pool_reporting.policy
+                    ),
+                )
+            )
+
+            if contract != expected:
+                raise ValueError(
+                    "科学解释契约与共享指标本体或结果策略不一致"
+                )
+
+        elif contract is not None:
+            raise ValueError(
+                "UNAVAILABLE 科学解释状态不得包含契约"
+            )
+
+        elif not self.scientific_interpretation_reason:
+            raise ValueError(
+                "不可用的科学解释契约必须记录原因"
             )
 
         return self
@@ -873,6 +941,45 @@ def parse_completed_ranker_run(
 
             decomposition_status = "AVAILABLE"
 
+    interpretation_contract: (
+        ScientificInterpretationContract | None
+    ) = None
+    interpretation_status: Literal[
+        "AVAILABLE",
+        "UNAVAILABLE",
+    ]
+    interpretation_reason: str | None
+
+    if decomposition_status != "AVAILABLE":
+        interpretation_status = "UNAVAILABLE"
+        interpretation_reason = (
+            "主分公式上下文不可用，因此不能封存"
+            "与本次运行绑定的科学解释契约："
+            f"{decomposition_reason}"
+        )
+    else:
+        assert region_score_used is not None
+
+        try:
+            interpretation_contract = (
+                build_scientific_interpretation_contract(
+                    region_score_used=(
+                        region_score_used
+                    ),
+                    pool_reporting_policy=(
+                        pool_reporting.policy
+                    ),
+                )
+            )
+        except ValueError as exc:
+            raise RankerResultParseError(
+                "科学解释契约无法建立："
+                f"{exc}"
+            ) from exc
+
+        interpretation_status = "AVAILABLE"
+        interpretation_reason = None
+
     candidates: list[
         CandidateResult
     ] = []
@@ -1159,6 +1266,15 @@ def parse_completed_ranker_run(
         region_score_used=region_score_used,
         primary_score_formula=primary_formula,
         primary_score_weights=score_weights,
+        scientific_interpretation_status=(
+            interpretation_status
+        ),
+        scientific_interpretation_reason=(
+            interpretation_reason
+        ),
+        scientific_interpretation_contract=(
+            interpretation_contract
+        ),
         candidate_comparison_status=(
             comparison_status
         ),

@@ -3,6 +3,17 @@ from pathlib import Path
 from protein_design_agent.agent.metric_ontology import (
     BASE_METRIC_ONTOLOGY,
 )
+from scripts.generate_metrics_docs import (
+    render_metrics_markdown,
+)
+
+
+def test_generated_metrics_document_is_current() -> None:
+    content = Path("docs/METRICS.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert content == render_metrics_markdown()
 
 
 def test_generated_metrics_document_is_complete() -> None:

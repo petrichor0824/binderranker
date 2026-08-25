@@ -78,6 +78,28 @@ manifest. Editing the report after completion causes provenance verification
 to fail. Analysis manifests created before this report was introduced remain
 readable as legacy artifacts.
 
+## Use the sealed scientific-interpretation contract
+
+Current deterministic result summaries include a machine-readable
+`scientific_interpretation_contract`. It binds the controlled metric ontology
+to the run's recorded scoring mode and analysis-scope policy. The contract
+records:
+
+- every exposed metric's direction, role, definition, permitted
+  interpretations, prohibited interpretations, and suggested checks;
+- that scores and ranks are empirical, batch-relative engineering evidence;
+- that cross-batch and cross-target score comparison is not allowed without
+  calibration;
+- that dynamic thresholds are batch-relative rather than universal cutoffs;
+- the current threshold interpretation mode;
+- prohibited scientific claims and required downstream validation.
+
+The deterministic Markdown report and optional evidence-bound explanation
+validate and reuse this contract. A modified contract that no longer matches
+the shared metric ontology or result policy is rejected. Older summaries remain
+readable with `scientific_interpretation_status=UNAVAILABLE`; BinderRanker does
+not invent missing run-bound interpretation evidence.
+
 ## Compare adjacent ranks arithmetically
 
 When primary-score decomposition is available, the result summary and

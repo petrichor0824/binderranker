@@ -126,7 +126,8 @@ Depending on the run and permitted analysis scope, BinderRanker can expose:
 - candidate ranking and component scores;
 - broad / medium / strict screening results;
 - strengths, weaknesses, failed gates, and threshold gaps;
-- deterministic result summaries;
+- deterministic result summaries with a sealed scientific-interpretation
+  contract;
 - a human-readable deterministic analysis report with adjacent-rank score
   differences;
 - configuration, execution, and file provenance;

@@ -23,6 +23,9 @@ used by the corresponding release.
 - Added shared adjacent-candidate score comparisons that reconstruct each
   recorded rank gap from direct-primary contribution deltas and identify the
   largest positive and negative arithmetic terms.
+- Added a sealed scientific-interpretation contract that exposes run-specific
+  metric direction and role, batch-relative score and threshold boundaries,
+  prohibited claims, and required downstream validation.
 
 ### Changed
 
@@ -36,6 +39,8 @@ used by the corresponding release.
   explicit batch-relative interpretation boundaries.
 - Deterministic Markdown reports now explain adjacent rank differences without
   presenting contribution deltas as causal, energetic, or biological effects.
+- Deterministic reports and optional evidence-bound explanations now validate
+  and reuse the interpretation contract stored in the result summary.
 
 ## 0.3.1 - 2026-08-21
 

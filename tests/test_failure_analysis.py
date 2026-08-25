@@ -365,6 +365,8 @@ def test_deterministic_report_suppresses_smoke_thresholds(
     assert "without a language model" in report
     assert "SMOKE_TEST_ONLY" in report
     assert "intentionally suppressed" in report
+    assert "## Scientific interpretation contract" in report
+    assert "Contract status: `UNAVAILABLE`" in report
     assert "## Adjacent rank differences" in report
     assert "Comparison status: `UNAVAILABLE`" in report
     assert "contact_map_jump_fraction (broad)" not in report

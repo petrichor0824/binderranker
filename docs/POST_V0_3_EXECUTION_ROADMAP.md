@@ -700,7 +700,8 @@ Each tutorial should include:
 
 Target: v0.4.0.
 
-Status: in progress.
+Status: implementation complete; v0.4 stabilization and release preparation
+remain pending.
 
 ## Objective
 
@@ -742,6 +743,21 @@ explicit `NOT_APPLICABLE` or `UNAVAILABLE` semantics.
 These comparisons explain arithmetic in the recorded empirical score. They do
 not assert causality, binding energetics, or biological mechanism, and they do
 not change ranking or screening behavior.
+
+The fourth v0.4 slice seals a shared scientific-interpretation contract into
+the deterministic result summary. It binds the complete controlled metric
+ontology to the recorded scoring mode and analysis-scope policy, including
+metric direction and role, batch-relative score and threshold boundaries,
+prohibited claims, and required downstream validation. Result-summary loading,
+the deterministic Markdown report, and optional evidence-bound explanation all
+validate and reuse the same contract. Legacy summaries remain readable with an
+explicit `UNAVAILABLE` status instead of inferred run-bound semantics.
+
+The generated metrics reference is now checked byte-for-byte against its
+deterministic renderer so ontology documentation cannot silently drift.
+
+This completes the planned Workstream 7 implementation scope. It does not
+start the v0.5 scientific-validation infrastructure workstream.
 
 Focus on:
 

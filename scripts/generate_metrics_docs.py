@@ -49,7 +49,8 @@ def formula_text(ontology: dict) -> str:
     return " + ".join(terms)
 
 
-def main() -> None:
+def render_metrics_markdown() -> str:
+    """Render the complete controlled metrics reference."""
     region_off = ontology_for_run(
         region_score_used=False
     )
@@ -106,6 +107,19 @@ def main() -> None:
         "empirical ranking formula. It is not a causal attribution, "
         "binding-energy decomposition, or statement of universal "
         "biophysical importance.",
+        "",
+        "## Machine-readable interpretation contract",
+        "",
+        "Current result summaries seal the run-specific metric ontology, "
+        "metric directions and roles, batch-relative score and threshold "
+        "boundaries, prohibited claims, and required downstream validation "
+        "in `scientific_interpretation_contract`. The deterministic "
+        "Markdown report and optional evidence-bound explanation validate "
+        "and reuse that same contract.",
+        "",
+        "Summaries created before this contract existed remain readable. "
+        "They report `scientific_interpretation_status=UNAVAILABLE` instead "
+        "of inventing missing run-bound interpretation evidence.",
         "",
         "## Role definitions",
         "",
@@ -177,10 +191,14 @@ def main() -> None:
             ]
         )
 
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def main() -> None:
     output = Path("docs/METRICS.md")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
-        "\n".join(lines).rstrip() + "\n",
+        render_metrics_markdown(),
         encoding="utf-8",
         newline="\n",
     )

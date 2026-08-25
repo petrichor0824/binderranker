@@ -59,6 +59,15 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
 - 不变项：不修改评分、排名、筛选规则、Tool 授权边界或冻结 Ranker 资源。
 - 目标阶段：v0.4.0 Workstream 7 第三切片。
 
+### Sealed scientific-interpretation contract
+
+- 原问题：共享指标本体已约束可选模型解释和生成文档，但确定性结果 JSON 与 Markdown 尚未封存同一份指标方向、运行角色、批次相对性、禁用结论和下游验证边界；Tool/API 调用方读取数字产物时仍可能缺少机器可读解释契约。
+- 当前实现：结果摘要封存与本次 `region_score_used` 和分析范围策略绑定的完整指标本体及全局科学边界；摘要加载、确定性报告和可选解释证据均验证并复用该契约。
+- 兼容性：新摘要 schema 为 `0.4`；旧摘要继续读取并明确标记 `scientific_interpretation_status=UNAVAILABLE`，不推断缺失的运行绑定契约。
+- 文档一致性：`docs/METRICS.md` 由共享本体确定性生成，回归测试要求生成内容与仓库文件完全一致，防止语义文档静默漂移。
+- 不变项：不修改评分、排名、筛选规则、Tool 授权边界、冻结 Ranker 资源或 Agent 架构。
+- 目标阶段：v0.4.0 Workstream 7 第四切片。
+
 ## P1 — Stable Tool/API boundary
 
 ### Tool API adoption and runtime integration

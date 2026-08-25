@@ -775,6 +775,28 @@ def build_result_explanation_evidence(
         )
     )
 
+    interpretation_contract = (
+        summary.scientific_interpretation_contract
+    )
+
+    if (
+        summary.scientific_interpretation_status
+        == "AVAILABLE"
+    ):
+        if interpretation_contract is None:
+            raise ResultExplanationError(
+                "结果摘要声明科学解释契约可用，"
+                "但未提供契约"
+            )
+
+        if (
+            metric_semantics_models
+            != interpretation_contract.metric_semantics
+        ):
+            raise ResultExplanationError(
+                "模型证据指标语义与封存的科学解释契约不一致"
+            )
+
     score_weights = add_primary_score_facts(
         candidates=evidence_candidates,
         region_score_used=region_score_used,
@@ -816,7 +838,7 @@ def build_result_explanation_evidence(
     }
 
     evidence = {
-        "evidence_schema_version": "0.2",
+        "evidence_schema_version": "0.3",
         "project_name": summary.project_name,
         "analysis_scope_level": (
             scope_level
@@ -856,6 +878,13 @@ def build_result_explanation_evidence(
         "metric_semantics": (
             metric_semantics
         ),
+        "scientific_interpretation_contract": (
+            None
+            if interpretation_contract is None
+            else interpretation_contract.model_dump(
+                mode="json"
+            )
+        ),
         "batch_metric_summary": (
             batch_metric_summary
         ),
@@ -880,6 +909,10 @@ def build_result_explanation_evidence(
                 "metric_semantics_are_"
                 "authoritative"
             ): True,
+            (
+                "scientific_interpretation_"
+                "contract_is_authoritative"
+            ): interpretation_contract is not None,
             (
                 "primary_score_contributions_"
                 "are_authoritative"
@@ -966,6 +999,8 @@ def build_result_explainer_messages(
 - strengths 和 limitations 中的 metric_key
   必须来自对应候选的 component_scores 或 key_metrics；
 - metric_semantics 是指标含义的唯一权威来源；
+- scientific_interpretation_contract 存在时，
+  它是批次相对性、禁止结论和下游验证边界的权威来源；
 - 每次解释指标时必须遵守对应的
   allowed_interpretations 和 forbidden_interpretations；
 - 不得仅根据字段英文名称猜测生物学或结构含义；

@@ -29,6 +29,12 @@ The reconstructed contributions must sum to the recorded `final_score_v4` within
 
 A contribution is an arithmetic term in BinderRanker's empirical ranking formula. It is not a causal attribution, binding-energy decomposition, or statement of universal biophysical importance.
 
+## Machine-readable interpretation contract
+
+Current result summaries seal the run-specific metric ontology, metric directions and roles, batch-relative score and threshold boundaries, prohibited claims, and required downstream validation in `scientific_interpretation_contract`. The deterministic Markdown report and optional evidence-bound explanation validate and reuse that same contract.
+
+Summaries created before this contract existed remain readable. They report `scientific_interpretation_status=UNAVAILABLE` instead of inventing missing run-bound interpretation evidence.
+
 ## Role definitions
 
 - **Primary score**: the value used for final ranking.

@@ -16,6 +16,9 @@ from protein_design_agent.agent.ranker_result_parser import (
     parse_completed_ranker_run,
     write_ranker_result_summary,
 )
+from protein_design_agent.agent.result_explainer import (
+    build_result_explanation_evidence,
+)
 
 
 HEADERS = [
@@ -288,7 +291,7 @@ def test_smoke_test_results_are_suppressed(
     )
 
     assert summary.status == "PARSED"
-    assert summary.schema_version == "0.3"
+    assert summary.schema_version == "0.4"
     assert summary.candidate_count == 2
     assert (
         summary.score_decomposition_status
@@ -300,6 +303,30 @@ def test_smoke_test_results_are_suppressed(
         "score_safety": 0.10,
         "score_roughness": 0.05,
     }
+    assert (
+        summary.scientific_interpretation_status
+        == "AVAILABLE"
+    )
+    assert (
+        summary.scientific_interpretation_reason
+        is None
+    )
+    interpretation_contract = (
+        summary.scientific_interpretation_contract
+    )
+    assert interpretation_contract is not None
+    assert (
+        interpretation_contract.ranking_scope
+        == "CURRENT_TARGET_AND_CANDIDATE_BATCH"
+    )
+    assert (
+        interpretation_contract
+        .threshold_interpretation_mode
+        == "SUPPRESSED"
+    )
+    assert len(
+        interpretation_contract.metric_semantics
+    ) == 20
     assert summary.primary_score_formula == (
         "0.85*morphology_adaptive_score + "
         "0.10*score_safety + "
@@ -466,16 +493,47 @@ def test_analyze_run_writes_real_deterministic_report(
 
     assert "without a language model" in report
     assert "morphology_adaptive_score=0.765" in report
+    assert "## Scientific interpretation contract" in report
+    assert "CURRENT_TARGET_AND_CANDIDATE_BATCH" in report
+    assert "Cross-target score comparison allowed: `false`" in report
+    assert "higher is better within this batch" in report
     assert "## Adjacent rank differences" in report
     assert "#1 candidate_1 → #2 candidate_2" in report
     assert "morphology_adaptive_score=+0.085" in report
     assert "intentionally suppressed" in report
+    assert (
+        "Obtain experimental validation before biological claims."
+        in report
+    )
     assert manifest["deterministic_report_path"] == str(
         result.deterministic_report_path
     )
     assert len(
         manifest["deterministic_report_sha256"]
     ) == 64
+
+    evidence = build_result_explanation_evidence(
+        result_summary_path=(
+            result.result_summary_path
+        ),
+        failure_analysis_path=(
+            result.failure_analysis_path
+        ),
+    )
+
+    assert evidence["evidence_schema_version"] == "0.3"
+    sealed_contract = evidence[
+        "scientific_interpretation_contract"
+    ]
+    assert sealed_contract is not None
+    assert (
+        sealed_contract["ranking_scope"]
+        == "CURRENT_TARGET_AND_CANDIDATE_BATCH"
+    )
+    assert (
+        evidence["metric_semantics"]
+        == sealed_contract["metric_semantics"]
+    )
 
 
 def test_thresholds_are_parsed(
@@ -797,6 +855,15 @@ def test_legacy_report_without_formula_is_compatible(
     assert summary.region_score_used is None
     assert summary.primary_score_weights == {}
     assert (
+        summary.scientific_interpretation_status
+        == "UNAVAILABLE"
+    )
+    assert summary.scientific_interpretation_reason
+    assert (
+        summary.scientific_interpretation_contract
+        is None
+    )
+    assert (
         summary.candidate_comparison_status
         == "UNAVAILABLE"
     )
@@ -830,6 +897,15 @@ def test_legacy_summary_without_comparison_fields_is_compatible(
     payload.pop(
         "adjacent_candidate_score_comparisons"
     )
+    payload.pop(
+        "scientific_interpretation_status"
+    )
+    payload.pop(
+        "scientific_interpretation_reason"
+    )
+    payload.pop(
+        "scientific_interpretation_contract"
+    )
 
     loaded = RankerResultSummary.model_validate(
         payload
@@ -845,6 +921,15 @@ def test_legacy_summary_without_comparison_fields_is_compatible(
         loaded
         .adjacent_candidate_score_comparisons
         == []
+    )
+    assert (
+        loaded.scientific_interpretation_status
+        == "UNAVAILABLE"
+    )
+    assert loaded.scientific_interpretation_reason
+    assert (
+        loaded.scientific_interpretation_contract
+        is None
     )
 
 
@@ -864,6 +949,30 @@ def test_summary_rejects_tampered_candidate_comparison(
     with pytest.raises(
         ValueError,
         match="候选比较记录与共享算术结果不一致",
+    ):
+        RankerResultSummary.model_validate(
+            payload
+        )
+
+
+def test_summary_rejects_tampered_interpretation_contract(
+    tmp_path: Path,
+) -> None:
+    summary = parse_completed_ranker_run(
+        build_bundle(tmp_path)
+    )
+    payload = summary.model_dump(
+        mode="json"
+    )
+    payload[
+        "scientific_interpretation_contract"
+    ]["metric_semantics"][
+        "score_safety"
+    ]["direction"] = "lower_better"
+
+    with pytest.raises(
+        ValueError,
+        match="共享指标本体或结果策略不一致",
     ):
         RankerResultSummary.model_validate(
             payload

@@ -22,6 +22,9 @@ from protein_design_agent.agent.ranker_result_parser import (
     CandidateResult,
     RankerResultSummary,
 )
+from protein_design_agent.agent.scientific_interpretation import (
+    build_scientific_interpretation_contract,
+)
 from protein_design_agent.agent.score_decomposition import (
     AdjacentCandidateScoreComparison,
     PrimaryScoreContributionDelta,
@@ -168,6 +171,52 @@ def validate_report_inputs(
                 "但缺少完整的分解证据"
             )
 
+    interpretation_contract = (
+        summary.scientific_interpretation_contract
+    )
+    interpretation_status = (
+        summary.scientific_interpretation_status
+    )
+
+    if interpretation_status == "AVAILABLE":
+        if (
+            interpretation_contract is None
+            or summary.score_decomposition_status
+            != "AVAILABLE"
+            or summary.region_score_used is None
+            or summary.scientific_interpretation_reason
+            is not None
+        ):
+            raise DeterministicReportError(
+                "科学解释状态与运行证据不一致"
+            )
+
+        expected_contract = (
+            build_scientific_interpretation_contract(
+                region_score_used=(
+                    summary.region_score_used
+                ),
+                pool_reporting_policy=(
+                    summary.pool_reporting.policy
+                ),
+            )
+        )
+
+        if interpretation_contract != expected_contract:
+            raise DeterministicReportError(
+                "科学解释契约与共享本体或结果策略不一致"
+            )
+
+    elif interpretation_contract is not None:
+        raise DeterministicReportError(
+            "科学解释不可用时不得包含契约"
+        )
+
+    elif not summary.scientific_interpretation_reason:
+        raise DeterministicReportError(
+            "不可用的科学解释契约必须记录原因"
+        )
+
     comparisons = (
         summary
         .adjacent_candidate_score_comparisons
@@ -243,6 +292,30 @@ def markdown_cell(value: object) -> str:
 def format_number(value: float) -> str:
     """Render deterministic evidence without false decimal precision."""
     return f"{float(value):.6g}"
+
+
+def format_metric_direction(value: str) -> str:
+    """Render one controlled metric direction."""
+    return {
+        "higher_better": "higher is better within this batch",
+        "lower_better": "lower is better within this batch",
+        "context_dependent": "context dependent",
+    }[value]
+
+
+def format_metric_role(value: str) -> str:
+    """Render one controlled metric role."""
+    return {
+        "primary_score": "primary score",
+        "direct_primary_component": (
+            "direct primary component"
+        ),
+        "indirect_primary_component": (
+            "indirect primary component"
+        ),
+        "diagnostic": "diagnostic",
+        "raw_metric": "raw metric",
+    }[value]
 
 
 def format_contributions(
@@ -403,9 +476,115 @@ def build_deterministic_analysis_markdown(
         "layered screening. This report does not establish binding "
         "affinity, stability, solubility, or experimental success.",
         "",
-        "## Primary-score evidence",
+        "## Scientific interpretation contract",
         "",
     ]
+
+    interpretation_contract = (
+        summary.scientific_interpretation_contract
+    )
+
+    if interpretation_contract is None:
+        reason = (
+            summary.scientific_interpretation_reason
+            or "No sealed scientific-interpretation contract was recorded."
+        )
+        lines.extend(
+            [
+                "- Contract status: `UNAVAILABLE`",
+                f"- Reason: {markdown_cell(reason)}",
+            ]
+        )
+    else:
+        threshold_policy = markdown_cell(
+            interpretation_contract
+            .threshold_interpretation
+        )
+        lines.extend(
+            [
+                "- Ranking scope: "
+                f"`{interpretation_contract.ranking_scope}`",
+                "- Scores are empirical and batch-relative: `true`",
+                "- Cross-batch score comparison allowed: `false`",
+                "- Cross-target score comparison allowed: `false`",
+                "- Dynamic thresholds are batch-relative: `true`",
+                "- Threshold interpretation mode: "
+                f"`{interpretation_contract.threshold_interpretation_mode}`",
+                "- Threshold policy: "
+                f"{threshold_policy}",
+                "- Empirical weights are universal biophysical "
+                "parameters: `false`",
+                "",
+                "Known limitations:",
+                "",
+            ]
+        )
+
+        for limitation in (
+            interpretation_contract
+            .known_limitations
+        ):
+            lines.append(f"- {limitation}")
+
+        lines.extend(
+            [
+                "",
+                "Prohibited conclusions:",
+                "",
+            ]
+        )
+
+        for claim in (
+            interpretation_contract
+            .prohibited_claims
+        ):
+            lines.append(f"- {claim}")
+
+        lines.extend(
+            [
+                "",
+                "Controlled metric direction and run-specific role:",
+                "",
+                "| Metric | Label | Direction | Role | Direct weight |",
+                "|---|---|---|---|---:|",
+            ]
+        )
+
+        for metric_key, semantics in (
+            interpretation_contract
+            .metric_semantics.items()
+        ):
+            direct_weight = (
+                "—"
+                if semantics.direct_primary_weight
+                is None
+                else format_number(
+                    semantics
+                    .direct_primary_weight
+                )
+            )
+            direction = format_metric_direction(
+                semantics.direction
+            )
+            role = format_metric_role(
+                semantics.role
+            )
+            lines.append(
+                "| "
+                f"`{markdown_cell(metric_key)}` | "
+                f"{markdown_cell(semantics.label_zh)} | "
+                f"{markdown_cell(direction)} | "
+                f"{markdown_cell(role)} | "
+                f"{direct_weight} |"
+            )
+
+    lines.extend(
+        [
+            "",
+            "## Primary-score evidence",
+            "",
+        ]
+    )
 
     if summary.score_decomposition_status == "AVAILABLE":
         lines.extend(
@@ -617,11 +796,21 @@ def build_deterministic_analysis_markdown(
             "",
             "## Required downstream work",
             "",
-            "Use structural inspection, sequence design, complex-structure "
-            "prediction, appropriate simulation or energetic analysis, and "
-            "experimental validation before making biological claims.",
         ]
     )
+
+    if interpretation_contract is None:
+        lines.append(
+            "Use structural inspection, sequence design, complex-structure "
+            "prediction, appropriate simulation or energetic analysis, and "
+            "experimental validation before making biological claims."
+        )
+    else:
+        for requirement in (
+            interpretation_contract
+            .required_downstream_validation
+        ):
+            lines.append(f"- {requirement}")
 
     return "\n".join(lines).rstrip() + "\n"
 
