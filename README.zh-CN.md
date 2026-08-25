@@ -33,8 +33,7 @@ BinderRanker 本身不负责生成候选骨架；它对已有的候选 PDB 集�
 BinderRanker 是一个**候选优先级筛选层**。高分或进入严格筛选层，
 都不能作为生物学成功的直接证明。
 
-最新稳定版本：**v0.3.1**。当前开发目标：
-**v0.4.0 科学透明度稳定化**。
+当前发布版本线：**v0.4.0 — 科学透明度**。
 
 ---
 
@@ -195,9 +194,9 @@ BinderRanker 根据输入候选数量限制结果可以被解释到什么程度�
     source .venv/bin/activate
     python -m pip install --upgrade pip
 
-安装 BinderRanker v0.3.1 wheel：
+安装 BinderRanker v0.4.0 wheel：
 
-    python -m pip install ./binderranker-0.3.1-py3-none-any.whl
+    python -m pip install ./binderranker-0.4.0-py3-none-any.whl
 
 检查安装：
 
@@ -371,7 +370,7 @@ BinderRanker 也不能替代：
 无论通过哪一种入口，底层使用的都是同一个 BinderRanker 科学能力。
 Agent 接口只改善可访问性与集成体验，不拥有也不重新定义科学行为。
 
-v0.3 期间内部 Python namespace 仍然保持：
+为保持向后兼容，内部 Python namespace 继续使用：
 
 `protein_design_agent`
 

@@ -6,8 +6,8 @@ authors:
   - family-names: Hu
     given-names: Zheng
     orcid: "https://orcid.org/0009-0006-7368-613X"
-version: 0.3.1
-date-released: 2026-08-21
+version: 0.4.0
+date-released: 2026-08-25
 repository-code: "https://github.com/petrichor0824/binderranker"
 url: "https://github.com/petrichor0824/binderranker"
 license: Apache-2.0

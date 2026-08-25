@@ -74,8 +74,8 @@ At the time this document was written, the active stabilization branch already c
 ### 3.1 Packaging and release identity
 
 - Distribution name: `binderranker`
-- Latest published package version: `0.3.1`
-- Active development target: `0.4.0` scientific-transparency stabilization
+- Current package/release version: `0.4.0`
+- Release focus: scientific transparency and artifact-contract hardening
 - Python requirement: `>=3.10`
 - Canonical CLI: `binderranker`
 - Historical compatibility CLI: `protein-design-agent`

@@ -8,12 +8,13 @@ does not by itself establish biological predictive accuracy.
 
 ## 1. Engineering validation
 
-The v0.3 release line is validated at several deterministic boundaries.
+The v0.4 release line is validated at several deterministic boundaries.
 
 ### Regression tests
 
-The current v0.3 repository baseline is recorded in
-[`V0.3_ROADMAP.md`](V0.3_ROADMAP.md).
+The current release baseline and completed scientific-transparency work are
+recorded in
+[`POST_V0_3_EXECUTION_ROADMAP.md`](POST_V0_3_EXECUTION_ROADMAP.md).
 
 The full regression suite is run with:
 
@@ -34,6 +35,7 @@ BinderRanker release engineering builds both:
 The release asset verifier checks:
 
 - distribution name and version;
+- sdist `CITATION.cff` version agreement with package metadata;
 - package summary;
 - Python version requirement;
 - SPDX license metadata;
@@ -69,6 +71,8 @@ The clean installation verifies that:
 - the packaged frozen BinderRanker can be located and integrity-checked;
 - the packaged five-PDB smoke-test dataset can be extracted;
 - BinderRanker can complete the packaged smoke test outside the repository;
+- the v0.4 metric-documentation and scientific-interpretation modules import
+  from the installed Wheel and build the complete 20-metric contract;
 - offline Chat initializes safely without a model credential;
 - compatibility workspace initialization remains functional;
 - Doctor can inspect the installed environment.
@@ -117,9 +121,9 @@ BinderRanker should be evaluated as a ranking and triage method within a
 defined candidate batch, not as a standalone predictor of affinity,
 stability, solubility, or experimental success.
 
-## 4. Claims not established by v0.3 engineering validation
+## 4. Claims not established by v0.4 engineering validation
 
-The v0.3 engineering validation does not establish that:
+The v0.4 engineering validation does not establish that:
 
 - a high BinderRanker score guarantees binding;
 - a high-ranked backbone will succeed experimentally;

@@ -7,6 +7,13 @@ used by the corresponding release.
 
 ## Unreleased
 
+## 0.4.0 - 2026-08-25
+
+BinderRanker v0.4.0 is a scientific-transparency release. It makes empirical
+ranking arithmetic, interpretation boundaries, and deterministic analysis
+artifacts directly auditable without changing the frozen BinderRanker scoring
+or screening algorithm.
+
 ### Added
 
 - Added a shared, model-independent primary-score decomposition layer that
@@ -56,6 +63,8 @@ used by the corresponding release.
 - The clean installed-Wheel smoke test now imports the metric-documentation and
   scientific-interpretation modules, builds the 20-metric run contract, and
   verifies that these v0.4 modules do not depend on a source checkout.
+- Release-asset verification now requires the sdist citation version to match
+  the Wheel/sdist package metadata.
 
 ## 0.3.1 - 2026-08-21
 

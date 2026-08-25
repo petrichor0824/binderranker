@@ -51,14 +51,13 @@ directly improve BinderRanker usability.
 
 ## 2. Current repository baseline
 
-The active development branch currently represents the published BinderRanker
-v0.3.1 baseline plus v0.4.0 scientific-transparency stabilization work.
+The active release-cut branch represents BinderRanker v0.4.0 after completing
+the scientific-transparency implementation and artifact-contract stabilization.
 
 ### Current product facts
 
 - package: `binderranker`
-- latest published version: `0.3.1`
-- active development target: `0.4.0`
+- current release-cut version: `0.4.0`
 - Python: `>=3.10`
 - canonical CLI: `binderranker`
 - compatibility CLI: `protein-design-agent`
@@ -702,8 +701,8 @@ Each tutorial should include:
 
 Target: v0.4.0.
 
-Status: implementation complete; v0.4 artifact-contract stabilization is in
-progress and release-cut preparation remains pending.
+Status: implementation, artifact-contract stabilization, and v0.4.0 release-cut
+verification complete; final tag and release require owner approval.
 
 ## Objective
 

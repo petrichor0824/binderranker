@@ -33,8 +33,7 @@ existing candidate PDB set.
 BinderRanker is a **prioritization layer**. A high score or strict-layer pass
 is not biological proof.
 
-Latest stable release: **v0.3.1**. Active development target:
-**v0.4.0 scientific-transparency stabilization**.
+Current release line: **v0.4.0 — scientific transparency**.
 
 ---
 
@@ -175,7 +174,7 @@ model API key.
     python3 -m venv .venv
     source .venv/bin/activate
     python -m pip install --upgrade pip
-    python -m pip install ./binderranker-0.3.1-py3-none-any.whl
+    python -m pip install ./binderranker-0.4.0-py3-none-any.whl
 
 Verify:
 
@@ -306,9 +305,9 @@ BinderRanker remains the same scientific capability regardless of the access
 path. Agent interfaces improve accessibility and integration; they do not own
 or redefine scientific behavior.
 
-The internal Python namespace remains `protein_design_agent` during the v0.3
-compatibility transition. It is an implementation detail, not the public
-project identity.
+The internal Python namespace remains `protein_design_agent` for backward
+compatibility. It is an implementation detail, not the public project
+identity.
 
 ---
 

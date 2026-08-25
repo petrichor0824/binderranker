@@ -29,7 +29,7 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
 - 兼容性：冻结 BinderRanker 算法和 Tool API 未修改；仅收紧无效科学结果的成功语义。
 - 完成版本：v0.3.1 stabilization。
 
-## In progress — v0.4 Scientific Transparency
+## Completed — v0.4 Scientific Transparency
 
 ### Shared deterministic primary-score decomposition
 
