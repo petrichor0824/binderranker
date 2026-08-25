@@ -5,6 +5,7 @@ DOCS = (
     "docs/SCIENTIFIC_METHOD.md",
     "docs/METRICS.md",
     "docs/RESULT_INTERPRETATION.md",
+    "docs/BENCHMARK_CONTRACT.md",
 )
 
 
@@ -48,3 +49,21 @@ def test_scientific_boundaries_are_documented() -> None:
 
     for value in required_interpretation_text:
         assert value in interpretation
+
+
+def test_benchmark_contract_preserves_scientific_boundaries() -> None:
+    contract = Path(
+        "docs/BENCHMARK_CONTRACT.md"
+    ).read_text(encoding="utf-8")
+
+    required_contract_text = (
+        "CALIBRATION",
+        "EVALUATION",
+        "SHA256",
+        "COMPUTATIONAL_PROXY",
+        "does not by itself establish",
+        "ValidatedBenchmarkBundle",
+    )
+
+    for value in required_contract_text:
+        assert value in contract

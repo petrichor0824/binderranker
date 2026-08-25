@@ -791,6 +791,9 @@ A polished paper-grade calibration rationale/ablation document may be deferred u
 
 Target: v0.5.0.
 
+Status: Phase 1 benchmark input contract implemented on the v0.5 development
+branch; metric computation and empirical benchmark evidence remain pending.
+
 ## Objective
 
 Demonstrate whether BinderRanker improves candidate prioritization under fixed downstream budgets.
@@ -817,6 +820,28 @@ Demonstrate whether BinderRanker improves candidate prioritization under fixed d
 ## Important
 
 Do not let Agent/integration expansion substitute for scientific validation.
+
+## Phase 1 — Sealed benchmark input contract
+
+Before computing performance metrics, require a self-contained YAML/CSV bundle
+that declares the downstream outcome, evidence type, comparator baseline,
+frozen Ranker provenance, fixed selection budgets, parameter-selection policy,
+and outcome-blinding assumptions.
+
+The shared intake gate must verify the CSV SHA256, candidate identity, complete
+BinderRanker and baseline rankings, finite scores, binary outcomes, comparable
+campaign budgets, and target-level isolation between `CALIBRATION` and
+`EVALUATION`.
+
+Passing this gate means only that benchmark inputs satisfy the documented
+contract. It is not BinderRanker performance evidence.
+
+## Phase 2 — Fixed-budget comparison metrics
+
+Compute BinderRanker and baseline results side by side only from a validated
+bundle. Calibration rows must not enter reported evaluation metrics. Undefined
+metric states, campaign heterogeneity, and scientific claim boundaries must be
+preserved rather than replaced with optimistic defaults.
 
 ---
 

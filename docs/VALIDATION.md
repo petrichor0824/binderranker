@@ -73,6 +73,8 @@ The clean installation verifies that:
 - BinderRanker can complete the packaged smoke test outside the repository;
 - the v0.4 metric-documentation and scientific-interpretation modules import
   from the installed Wheel and build the complete 20-metric contract;
+- the v0.5 scientific-validation package imports from the installed Wheel and
+  validates a synthetic SHA256-sealed benchmark bundle outside the checkout;
 - offline Chat initializes safely without a model credential;
 - compatibility workspace initialization remains functional;
 - Doctor can inspect the installed environment.
@@ -120,6 +122,27 @@ Evidence that can contribute to scientific validation includes:
 BinderRanker should be evaluated as a ranking and triage method within a
 defined candidate batch, not as a standalone predictor of affinity,
 stability, solubility, or experimental success.
+
+### v0.5 benchmark intake gate
+
+Post-v0.4 development includes a framework-independent benchmark input
+contract. The gate validates a SHA256-sealed manifest/CSV bundle before any
+performance metric is computed. It requires explicit outcome evidence type,
+baseline procedure, BinderRanker provenance, fixed selection budgets,
+parameter-selection policy, and outcome-blinding declarations.
+
+The validator rejects incomplete ranks, non-finite scores, non-binary outcomes,
+duplicate candidates, campaign inconsistencies, budgets that cannot be compared
+across candidate pools, and any target shared by `CALIBRATION` and
+`EVALUATION`.
+
+Validated records are immutable and canonically ordered. The validation
+summary records separate SHA256 values for the manifest and candidate CSV so
+later metric artifacts can identify the exact admitted benchmark contract.
+
+This is engineering validation of scientific benchmark inputs. It does not
+establish enrichment, generalization, biological causality, or predictive
+accuracy. See [`BENCHMARK_CONTRACT.md`](BENCHMARK_CONTRACT.md).
 
 ## 4. Claims not established by v0.4 engineering validation
 

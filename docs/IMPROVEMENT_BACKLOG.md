@@ -77,6 +77,27 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
 - 不变项：不修改评分、排名、筛选规则、冻结 Ranker 资源、Tool 授权边界或 Agent 架构。
 - 目标阶段：v0.4.0 Workstream 7 stabilization。
 
+## In progress — v0.5 Scientific Validation Infrastructure
+
+### Sealed benchmark input contract
+
+- 原问题：路线图要求用真实回顾性 campaign 和固定下游预算检验
+  BinderRanker，但此前没有共享的数据 schema、baseline/outcome 声明、
+  数据封存或 target-level 防泄漏门禁；直接计算 enrichment 会把关键科学
+  假设隐藏在一次性脚本中。
+- 当前实现：新增 framework-independent benchmark bundle contract；YAML
+  manifest 声明 outcome 证据类型、baseline、冻结 Ranker provenance、参数
+  选择政策、盲法和固定预算，候选 CSV 由 SHA256 封存。
+- 共享门禁：拒绝 bundle 路径逃逸、哈希漂移、重复候选、campaign 混合、
+  非有限分数、非完整排名、非二元 outcome、不可比较预算和同一 target
+  跨 `CALIBRATION` / `EVALUATION` 的泄漏。
+- 科学边界：通过门禁只证明 benchmark 输入满足当前契约，不证明
+  BinderRanker 富集成功候选、具有跨 target 泛化能力或产生因果效果。
+- 下一切片：只对 `ValidatedBenchmarkBundle` 的 evaluation 数据计算固定预算
+  BinderRanker/baseline 对照指标，并显式表示不可定义的统计量。
+- 不变项：不修改评分、排名、筛选规则、冻结 Ranker 资源、Tool 授权边界
+  或 Agent 架构。
+
 ## P1 — Stable Tool/API boundary
 
 ### Tool API adoption and runtime integration

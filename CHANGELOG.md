@@ -7,6 +7,23 @@ used by the corresponding release.
 
 ## Unreleased
 
+### Added
+
+- Added a sealed benchmark-bundle contract for v0.5 scientific-validation
+  infrastructure, with explicit outcome, baseline, Ranker provenance,
+  parameter-selection, blinding, fixed-budget, and target-split declarations.
+- Added shared deterministic validation for benchmark SHA256 integrity,
+  candidate identity, complete BinderRanker/baseline ranks, finite scores,
+  binary outcomes, comparable budgets, and calibration/evaluation target
+  isolation. This gate validates benchmark inputs but does not make performance
+  or biological claims.
+
+### Validation
+
+- Extended the clean installed-Wheel smoke test to import the v0.5 scientific
+  validation package and validate a synthetic sealed benchmark bundle outside
+  the source checkout.
+
 ## 0.4.0 - 2026-08-25
 
 BinderRanker v0.4.0 is a scientific-transparency release. It makes empirical

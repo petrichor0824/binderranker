@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import csv
+import hashlib
 import shutil
 import subprocess
 import sys
@@ -10,6 +12,7 @@ import tempfile
 from pathlib import Path
 
 import protein_design_agent
+import yaml
 
 from protein_design_agent.agent.metric_documentation import (
     render_metrics_markdown,
@@ -28,6 +31,9 @@ from protein_design_agent.agent.scientific_result_validation import (
 )
 from protein_design_agent.schemas.project_config import (
     ProjectConfig,
+)
+from protein_design_agent.scientific_validation import (
+    validate_benchmark_bundle,
 )
 from protein_design_agent.tools.normalize_pdb_dataset import (
     normalize_one_pdb,
@@ -89,7 +95,7 @@ validate_ranker_input(
     max_files=None,
 )
 
-ranker, _digest = resolve_ranker(
+ranker, ranker_digest = resolve_ranker(
     "v0.1-expert"
 )
 output_prefix = results_dir / "wheel_smoke"
@@ -153,6 +159,133 @@ assert "### `final_score_v4`" in (
     render_metrics_markdown()
 )
 
+benchmark_dir = root / "benchmark"
+benchmark_dir.mkdir()
+benchmark_csv = benchmark_dir / "candidates.csv"
+benchmark_rows = [
+    {
+        "campaign_id": "smoke_cal",
+        "target_id": "target_cal",
+        "candidate_id": "cal_1",
+        "split": "CALIBRATION",
+        "binderranker_rank": 1,
+        "binderranker_score": 0.9,
+        "baseline_rank": 2,
+        "outcome": 1,
+    },
+    {
+        "campaign_id": "smoke_cal",
+        "target_id": "target_cal",
+        "candidate_id": "cal_2",
+        "split": "CALIBRATION",
+        "binderranker_rank": 2,
+        "binderranker_score": 0.8,
+        "baseline_rank": 1,
+        "outcome": 0,
+    },
+    {
+        "campaign_id": "smoke_eval",
+        "target_id": "target_eval",
+        "candidate_id": "eval_1",
+        "split": "EVALUATION",
+        "binderranker_rank": 1,
+        "binderranker_score": 0.7,
+        "baseline_rank": 2,
+        "outcome": 1,
+    },
+    {
+        "campaign_id": "smoke_eval",
+        "target_id": "target_eval",
+        "candidate_id": "eval_2",
+        "split": "EVALUATION",
+        "binderranker_rank": 2,
+        "binderranker_score": 0.6,
+        "baseline_rank": 1,
+        "outcome": 0,
+    },
+]
+benchmark_columns = list(
+    benchmark_rows[0]
+)
+
+with benchmark_csv.open(
+    "w",
+    encoding="utf-8",
+    newline="",
+) as handle:
+    writer = csv.DictWriter(
+        handle,
+        fieldnames=benchmark_columns,
+    )
+    writer.writeheader()
+    writer.writerows(
+        benchmark_rows
+    )
+
+benchmark_sha256 = hashlib.sha256(
+    benchmark_csv.read_bytes()
+).hexdigest()
+benchmark_manifest = {
+    "schema_version": "0.1",
+    "benchmark_id": "wheel_smoke",
+    "description": (
+        "Installed-Wheel benchmark contract smoke."
+    ),
+    "dataset": {
+        "file": benchmark_csv.name,
+        "sha256": benchmark_sha256,
+    },
+    "outcome": {
+        "name": "synthetic_outcome",
+        "description": (
+            "Synthetic binary outcome for packaging only."
+        ),
+        "evidence_type": "COMPUTATIONAL_PROXY",
+        "source": "installed-Wheel smoke fixture",
+    },
+    "baseline": {
+        "method_id": "fixture_order",
+        "description": "Synthetic comparator.",
+        "ranking_procedure": (
+            "Fixed fixture order."
+        ),
+    },
+    "ranker": {
+        "ranker_id": "BinderRanker",
+        "version": "v0.1-expert",
+        "resource_sha256": ranker_digest,
+    },
+    "protocol": {
+        "parameter_selection": "CALIBRATION_ONLY",
+        "ranking_blinded_to_outcomes": True,
+        "baseline_blinded_to_outcomes": True,
+        "target_split_unit": "TARGET",
+    },
+    "selection_budgets": [1],
+}
+benchmark_manifest_path = (
+    benchmark_dir
+    / "benchmark.yaml"
+)
+benchmark_manifest_path.write_text(
+    yaml.safe_dump(
+        benchmark_manifest,
+        sort_keys=False,
+    ),
+    encoding="utf-8",
+)
+benchmark_validation = (
+    validate_benchmark_bundle(
+        benchmark_manifest_path
+    )
+)
+assert (
+    benchmark_validation
+    .summary
+    .candidate_count
+    == 4
+)
+
 package_path = Path(
     protein_design_agent.__file__
 ).resolve()
@@ -172,5 +305,6 @@ print(
     "and produced a scientifically valid BinderRanker "
     f"result outside repository "
     f"({validation.valid_candidate_count} valid candidates; "
-    "scientific interpretation modules available)"
+    "scientific interpretation modules available; "
+    "benchmark contract validated)"
 )

@@ -322,6 +322,10 @@ Scientific validation requires separate downstream evidence such as
 retrospective design-campaign comparison, complex-prediction evaluation,
 enrichment analysis, or prospective experimental validation.
 
+Post-v0.4 development begins that work with a sealed, leakage-aware benchmark
+input contract. Passing this contract establishes dataset integrity and split
+consistency only; it is not evidence that BinderRanker improves outcomes.
+
 ---
 
 ## Documentation
@@ -330,6 +334,7 @@ enrichment analysis, or prospective experimental validation.
 - [Metric reference](docs/METRICS.md)
 - [Result interpretation](docs/RESULT_INTERPRETATION.md)
 - [Validation](docs/VALIDATION.md)
+- [Benchmark contract](docs/BENCHMARK_CONTRACT.md)
 - [Public identity and claim policy](docs/PUBLIC_IDENTITY.md)
 - [v0.3 architecture](docs/V0.3_ARCHITECTURE.md)
 - [Architecture evolution and development principles](docs/ARCHITECTURE_EVOLUTION.md)
