@@ -8,6 +8,7 @@ DOCS = (
     "docs/BENCHMARK_CONTRACT.md",
     "docs/BENCHMARK_METRICS.md",
     "docs/BENCHMARK_SENSITIVITY.md",
+    "docs/BENCHMARK_READINESS.md",
 )
 
 
@@ -107,3 +108,24 @@ def test_benchmark_sensitivity_preserves_scientific_boundaries() -> None:
 
     for value in required_sensitivity_text:
         assert value in sensitivity
+
+
+def test_benchmark_readiness_preserves_scientific_boundaries() -> None:
+    readiness = Path(
+        "docs/BENCHMARK_READINESS.md"
+    ).read_text(encoding="utf-8")
+
+    required_readiness_text = (
+        "REAL_RETROSPECTIVE",
+        "SYNTHETIC_FIXTURE",
+        "READINESS_METADATA_ONLY",
+        "READY_FOR_SCIENTIFIC_REVIEW",
+        "FIXTURE_ONLY",
+        "declaration_truth_independently_verified=false",
+        "FORMAL_INFERENCE_NOT_ESTABLISHED",
+        "cannot independently",
+        "does not invent a universal",
+    )
+
+    for value in required_readiness_text:
+        assert value in readiness

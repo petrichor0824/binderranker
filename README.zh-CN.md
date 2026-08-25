@@ -411,6 +411,11 @@ v0.5 开发层还会按 target 聚合同一 target 的多个 campaign，并报�
 leave-one-target-out 敏感性。这用于暴露 target 异质性和样本不足；移除范围
 不是置信区间，也不是泛化能力检验。
 
+配套的 readiness 层会把数据封存、cohort、审核和分析计划声明绑定到精确的
+benchmark 哈希，并明确区分合成 fixture 与声明为真实回顾性记录的数据。它只报告
+当前方法所需的结构前提，不虚构通用的“样本量足够”阈值。通过该门禁仅表示材料可
+提交独立科学审核；软件不会验证历史声明的真实性，也不建立性能收益或正式推断。
+
 ---
 
 ## 文档
@@ -422,6 +427,7 @@ leave-one-target-out 敏感性。这用于暴露 target 异质性和样本不足
 - [Benchmark 输入契约](docs/BENCHMARK_CONTRACT.md)
 - [固定预算 Benchmark 指标](docs/BENCHMARK_METRICS.md)
 - [Target-level Benchmark 敏感性](docs/BENCHMARK_SENSITIVITY.md)
+- [Benchmark 就绪度与 provenance 审核](docs/BENCHMARK_READINESS.md)
 - [公开身份与科学表述边界](docs/PUBLIC_IDENTITY.md)
 - [v0.3 架构](docs/V0.3_ARCHITECTURE.md)
 - [架构演进与开发原则](docs/ARCHITECTURE_EVOLUTION.md)

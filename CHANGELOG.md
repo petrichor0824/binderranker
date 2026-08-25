@@ -27,13 +27,21 @@ used by the corresponding release.
   repeated campaigns within each target, preserve zero-positive target states,
   summarize cross-target direction and range, and perform leave-one-target-out
   removal analysis without presenting it as a confidence interval.
+- Added a strict benchmark-readiness companion checklist bound to the sealed
+  manifest and dataset hashes, with declared data freeze, cohort completeness,
+  scientific review, analysis plan, evidence limitations, and timezone-aware
+  provenance records.
+- Added deterministic readiness reports that distinguish real-retrospective
+  declarations from synthetic fixtures, expose target/campaign outcome
+  structure and method prerequisites, and keep independent verification,
+  performance benefit, and formal inference explicitly unestablished.
 
 ### Validation
 
 - Extended the clean installed-Wheel smoke test to import the v0.5 scientific
   validation package, validate a synthetic sealed benchmark bundle, and
-  compute fixed-budget BinderRanker/baseline metrics plus target sensitivity
-  outside the source checkout.
+  compute fixed-budget BinderRanker/baseline metrics, target sensitivity, and
+  fixture-only readiness boundaries outside the source checkout.
 
 ## 0.4.0 - 2026-08-25
 

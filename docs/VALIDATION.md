@@ -76,7 +76,7 @@ The clean installation verifies that:
 - the v0.5 scientific-validation package imports from the installed Wheel,
   validates a synthetic SHA256-sealed benchmark bundle outside the checkout,
   computes its evaluation-only fixed-budget BinderRanker/baseline report, and
-  builds a target-level removal-sensitivity report;
+  builds target-level removal-sensitivity and fixture-only readiness reports;
 - offline Chat initializes safely without a model credential;
 - compatibility workspace initialization remains functional;
 - Doctor can inspect the installed environment.
@@ -160,6 +160,20 @@ for recall/enrichment, and fewer than two defined targets produces an
 unavailable removal range. The range is deterministic sensitivity evidence,
 not a confidence interval or significance test. See
 [`BENCHMARK_SENSITIVITY.md`](BENCHMARK_SENSITIVITY.md).
+
+The readiness layer requires a strict companion YAML record bound to the exact
+manifest and dataset hashes. It records declared data-freeze provenance,
+candidate-cohort completeness, outcome/baseline/leakage review, a predeclared
+analysis-plan identifier, and evidence limitations. The resulting report
+distinguishes `SYNTHETIC_FIXTURE` from `REAL_RETROSPECTIVE`, counts the outcome
+structure at target and campaign levels, and exposes only the mathematical
+prerequisites required by the implemented descriptive sensitivity methods.
+
+`READY_FOR_SCIENTIFIC_REVIEW` does not mean independently verified, adequately
+powered, representative, or performance-positive. The software validates the
+structure and hash binding of declarations; an independent reviewer must
+verify their truth and choose any justified formal inference method. See
+[`BENCHMARK_READINESS.md`](BENCHMARK_READINESS.md).
 
 ## 4. Claims not established by v0.4 engineering validation
 

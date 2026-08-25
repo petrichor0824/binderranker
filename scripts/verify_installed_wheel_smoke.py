@@ -36,6 +36,7 @@ from protein_design_agent.scientific_validation import (
     evaluate_fixed_budget_metrics,
     evaluate_target_sensitivity,
     validate_benchmark_bundle,
+    validate_benchmark_readiness,
 )
 from protein_design_agent.tools.normalize_pdb_dataset import (
     normalize_one_pdb,
@@ -304,6 +305,55 @@ assert all(
     item.leave_one_target_out.status == "UNAVAILABLE"
     for item in benchmark_sensitivity.metric_summaries
 )
+benchmark_readiness_path = benchmark_dir / "readiness.yaml"
+benchmark_readiness_path.write_text(
+    yaml.safe_dump(
+        {
+            "schema_version": "0.1",
+            "benchmark_id": benchmark_validation.summary.benchmark_id,
+            "manifest_sha256": benchmark_validation.summary.manifest_sha256,
+            "dataset_sha256": benchmark_validation.summary.dataset_sha256,
+            "data_kind": "SYNTHETIC_FIXTURE",
+            "data_freeze": {
+                "frozen_at": "2026-08-01T09:00:00+08:00",
+                "source_system": "Installed-Wheel smoke fixture.",
+                "extraction_procedure": "Generated deterministically in smoke.",
+                "immutable_record_id": "wheel-smoke-fixture-v1",
+            },
+            "cohort": {
+                "inclusion_criteria": "All generated smoke rows.",
+                "exclusion_criteria": "No exclusions.",
+                "candidate_universe_complete": True,
+                "missing_outcome_policy": "No missing outcomes in fixture.",
+            },
+            "review": {
+                "outcome_definition_reviewed": True,
+                "baseline_procedure_reviewed": True,
+                "leakage_reviewed": True,
+                "analysis_plan_id": "wheel-smoke-plan-v1",
+                "reviewer_role": "Packaging test",
+                "review_record_id": "wheel-smoke-review-v1",
+                "reviewed_at": "2026-08-02T09:00:00+08:00",
+            },
+            "evidence_limitations": [
+                "Synthetic packaging fixture is not empirical evidence.",
+            ],
+        },
+        sort_keys=False,
+    ),
+    encoding="utf-8",
+)
+benchmark_readiness = validate_benchmark_readiness(
+    benchmark_validation,
+    benchmark_readiness_path,
+)
+assert benchmark_readiness.engineering_readiness_status == "READY"
+assert benchmark_readiness.scientific_review_status == "FIXTURE_ONLY"
+assert benchmark_readiness.formal_inference_established is False
+assert (
+    "SYNTHETIC_FIXTURE_NOT_EMPIRICAL_EVIDENCE"
+    in benchmark_readiness.warnings
+)
 
 package_path = Path(
     protein_design_agent.__file__
@@ -325,6 +375,7 @@ print(
     f"result outside repository "
     f"({validation.valid_candidate_count} valid candidates; "
     "scientific interpretation modules available; "
-    "benchmark contract, fixed-budget metrics, and target sensitivity "
+    "benchmark contract, fixed-budget metrics, target sensitivity, and "
+    "readiness boundaries "
     "validated)"
 )

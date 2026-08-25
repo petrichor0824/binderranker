@@ -792,9 +792,10 @@ A polished paper-grade calibration rationale/ablation document may be deferred u
 Target: v0.5.0.
 
 Status: Phase 1 benchmark input contract, Phase 2 fixed-budget metric layer,
-and Phase 3 target-removal sensitivity layer implemented on v0.5 development
-branches; real empirical benchmark evidence, formal uncertainty inference, and
-scientific interpretation remain pending.
+Phase 3 target-removal sensitivity, and Phase 4 provenance/readiness gate
+implemented on v0.5 development branches; independently reviewed real
+empirical benchmark evidence, formal uncertainty inference, and scientific
+interpretation remain pending.
 
 ## Objective
 
@@ -863,6 +864,27 @@ Implementation status: complete on the v0.5 target-sensitivity branch. The
 range is explicitly descriptive removal sensitivity, not a confidence interval
 or hypothesis test. Formal uncertainty inference remains gated on an adequately
 sized real benchmark and a predeclared scientific analysis plan.
+
+## Phase 4 — Real-campaign provenance and review readiness
+
+Bind a strict companion checklist to the exact sealed manifest and dataset.
+The checklist must declare data kind, freeze provenance, cohort construction,
+candidate-universe completeness, missing-outcome policy, outcome/baseline/
+leakage review, an analysis-plan identifier, and evidence limitations.
+
+Implementation status: complete on the v0.5 benchmark-readiness branch. The
+deterministic report distinguishes synthetic fixtures from data declared as
+real retrospective records, summarizes target/campaign outcome structure, and
+reports only prerequisites directly required by the implemented descriptive
+methods. It does not invent a universal sample-size threshold. Checklist
+validation establishes declaration structure and hash binding, not historical
+truth, independent scientific approval, performance benefit, or formal
+inference.
+
+The next evidence phase requires an independently reviewed real campaign
+bundle. If the real data and predeclared analysis plan justify a formal
+uncertainty method, that method must be reviewed and implemented explicitly;
+the readiness report cannot select one automatically.
 
 ---
 

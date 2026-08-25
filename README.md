@@ -334,6 +334,14 @@ reports deterministic leave-one-target-out sensitivity. This exposes target
 heterogeneity and sample insufficiency without presenting a removal range as a
 confidence interval or a test of generalization.
 
+A companion readiness layer now binds data-freeze, cohort, review, and
+analysis-plan declarations to the exact sealed benchmark hashes. It explicitly
+separates synthetic fixtures from data declared as real retrospective records
+and reports structural method prerequisites without inventing a universal
+sample-size threshold. Passing this gate means only that the material is ready
+for independent scientific review; the software does not verify historical
+declarations or establish performance benefit or formal inference.
+
 ---
 
 ## Documentation
@@ -345,6 +353,7 @@ confidence interval or a test of generalization.
 - [Benchmark contract](docs/BENCHMARK_CONTRACT.md)
 - [Fixed-budget benchmark metrics](docs/BENCHMARK_METRICS.md)
 - [Target-level benchmark sensitivity](docs/BENCHMARK_SENSITIVITY.md)
+- [Benchmark readiness and provenance review](docs/BENCHMARK_READINESS.md)
 - [Public identity and claim policy](docs/PUBLIC_IDENTITY.md)
 - [v0.3 architecture](docs/V0.3_ARCHITECTURE.md)
 - [Architecture evolution and development principles](docs/ARCHITECTURE_EVOLUTION.md)

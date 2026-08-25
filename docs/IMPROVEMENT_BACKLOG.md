@@ -93,8 +93,9 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
   跨 `CALIBRATION` / `EVALUATION` 的泄漏。
 - 科学边界：通过门禁只证明 benchmark 输入满足当前契约，不证明
   BinderRanker 富集成功候选、具有跨 target 泛化能力或产生因果效果。
-- 下一切片：只对 `ValidatedBenchmarkBundle` 的 evaluation 数据计算固定预算
-  BinderRanker/baseline 对照指标，并显式表示不可定义的统计量。
+- 后续状态：Phase 2 已实现只使用 evaluation 数据的固定预算
+  BinderRanker/baseline 对照指标；Phase 3/4 继续补充 target sensitivity 与
+  provenance/readiness 门禁。
 - 不变项：不修改评分、排名、筛选规则、冻结 Ranker 资源、Tool 授权边界
   或 Agent 架构。
 
@@ -131,6 +132,27 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
 - 不变项：不修改评分、排名、筛选规则、冻结 Ranker 资源、Tool 授权边界
   或 Agent 架构。
 - 目标阶段：v0.5.0 Workstream 8 Phase 3。
+
+### Real-campaign provenance and readiness gate
+
+- 原问题：前三阶段能够封存数据并计算描述性对照与 target sensitivity，但仍可能
+  把合成 fixture、未经外部核对的历史声明和真实回顾性证据混为一谈，也缺少将
+  cohort、数据冻结、review record 与预声明分析计划绑定到同一 bundle 的共享门禁。
+- 当前实现：新增 strict companion YAML checklist，绑定 benchmark ID、manifest
+  SHA256 和 dataset SHA256；要求带时区的数据冻结时间、来源系统、抽取流程、不可变
+  记录 ID、完整 candidate universe 声明、缺失 outcome 政策、outcome/baseline/leakage
+  审核和 analysis plan ID。checklist 本身也写入 SHA256。
+- 就绪度报告：明确区分 `SYNTHETIC_FIXTURE` 的 `FIXTURE_ONLY` 与
+  `REAL_RETROSPECTIVE` 的 `READY_FOR_SCIENTIFIC_REVIEW`，并报告 target/campaign
+  outcome 结构、每 target campaign 范围、每 campaign candidate 范围以及当前方法的
+  结构前提。
+- 科学边界：软件只验证声明的结构与哈希绑定，不独立核验声明真实性；不使用武断的
+  通用样本量阈值，也不建立性能收益、统计显著性、泛化、因果或实验成功。
+- 下一切片：接入经独立审核的真实回顾性 campaign bundle，并在既定 analysis plan
+  下评估是否有足够依据选择正式不确定性方法；没有真实数据时不生成性能结论。
+- 不变项：不修改评分、排名、筛选规则、冻结 Ranker 资源、执行行为、Tool 授权边界
+  或 Agent 架构。
+- 目标阶段：v0.5.0 Workstream 8 Phase 4。
 
 ## P1 — Stable Tool/API boundary
 

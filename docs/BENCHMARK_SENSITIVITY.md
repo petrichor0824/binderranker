@@ -123,4 +123,7 @@ report = evaluate_target_sensitivity(bundle)
 
 Formal uncertainty intervals or hypothesis tests require an adequately sized,
 independently reviewed real benchmark and a predeclared analysis plan. They are
-not inferred automatically from this descriptive sensitivity report.
+not inferred automatically from this descriptive sensitivity report. Before a
+real campaign bundle enters that review, bind its provenance and review
+declarations through the companion
+[`BENCHMARK_READINESS.md`](BENCHMARK_READINESS.md) gate.
