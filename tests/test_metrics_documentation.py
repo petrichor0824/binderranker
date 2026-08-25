@@ -3,7 +3,7 @@ from pathlib import Path
 from protein_design_agent.agent.metric_ontology import (
     BASE_METRIC_ONTOLOGY,
 )
-from scripts.generate_metrics_docs import (
+from protein_design_agent.agent.metric_documentation import (
     render_metrics_markdown,
 )
 
