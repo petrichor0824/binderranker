@@ -51,12 +51,14 @@ directly improve BinderRanker usability.
 
 ## 2. Current repository baseline
 
-The active stabilization branch currently represents BinderRanker v0.3.0 plus post-release stabilization work.
+The active development branch currently represents the published BinderRanker
+v0.3.1 baseline plus v0.4.0 scientific-transparency stabilization work.
 
 ### Current product facts
 
 - package: `binderranker`
-- version: `0.3.0`
+- latest published version: `0.3.1`
+- active development target: `0.4.0`
 - Python: `>=3.10`
 - canonical CLI: `binderranker`
 - compatibility CLI: `protein-design-agent`
@@ -700,8 +702,8 @@ Each tutorial should include:
 
 Target: v0.4.0.
 
-Status: implementation complete; v0.4 stabilization and release preparation
-remain pending.
+Status: implementation complete; v0.4 artifact-contract stabilization is in
+progress and release-cut preparation remains pending.
 
 ## Objective
 
@@ -755,6 +757,15 @@ explicit `UNAVAILABLE` status instead of inferred run-bound semantics.
 
 The generated metrics reference is now checked byte-for-byte against its
 deterministic renderer so ontology documentation cannot silently drift.
+
+The stabilization slice following implementation hardens the serialized
+artifact boundary. Result summaries explicitly accept known schema generations
+`0.1` through `0.4`, reject unknown future generations, and require every field
+introduced by the declared generation. Completed analysis manifests similarly
+accept their known `0.1` through `0.3` generations, while schema `0.3` requires
+the deterministic-report integrity fields. Derived numeric evidence rejects
+NaN and infinity again when summaries are loaded, including through explicit
+or legacy analysis entry points.
 
 This completes the planned Workstream 7 implementation scope. It does not
 start the v0.5 scientific-validation infrastructure workstream.

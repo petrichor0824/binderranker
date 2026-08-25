@@ -41,6 +41,21 @@ used by the corresponding release.
   presenting contribution deltas as causal, energetic, or biological effects.
 - Deterministic reports and optional evidence-bound explanations now validate
   and reuse the interpretation contract stored in the result summary.
+- Result-summary and completed-analysis loaders now accept only documented
+  artifact schema generations, preserve known legacy generations, and reject
+  unknown or incomplete current-generation artifacts.
+
+### Fixed
+
+- Derived result-summary loading now rejects NaN and infinity in candidate
+  scores, component scores, key metrics, primary-score weights, and dynamic
+  thresholds, including explicit and legacy analysis paths.
+
+### Validation
+
+- The clean installed-Wheel smoke test now imports the metric-documentation and
+  scientific-interpretation modules, builds the 20-metric run contract, and
+  verifies that these v0.4 modules do not depend on a source checkout.
 
 ## 0.3.1 - 2026-08-21
 

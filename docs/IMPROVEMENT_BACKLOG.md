@@ -68,6 +68,15 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
 - 不变项：不修改评分、排名、筛选规则、Tool 授权边界、冻结 Ranker 资源或 Agent 架构。
 - 目标阶段：v0.4.0 Workstream 7 第四切片。
 
+### Release artifact contract hardening
+
+- 原问题：结果摘要和分析清单的 `schema_version` 可以被当作任意字符串读取，未知未来格式存在被旧代码误读的风险；当前格式缺少新增字段时也可能被默认值掩盖。派生摘要经显式或 legacy 路径反序列化时，部分嵌套数值尚未统一拒绝 NaN/Inf。
+- 当前实现：结果摘要明确支持 `0.1`—`0.4`，分析清单明确支持 `0.1`—`0.3`；旧格式保持降级读取，未知格式和声明为当前格式但字段不完整的产物直接拒绝。
+- 数值边界：候选总分、组件分、关键指标、主分权重和动态阈值在摘要模型入口统一要求有限数。
+- 发布验证：已安装 Wheel 冒烟测试同时导入并构建科学解释契约和确定性指标文档，确认新模块不依赖源码 checkout。
+- 不变项：不修改评分、排名、筛选规则、冻结 Ranker 资源、Tool 授权边界或 Agent 架构。
+- 目标阶段：v0.4.0 Workstream 7 stabilization。
+
 ## P1 — Stable Tool/API boundary
 
 ### Tool API adoption and runtime integration

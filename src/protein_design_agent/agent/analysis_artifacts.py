@@ -49,6 +49,12 @@ OPTIONAL_REPORT_SEAL_FIELDS = (
     "deterministic_report_sha256",
 )
 
+SUPPORTED_ANALYSIS_MANIFEST_SCHEMAS = {
+    "0.1",
+    "0.2",
+    "0.3",
+}
+
 
 class AnalysisArtifactError(RuntimeError):
     """无法安全确定分析产物。"""
@@ -110,6 +116,40 @@ def read_manifest(
         return None
 
     return value
+
+
+def validate_completed_manifest_schema(
+    *,
+    manifest_path: Path,
+    manifest: dict[str, Any],
+) -> None:
+    """Reject unknown or incomplete completed-analysis generations."""
+    version = manifest.get("schema_version")
+
+    if version not in (
+        SUPPORTED_ANALYSIS_MANIFEST_SCHEMAS
+    ):
+        raise AnalysisArtifactError(
+            "分析清单使用不支持的 schema_version："
+            f"{version!r}；文件：{manifest_path}"
+        )
+
+    if version == "0.3":
+        required_report_fields = {
+            "deterministic_report_path",
+            "deterministic_report_sha256",
+        }
+        missing = sorted(
+            field
+            for field in required_report_fields
+            if manifest.get(field) in (None, "")
+        )
+        if missing:
+            raise AnalysisArtifactError(
+                "分析清单 schema 0.3 缺少确定性报告"
+                f"完整性字段：{missing}；文件："
+                f"{manifest_path}"
+            )
 
 
 def validate_artifact_path(
@@ -599,6 +639,12 @@ def resolve_analysis_artifacts(
                 and manifest.get("status")
                 == "COMPLETED"
             ):
+                validate_completed_manifest_schema(
+                    manifest_path=(
+                        resolved_manifest
+                    ),
+                    manifest=manifest,
+                )
                 completed.append(
                     (
                         resolved_manifest,

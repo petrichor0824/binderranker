@@ -100,6 +100,29 @@ the shared metric ontology or result policy is rejected. Older summaries remain
 readable with `scientific_interpretation_status=UNAVAILABLE`; BinderRanker does
 not invent missing run-bound interpretation evidence.
 
+## Check artifact schema compatibility
+
+Result summaries declare the evidence generation they contain. BinderRanker
+supports result-summary schemas `0.1`, `0.2`, `0.3`, and `0.4`:
+
+- `0.1` is the v0.3.1 result-summary contract;
+- `0.2` adds deterministic primary-score decomposition;
+- `0.3` adds adjacent-rank arithmetic comparisons;
+- `0.4` adds the sealed scientific-interpretation contract.
+
+Older generations remain readable and expose later evidence as explicitly
+`UNAVAILABLE`. A summary claiming a newer known generation must contain all
+fields introduced by that generation; missing fields are treated as artifact
+damage rather than silently replaced with defaults. Unknown future schema
+versions are rejected so an older BinderRanker installation cannot
+misinterpret newer evidence.
+
+Completed analysis manifests follow the same rule for their known `0.1`
+through `0.3` generations. Current `0.3` manifests must include the sealed
+deterministic-report path and digest. All loaded summary scores, component
+values, metrics, weights, and thresholds must be finite; NaN and infinity are
+invalid even when they arrive through an explicit or legacy artifact path.
+
 ## Compare adjacent ranks arithmetically
 
 When primary-score decomposition is available, the result summary and

@@ -189,6 +189,54 @@ def test_latest_completed_analysis_is_selected(
     )
 
 
+def test_unknown_completed_manifest_schema_is_rejected(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    manifest, _, _ = make_analysis(
+        bundle,
+        "future",
+    )
+    payload = json.loads(
+        manifest.read_text(encoding="utf-8")
+    )
+    payload["schema_version"] = "0.4"
+    write_json(manifest, payload)
+
+    with pytest.raises(
+        AnalysisArtifactError,
+        match="不支持的 schema_version",
+    ):
+        resolve_analysis_artifacts(
+            bundle_dir=bundle,
+        )
+
+
+def test_current_manifest_requires_report_integrity_fields(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    manifest, _, _ = make_analysis(
+        bundle,
+        "partial_current",
+    )
+    payload = json.loads(
+        manifest.read_text(encoding="utf-8")
+    )
+    payload["schema_version"] = "0.3"
+    write_json(manifest, payload)
+
+    with pytest.raises(
+        AnalysisArtifactError,
+        match="schema 0.3.*完整性字段",
+    ):
+        resolve_analysis_artifacts(
+            bundle_dir=bundle,
+        )
+
+
 def test_running_analysis_is_not_selected(
     tmp_path: Path,
 ) -> None:

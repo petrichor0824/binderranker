@@ -933,6 +933,234 @@ def test_legacy_summary_without_comparison_fields_is_compatible(
     )
 
 
+def test_released_v031_summary_schema_is_compatible(
+    tmp_path: Path,
+) -> None:
+    summary = parse_completed_ranker_run(
+        build_bundle(tmp_path)
+    )
+    payload = summary.model_dump(
+        mode="json"
+    )
+    payload["schema_version"] = "0.1"
+
+    for field in (
+        "score_decomposition_status",
+        "score_decomposition_reason",
+        "region_score_used",
+        "primary_score_formula",
+        "primary_score_weights",
+        "candidate_comparison_status",
+        "candidate_comparison_reason",
+        "adjacent_candidate_score_comparisons",
+        "scientific_interpretation_status",
+        "scientific_interpretation_reason",
+        "scientific_interpretation_contract",
+    ):
+        payload.pop(field)
+
+    for candidate in payload[
+        "candidates_by_engineering_rank"
+    ]:
+        candidate.pop(
+            "primary_score_contributions"
+        )
+        candidate.pop(
+            "reconstructed_final_score_v4"
+        )
+        candidate.pop(
+            "primary_score_reconstruction_error"
+        )
+
+    loaded = RankerResultSummary.model_validate(
+        payload
+    )
+
+    assert loaded.schema_version == "0.1"
+    assert (
+        loaded.score_decomposition_status
+        == "UNAVAILABLE"
+    )
+    assert (
+        loaded.candidate_comparison_status
+        == "UNAVAILABLE"
+    )
+    assert (
+        loaded.scientific_interpretation_status
+        == "UNAVAILABLE"
+    )
+    assert all(
+        candidate.primary_score_contributions
+        == {}
+        for candidate in (
+            loaded.candidates_by_engineering_rank
+        )
+    )
+
+
+def test_schema_03_without_interpretation_fields_is_compatible(
+    tmp_path: Path,
+) -> None:
+    summary = parse_completed_ranker_run(
+        build_bundle(tmp_path)
+    )
+    payload = summary.model_dump(
+        mode="json"
+    )
+    payload["schema_version"] = "0.3"
+    payload.pop(
+        "scientific_interpretation_status"
+    )
+    payload.pop(
+        "scientific_interpretation_reason"
+    )
+    payload.pop(
+        "scientific_interpretation_contract"
+    )
+
+    loaded = RankerResultSummary.model_validate(
+        payload
+    )
+
+    assert loaded.schema_version == "0.3"
+    assert loaded.score_decomposition_status == (
+        "AVAILABLE"
+    )
+    assert loaded.candidate_comparison_status == (
+        "AVAILABLE"
+    )
+    assert (
+        loaded.scientific_interpretation_status
+        == "UNAVAILABLE"
+    )
+
+
+def test_current_summary_schema_rejects_missing_contract_fields(
+    tmp_path: Path,
+) -> None:
+    summary = parse_completed_ranker_run(
+        build_bundle(tmp_path)
+    )
+    payload = summary.model_dump(
+        mode="json"
+    )
+    payload.pop(
+        "scientific_interpretation_contract"
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="schema 0.4.*必需字段",
+    ):
+        RankerResultSummary.model_validate(
+            payload
+        )
+
+
+def test_current_summary_schema_rejects_partial_candidate_fields(
+    tmp_path: Path,
+) -> None:
+    summary = parse_completed_ranker_run(
+        build_bundle(tmp_path)
+    )
+    payload = summary.model_dump(
+        mode="json"
+    )
+    payload[
+        "candidates_by_engineering_rank"
+    ][0].pop(
+        "primary_score_contributions"
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="候选 0.*必需字段",
+    ):
+        RankerResultSummary.model_validate(
+            payload
+        )
+
+
+def test_unknown_result_summary_schema_is_rejected(
+    tmp_path: Path,
+) -> None:
+    summary = parse_completed_ranker_run(
+        build_bundle(tmp_path)
+    )
+    payload = summary.model_dump(
+        mode="json"
+    )
+    payload["schema_version"] = "0.5"
+
+    with pytest.raises(ValueError):
+        RankerResultSummary.model_validate(
+            payload
+        )
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "candidate_score",
+        "component_score",
+        "key_metric",
+        "primary_weight",
+        "filter_threshold",
+    ],
+)
+@pytest.mark.parametrize(
+    "non_finite",
+    [float("nan"), float("inf"), float("-inf")],
+)
+def test_summary_rejects_non_finite_derived_numbers(
+    tmp_path: Path,
+    location: str,
+    non_finite: float,
+) -> None:
+    summary = parse_completed_ranker_run(
+        build_bundle(tmp_path)
+    )
+    payload = summary.model_dump(
+        mode="json"
+    )
+    candidate = payload[
+        "candidates_by_engineering_rank"
+    ][0]
+
+    if location == "candidate_score":
+        candidate["final_score_v4"] = (
+            non_finite
+        )
+    elif location == "component_score":
+        candidate["component_scores"][
+            "score_safety"
+        ] = non_finite
+    elif location == "key_metric":
+        candidate["key_metrics"][
+            "effective_weight_sum"
+        ] = non_finite
+    elif location == "primary_weight":
+        payload["primary_score_weights"][
+            "score_safety"
+        ] = non_finite
+    else:
+        first_threshold = next(
+            iter(
+                payload[
+                    "raw_filter_thresholds"
+                ]["broad"].values()
+            )
+        )
+        first_threshold["value"] = (
+            non_finite
+        )
+
+    with pytest.raises(ValueError):
+        RankerResultSummary.model_validate(
+            payload
+        )
+
+
 def test_summary_rejects_tampered_candidate_comparison(
     tmp_path: Path,
 ) -> None:

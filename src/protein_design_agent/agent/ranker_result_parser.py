@@ -29,7 +29,12 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    model_validator,
+)
 
 from protein_design_agent.agent.approval import (
     FileFingerprint,
@@ -71,6 +76,10 @@ class RankerResultParseError(RuntimeError):
 class FilterThreshold(BaseModel):
     """一个动态过滤阈值。"""
 
+    model_config = ConfigDict(
+        allow_inf_nan=False
+    )
+
     metric: str
     direction: Literal["min", "max"]
     value: float
@@ -79,6 +88,10 @@ class FilterThreshold(BaseModel):
 
 class CandidateResult(BaseModel):
     """一个候选的确定性解析结果。"""
+
+    model_config = ConfigDict(
+        allow_inf_nan=False
+    )
 
     pdb_name: str
 
@@ -121,7 +134,16 @@ class CandidateResult(BaseModel):
 class RankerResultSummary(BaseModel):
     """一次 Ranker 执行的安全结构化摘要。"""
 
-    schema_version: str = "0.4"
+    model_config = ConfigDict(
+        allow_inf_nan=False
+    )
+
+    schema_version: Literal[
+        "0.1",
+        "0.2",
+        "0.3",
+        "0.4",
+    ] = "0.4"
     status: Literal["PARSED"] = "PARSED"
 
     project_name: str
@@ -184,6 +206,123 @@ class RankerResultSummary(BaseModel):
     result_use: str
 
     source_files: dict[str, Path]
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_versioned_schema_fields(
+        cls,
+        value: Any,
+    ) -> Any:
+        """Reject partial known schemas before defaults can hide damage."""
+        if not isinstance(value, dict):
+            return value
+
+        raw_version = value.get(
+            "schema_version"
+        )
+
+        # Direct Python construction historically omitted the version and
+        # relies on model defaults. Serialized BinderRanker artifacts always
+        # record it explicitly, so only those inputs receive strict generation
+        # checks here.
+        if raw_version is None:
+            return value
+
+        fields_by_generation = {
+            "0.1": frozenset(),
+            "0.2": frozenset(
+                {
+                    "score_decomposition_status",
+                    "score_decomposition_reason",
+                    "region_score_used",
+                    "primary_score_formula",
+                    "primary_score_weights",
+                }
+            ),
+            "0.3": frozenset(
+                {
+                    "candidate_comparison_status",
+                    "candidate_comparison_reason",
+                    (
+                        "adjacent_candidate_"
+                        "score_comparisons"
+                    ),
+                }
+            ),
+            "0.4": frozenset(
+                {
+                    (
+                        "scientific_"
+                        "interpretation_status"
+                    ),
+                    (
+                        "scientific_"
+                        "interpretation_reason"
+                    ),
+                    (
+                        "scientific_"
+                        "interpretation_contract"
+                    ),
+                }
+            ),
+        }
+
+        if raw_version not in fields_by_generation:
+            # The Literal field below emits the authoritative unsupported-
+            # version validation error. Do not reinterpret future schemas.
+            return value
+
+        order = ("0.1", "0.2", "0.3", "0.4")
+        required: set[str] = set()
+        for version in order:
+            required.update(
+                fields_by_generation[version]
+            )
+            if version == raw_version:
+                break
+
+        missing = sorted(
+            required - set(value)
+        )
+        if missing:
+            raise ValueError(
+                "结果摘要 schema "
+                f"{raw_version} 缺少该版本必需字段："
+                f"{missing}"
+            )
+
+        candidate_fields = {
+            "primary_score_contributions",
+            "reconstructed_final_score_v4",
+            "primary_score_reconstruction_error",
+        }
+        if raw_version != "0.1":
+            raw_candidates = value.get(
+                "candidates_by_engineering_rank"
+            )
+            if isinstance(raw_candidates, list):
+                for index, candidate in enumerate(
+                    raw_candidates
+                ):
+                    if not isinstance(
+                        candidate,
+                        dict,
+                    ):
+                        continue
+
+                    missing_candidate = sorted(
+                        candidate_fields
+                        - set(candidate)
+                    )
+                    if missing_candidate:
+                        raise ValueError(
+                            "结果摘要 schema "
+                            f"{raw_version} 的候选 {index} "
+                            "缺少该版本必需字段："
+                            f"{missing_candidate}"
+                        )
+
+        return value
 
     @model_validator(mode="after")
     def validate_candidate_comparison_contract(

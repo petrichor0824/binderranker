@@ -11,8 +11,17 @@ from pathlib import Path
 
 import protein_design_agent
 
+from protein_design_agent.agent.metric_documentation import (
+    render_metrics_markdown,
+)
+from protein_design_agent.agent.result_policy import (
+    derive_pool_reporting_policy,
+)
 from protein_design_agent.agent.sample_resources import (
     extract_packaged_sample,
+)
+from protein_design_agent.agent.scientific_interpretation import (
+    build_scientific_interpretation_contract,
 )
 from protein_design_agent.agent.scientific_result_validation import (
     validate_scientific_result,
@@ -116,6 +125,34 @@ validation = validate_scientific_result(
     expected_candidate_count=len(sample.pdb_files),
 )
 
+smoke_policy = derive_pool_reporting_policy(
+    {
+        "level": "SMOKE_TEST_ONLY",
+        "pool_labels_reliable": False,
+        (
+            "workflow_allows_"
+            "formal_interpretation"
+        ): False,
+    }
+)
+interpretation_contract = (
+    build_scientific_interpretation_contract(
+        region_score_used=False,
+        pool_reporting_policy=smoke_policy,
+    )
+)
+assert len(
+    interpretation_contract.metric_semantics
+) == 20
+assert (
+    interpretation_contract
+    .threshold_interpretation_mode
+    == "SUPPRESSED"
+)
+assert "### `final_score_v4`" in (
+    render_metrics_markdown()
+)
+
 package_path = Path(
     protein_design_agent.__file__
 ).resolve()
@@ -134,5 +171,6 @@ print(
     "PASS: installed Wheel extracted five PDBs "
     "and produced a scientifically valid BinderRanker "
     f"result outside repository "
-    f"({validation.valid_candidate_count} valid candidates)"
+    f"({validation.valid_candidate_count} valid candidates; "
+    "scientific interpretation modules available)"
 )

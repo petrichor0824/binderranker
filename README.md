@@ -33,7 +33,8 @@ existing candidate PDB set.
 BinderRanker is a **prioritization layer**. A high score or strict-layer pass
 is not biological proof.
 
-Current development line: **v0.3.1**
+Latest stable release: **v0.3.1**. Active development target:
+**v0.4.0 scientific-transparency stabilization**.
 
 ---
 
