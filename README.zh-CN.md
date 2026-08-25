@@ -370,6 +370,11 @@ BinderRanker 也不能替代：
 无论通过哪一种入口，底层使用的都是同一个 BinderRanker 科学能力。
 Agent 接口只改善可访问性与集成体验，不拥有也不重新定义科学行为。
 
+v0.6 集成层现在为全部 8 个 Tool 操作提供带版本的机器可读 catalog，
+统一公开 JSON schema、副作用分类和需要宿主注入的可信字段。未受信请求
+不能提交授权或调用者身份；在宿主 runtime 能够独立注入真实用户同意前，
+受保护的外部执行仍然保持阻断。
+
 为保持向后兼容，内部 Python namespace 继续使用：
 
 `protein_design_agent`
@@ -428,6 +433,7 @@ benchmark 哈希，并明确区分合成 fixture 与声明为真实回顾性记�
 - [固定预算 Benchmark 指标](docs/BENCHMARK_METRICS.md)
 - [Target-level Benchmark 敏感性](docs/BENCHMARK_SENSITIVITY.md)
 - [Benchmark 就绪度与 provenance 审核](docs/BENCHMARK_READINESS.md)
+- [Tool API 契约与授权边界](docs/TOOL_API_CONTRACT.md)
 - [公开身份与科学表述边界](docs/PUBLIC_IDENTITY.md)
 - [v0.3 架构](docs/V0.3_ARCHITECTURE.md)
 - [架构演进与开发原则](docs/ARCHITECTURE_EVOLUTION.md)

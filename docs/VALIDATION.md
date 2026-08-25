@@ -77,6 +77,9 @@ The clean installation verifies that:
   validates a synthetic SHA256-sealed benchmark bundle outside the checkout,
   computes its evaluation-only fixed-budget BinderRanker/baseline report, and
   builds target-level removal-sensitivity and fixture-only readiness reports;
+- the versioned Tool API catalog imports from the installed Wheel, describes
+  all eight operations, and keeps provider identity and protected approval or
+  execution facts out of untrusted request schemas;
 - offline Chat initializes safely without a model credential;
 - compatibility workspace initialization remains functional;
 - Doctor can inspect the installed environment.

@@ -9,6 +9,14 @@ used by the corresponding release.
 
 ### Added
 
+- Added a versioned, machine-readable catalog for all eight public BinderRanker
+  Tool operations, with deterministic input/output JSON Schemas, explicit
+  side-effect classes, host-local path semantics, and trusted host-field
+  declarations for future HTTP, MCP, workflow, and external-Agent adapters.
+- Added strict, frozen adapter request models that reject unknown fields and
+  exclude provider identity, approval identity, approval confirmation,
+  smoke-test acknowledgement, approval notes, and execution confirmation from
+  untrusted model-authored arguments.
 - Added a sealed benchmark-bundle contract for v0.5 scientific-validation
   infrastructure, with explicit outcome, baseline, Ranker provenance,
   parameter-selection, blinding, fixed-budget, and target-split declarations.
@@ -38,6 +46,13 @@ used by the corresponding release.
 
 ### Validation
 
+- Added Tool contract regressions for complete inventory, stable serialization,
+  side-effect and authorization classification, strict request validation,
+  host-field isolation, schema completeness, and existing Tool result-model
+  import compatibility.
+- Extended the clean installed-Wheel smoke test to build the Tool API catalog
+  and verify that protected authorization fields are absent from its untrusted
+  request schemas outside the source checkout.
 - Extended the clean installed-Wheel smoke test to import the v0.5 scientific
   validation package, validate a synthetic sealed benchmark bundle, and
   compute fixed-budget BinderRanker/baseline metrics, target sensitivity, and

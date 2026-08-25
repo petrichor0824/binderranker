@@ -29,6 +29,9 @@ from protein_design_agent.agent.scientific_interpretation import (
 from protein_design_agent.agent.scientific_result_validation import (
     validate_scientific_result,
 )
+from protein_design_agent.agent.tool_api_contract import (
+    get_tool_api_catalog,
+)
 from protein_design_agent.schemas.project_config import (
     ProjectConfig,
 )
@@ -161,6 +164,23 @@ assert (
 assert "### `final_score_v4`" in (
     render_metrics_markdown()
 )
+
+tool_catalog = get_tool_api_catalog()
+assert tool_catalog.tool_count == 8
+assert tool_catalog.model_supplied_authorization_accepted is False
+assert tool_catalog.scientific_evidence_status == "SCIENTIFIC_VALIDATION_PENDING"
+
+tool_contracts = {
+    tool.name: tool for tool in tool_catalog.tools
+}
+approval_properties = tool_contracts[
+    "request_approval"
+].input_json_schema["properties"]
+execution_properties = tool_contracts[
+    "execute_ranker"
+].input_json_schema["properties"]
+assert set(approval_properties) == {"bundle_dir"}
+assert "execution_confirmed" not in execution_properties
 
 benchmark_dir = root / "benchmark"
 benchmark_dir.mkdir()
@@ -375,6 +395,7 @@ print(
     f"result outside repository "
     f"({validation.valid_candidate_count} valid candidates; "
     "scientific interpretation modules available; "
+    "versioned Tool API contract validated; "
     "benchmark contract, fixed-budget metrics, target sensitivity, and "
     "readiness boundaries "
     "validated)"

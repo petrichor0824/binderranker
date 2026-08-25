@@ -305,6 +305,12 @@ BinderRanker remains the same scientific capability regardless of the access
 path. Agent interfaces improve accessibility and integration; they do not own
 or redefine scientific behavior.
 
+The v0.6 integration layer now publishes a versioned, machine-readable catalog
+for all eight Tool operations, including JSON schemas, side-effect classes,
+and trusted host-field requirements. Authorization and caller identity are
+excluded from untrusted request schemas; protected external execution remains
+blocked until a host runtime can inject independently verified user consent.
+
 The internal Python namespace remains `protein_design_agent` for backward
 compatibility. It is an implementation detail, not the public project
 identity.
@@ -354,6 +360,7 @@ declarations or establish performance benefit or formal inference.
 - [Fixed-budget benchmark metrics](docs/BENCHMARK_METRICS.md)
 - [Target-level benchmark sensitivity](docs/BENCHMARK_SENSITIVITY.md)
 - [Benchmark readiness and provenance review](docs/BENCHMARK_READINESS.md)
+- [Tool API contract and authorization boundary](docs/TOOL_API_CONTRACT.md)
 - [Public identity and claim policy](docs/PUBLIC_IDENTITY.md)
 - [v0.3 architecture](docs/V0.3_ARCHITECTURE.md)
 - [Architecture evolution and development principles](docs/ARCHITECTURE_EVOLUTION.md)

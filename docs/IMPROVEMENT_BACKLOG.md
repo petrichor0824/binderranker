@@ -157,10 +157,19 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
 ## P1 — Stable Tool/API boundary
 
 ### Tool API adoption and runtime integration
-- 当前状态：v0.3 已建立稳定、framework-independent 的 BinderRanker Tool API；legacy Chat 和部分 CLI 路径尚未统一迁移到这一边界。
-- 后续方向：直接调用、可选 built-in Agent 和未来外部 adapter 统一复用 BinderRanker Tool API，不绕过 deterministic Core。
-- 暂缓原因：v0.3 的目标是冻结稳定 domain boundary；后续只在实际调用方需要时继续收紧契约。
-- 建议阶段：按科学工作流和外部集成的实际需要安排。
+- 当前状态：v0.6 Phase 1 已为 8 个 framework-independent Tool 建立统一、
+  版本化、机器可读的 catalog；input/output JSON Schema、副作用分类、
+  host-local path 语义和 host-injected fields 由共享模块集中生成。
+- 安全边界：严格 adapter request model 拒绝未知字段；`provider_name`、
+  `approved_by`、批准/执行确认、smoke-test acknowledgement 和 approval note
+  均不进入未受信请求 schema。现有 Python Tool 签名保持兼容。
+- 验证状态：catalog 确定性、JSON 序列化、完整 inventory、分类、授权字段隔离、
+  schema 完整性和旧 result model import 均有回归测试，并进入 clean-Wheel smoke。
+- 下一切片：实现可信 runtime authorization context，由宿主独立获得真实用户确认
+  并注入 Tool 调用；在此之前，外部 Agent 不得直接调用 `request_approval` 或
+  `execute_ranker`。
+- 后续方向：补统一 adapter error envelope，再依据当前生态评审选择一个薄 adapter；
+  所有路径继续复用 BinderRanker Tool API，不绕过 deterministic Core。
 
 ## P3 — Optional interaction and external-Agent integration
 

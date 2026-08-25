@@ -440,6 +440,22 @@ Tests:
 
 Turn the existing framework-independent Tool API into an intentionally versioned integration surface.
 
+### v0.6 Phase 1 status — contract catalog implemented
+
+The first bounded v0.6 slice now provides a shared `0.1` machine-readable
+catalog for all eight Tool operations. It centrally defines deterministic
+input/output JSON Schemas, side effects, host-local path semantics,
+authorization requirements, and fields that a trusted host must inject.
+
+Strict untrusted request models exclude provider provenance and every current
+approval/execution fact. Protected tools are not yet safe to expose directly
+to an external model: Workstream 3D trusted runtime authorization injection
+remains the next blocker. See [`TOOL_API_CONTRACT.md`](TOOL_API_CONTRACT.md).
+
+This is integration engineering under the existing scientific-validation
+boundary. It does not establish BinderRanker performance or biological
+validity and does not modify the frozen ranking algorithm.
+
 ## 3A — Tool inventory and classification
 
 Each Tool must be classified by side effects:
@@ -470,6 +486,9 @@ Examples:
 
 This classification should be machine-readable or centrally defined if useful.
 
+Status: implemented in the versioned Tool API catalog. Deterministic analysis
+is classified as `APPEND_ONLY_ARTIFACT`, not read-only.
+
 ## 3B — Stable schemas
 
 Review all public Tool inputs/outputs for:
@@ -483,6 +502,10 @@ Review all public Tool inputs/outputs for:
 - no leakage of internal exception text/secrets.
 
 Avoid exposing internal implementation classes merely because they are convenient today.
+
+Status: the initial adapter request/output schemas and installed-Wheel checks
+are implemented. Shared adapter error-envelope normalization remains a later
+bounded slice.
 
 ## 3C — Observation vs planning advice
 
