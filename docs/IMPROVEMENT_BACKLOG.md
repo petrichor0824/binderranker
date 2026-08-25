@@ -116,6 +116,22 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
   或 Agent 架构。
 - 目标阶段：v0.5.0 Workstream 8 Phase 2。
 
+### Target-level heterogeneity and removal sensitivity
+
+- 原问题：pooled 指标可能掩盖 target 间方向差异；同一 target 的多个 campaign
+  也不能被错误当成多个独立 target。真实数据接入前需要共享的样本充分性和
+  单 target 影响审计。
+- 当前实现：按 target 聚合 evaluation campaign，输出 hits-per-campaign、
+  precision、recall、enrichment 和 success-rate delta 的等 target 分布；逐一
+  移除有定义的 target，记录 macro-target 均值范围与最大偏移。
+- 未定义语义：零阳性 target 的 recall/enrichment 明确不可用；少于两个有
+  定义 target 时 leave-one-target-out 范围明确不可用。
+- 科学边界：该范围不是置信区间或假设检验，不证明统计显著、跨 target
+  泛化、因果或实验成功；正式不确定性推断需要真实样本量和预声明分析计划。
+- 不变项：不修改评分、排名、筛选规则、冻结 Ranker 资源、Tool 授权边界
+  或 Agent 架构。
+- 目标阶段：v0.5.0 Workstream 8 Phase 3。
+
 ## P1 — Stable Tool/API boundary
 
 ### Tool API adoption and runtime integration

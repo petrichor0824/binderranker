@@ -75,7 +75,8 @@ The clean installation verifies that:
   from the installed Wheel and build the complete 20-metric contract;
 - the v0.5 scientific-validation package imports from the installed Wheel,
   validates a synthetic SHA256-sealed benchmark bundle outside the checkout,
-  and computes its evaluation-only fixed-budget BinderRanker/baseline report;
+  computes its evaluation-only fixed-budget BinderRanker/baseline report, and
+  builds a target-level removal-sensitivity report;
 - offline Chat initializes safely without a model credential;
 - compatibility workspace initialization remains functional;
 - Doctor can inspect the installed environment.
@@ -151,6 +152,14 @@ and baseline metrics side by side, and represents zero-positive campaign
 recall/enrichment as explicitly unavailable. Its immutable report is bound to
 the manifest and dataset hashes and marks generalization and causality as not
 established. See [`BENCHMARK_METRICS.md`](BENCHMARK_METRICS.md).
+
+The target-sensitivity layer groups repeated evaluation campaigns by target,
+reports equal-target distributions, and recomputes the macro target estimate
+after removing each defined target once. Zero-positive targets remain explicit
+for recall/enrichment, and fewer than two defined targets produces an
+unavailable removal range. The range is deterministic sensitivity evidence,
+not a confidence interval or significance test. See
+[`BENCHMARK_SENSITIVITY.md`](BENCHMARK_SENSITIVITY.md).
 
 ## 4. Claims not established by v0.4 engineering validation
 

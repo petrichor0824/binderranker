@@ -7,6 +7,7 @@ DOCS = (
     "docs/RESULT_INTERPRETATION.md",
     "docs/BENCHMARK_CONTRACT.md",
     "docs/BENCHMARK_METRICS.md",
+    "docs/BENCHMARK_SENSITIVITY.md",
 )
 
 
@@ -87,3 +88,22 @@ def test_benchmark_metrics_preserve_scientific_boundaries() -> None:
 
     for value in required_metric_text:
         assert value in metrics
+
+
+def test_benchmark_sensitivity_preserves_scientific_boundaries() -> None:
+    sensitivity = Path(
+        "docs/BENCHMARK_SENSITIVITY.md"
+    ).read_text(encoding="utf-8")
+
+    required_sensitivity_text = (
+        "LEAVE_ONE_TARGET_OUT",
+        "NO_POSITIVE_OUTCOMES_IN_TARGET",
+        "FEWER_THAN_TWO_TARGETS_WITH_DEFINED_METRIC",
+        "not a confidence",
+        "DESCRIPTIVE_TARGET_SENSITIVITY_ONLY",
+        "statistical_significance_established=false",
+        "generalization_established=false",
+    )
+
+    for value in required_sensitivity_text:
+        assert value in sensitivity

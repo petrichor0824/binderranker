@@ -407,6 +407,10 @@ benchmark 输入契约，以及确定性的固定预算 BinderRanker/baseline �
 这些能力用于审计回顾性证据；合成数据或仅通过契约验证，不表示
 BinderRanker 已被证明能够改善真实下游结果。
 
+v0.5 开发层还会按 target 聚合同一 target 的多个 campaign，并报告确定性的
+leave-one-target-out 敏感性。这用于暴露 target 异质性和样本不足；移除范围
+不是置信区间，也不是泛化能力检验。
+
 ---
 
 ## 文档
@@ -417,6 +421,7 @@ BinderRanker 已被证明能够改善真实下游结果。
 - [验证状态与边界](docs/VALIDATION.md)
 - [Benchmark 输入契约](docs/BENCHMARK_CONTRACT.md)
 - [固定预算 Benchmark 指标](docs/BENCHMARK_METRICS.md)
+- [Target-level Benchmark 敏感性](docs/BENCHMARK_SENSITIVITY.md)
 - [公开身份与科学表述边界](docs/PUBLIC_IDENTITY.md)
 - [v0.3 架构](docs/V0.3_ARCHITECTURE.md)
 - [架构演进与开发原则](docs/ARCHITECTURE_EVOLUTION.md)

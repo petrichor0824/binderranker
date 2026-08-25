@@ -34,6 +34,7 @@ from protein_design_agent.schemas.project_config import (
 )
 from protein_design_agent.scientific_validation import (
     evaluate_fixed_budget_metrics,
+    evaluate_target_sensitivity,
     validate_benchmark_bundle,
 )
 from protein_design_agent.tools.normalize_pdb_dataset import (
@@ -294,6 +295,15 @@ assert benchmark_report.evaluation_campaign_count == 1
 assert benchmark_report.evaluation_candidate_count == 2
 assert benchmark_report.pooled_comparisons[0].binderranker.hits_at_k == 1
 assert benchmark_report.pooled_comparisons[0].baseline.hits_at_k == 0
+benchmark_sensitivity = evaluate_target_sensitivity(
+    benchmark_validation
+)
+assert benchmark_sensitivity.analysis_unit == "TARGET"
+assert benchmark_sensitivity.evaluation_target_count == 1
+assert all(
+    item.leave_one_target_out.status == "UNAVAILABLE"
+    for item in benchmark_sensitivity.metric_summaries
+)
 
 package_path = Path(
     protein_design_agent.__file__
@@ -315,5 +325,6 @@ print(
     f"result outside repository "
     f"({validation.valid_candidate_count} valid candidates; "
     "scientific interpretation modules available; "
-    "benchmark contract and fixed-budget metrics validated)"
+    "benchmark contract, fixed-budget metrics, and target sensitivity "
+    "validated)"
 )

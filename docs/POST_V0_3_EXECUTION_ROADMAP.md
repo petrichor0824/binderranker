@@ -791,9 +791,10 @@ A polished paper-grade calibration rationale/ablation document may be deferred u
 
 Target: v0.5.0.
 
-Status: Phase 1 benchmark input contract and Phase 2 fixed-budget metric layer
-implemented on v0.5 development branches; real empirical benchmark evidence,
-uncertainty analysis, and scientific interpretation remain pending.
+Status: Phase 1 benchmark input contract, Phase 2 fixed-budget metric layer,
+and Phase 3 target-removal sensitivity layer implemented on v0.5 development
+branches; real empirical benchmark evidence, formal uncertainty inference, and
+scientific interpretation remain pending.
 
 ## Objective
 
@@ -850,6 +851,18 @@ hits, precision, recall, enrichment, and success for BinderRanker and the
 declared baseline, and explicitly marks zero-positive campaign recall and
 enrichment as unavailable. Synthetic regression fixtures validate arithmetic
 and packaging only; they are not empirical BinderRanker performance evidence.
+
+## Phase 3 — Target heterogeneity and removal sensitivity
+
+Aggregate repeated evaluation campaigns within the same target before
+cross-target review. Report equal-target metric distributions and
+leave-one-target-out macro-estimate ranges, while preserving zero-positive
+target states and explicit insufficient-target semantics.
+
+Implementation status: complete on the v0.5 target-sensitivity branch. The
+range is explicitly descriptive removal sensitivity, not a confidence interval
+or hypothesis test. Formal uncertainty inference remains gated on an adequately
+sized real benchmark and a predeclared scientific analysis plan.
 
 ---
 

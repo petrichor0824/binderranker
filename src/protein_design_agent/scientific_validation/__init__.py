@@ -24,6 +24,15 @@ from protein_design_agent.scientific_validation.benchmark_metrics import (
     PooledMethodMetrics,
     evaluate_fixed_budget_metrics,
 )
+from protein_design_agent.scientific_validation.benchmark_sensitivity import (
+    LeaveOneTargetOutRange,
+    TargetBudgetMetrics,
+    TargetMetricSummary,
+    TargetMetricValue,
+    TargetSensitivityError,
+    TargetSensitivityReport,
+    evaluate_target_sensitivity,
+)
 
 __all__ = [
     "BenchmarkBaselineDefinition",
@@ -39,11 +48,18 @@ __all__ = [
     "CampaignBudgetComparison",
     "CampaignMethodMetrics",
     "FixedBudgetBenchmarkReport",
+    "LeaveOneTargetOutRange",
     "MetricValue",
     "PooledBudgetComparison",
     "PooledMethodMetrics",
+    "TargetBudgetMetrics",
+    "TargetMetricSummary",
+    "TargetMetricValue",
+    "TargetSensitivityError",
+    "TargetSensitivityReport",
     "ValidatedBenchmarkBundle",
     "evaluate_fixed_budget_metrics",
+    "evaluate_target_sensitivity",
     "load_benchmark_manifest",
     "validate_benchmark_bundle",
 ]

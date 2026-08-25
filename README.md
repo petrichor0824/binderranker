@@ -329,6 +329,11 @@ campaign statistics explicitly. These facilities make retrospective evidence
 auditable; synthetic or contract-only validation is not evidence that
 BinderRanker improves real outcomes.
 
+The v0.5 development layer also aggregates repeated campaigns by target and
+reports deterministic leave-one-target-out sensitivity. This exposes target
+heterogeneity and sample insufficiency without presenting a removal range as a
+confidence interval or a test of generalization.
+
 ---
 
 ## Documentation
@@ -339,6 +344,7 @@ BinderRanker improves real outcomes.
 - [Validation](docs/VALIDATION.md)
 - [Benchmark contract](docs/BENCHMARK_CONTRACT.md)
 - [Fixed-budget benchmark metrics](docs/BENCHMARK_METRICS.md)
+- [Target-level benchmark sensitivity](docs/BENCHMARK_SENSITIVITY.md)
 - [Public identity and claim policy](docs/PUBLIC_IDENTITY.md)
 - [v0.3 architecture](docs/V0.3_ARCHITECTURE.md)
 - [Architecture evolution and development principles](docs/ARCHITECTURE_EVOLUTION.md)

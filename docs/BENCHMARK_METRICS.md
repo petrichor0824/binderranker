@@ -112,8 +112,10 @@ bundle = validate_benchmark_bundle(
 report = evaluate_fixed_budget_metrics(bundle)
 ```
 
-This phase does not tune BinderRanker, change the frozen ranking algorithm,
-estimate uncertainty, run hypothesis tests, or claim a real-world advantage.
-Confidence intervals, target-level resampling, sensitivity analysis, and any
-empirical interpretation require an adequately powered real benchmark and a
-separate scientific review.
+This fixed-budget phase does not tune BinderRanker, change the frozen ranking
+algorithm, run hypothesis tests, or claim a real-world advantage. The separate
+[`BENCHMARK_SENSITIVITY.md`](BENCHMARK_SENSITIVITY.md) contract adds
+deterministic target heterogeneity and leave-one-target-out removal ranges. It
+does not reinterpret those ranges as confidence intervals. Formal uncertainty
+intervals and empirical interpretation require an adequately powered real
+benchmark and a separate scientific review.

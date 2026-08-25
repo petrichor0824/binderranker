@@ -23,13 +23,17 @@ used by the corresponding release.
 - Added explicit `AVAILABLE` / `UNAVAILABLE` states for recall and enrichment
   when an individual campaign has no positive outcomes, plus report-level
   retrospective claim boundaries and sealed-input identity checks.
+- Added deterministic target-level benchmark sensitivity reports that pool
+  repeated campaigns within each target, preserve zero-positive target states,
+  summarize cross-target direction and range, and perform leave-one-target-out
+  removal analysis without presenting it as a confidence interval.
 
 ### Validation
 
 - Extended the clean installed-Wheel smoke test to import the v0.5 scientific
   validation package, validate a synthetic sealed benchmark bundle, and
-  compute fixed-budget BinderRanker/baseline metrics outside the source
-  checkout.
+  compute fixed-budget BinderRanker/baseline metrics plus target sensitivity
+  outside the source checkout.
 
 ## 0.4.0 - 2026-08-25
 
