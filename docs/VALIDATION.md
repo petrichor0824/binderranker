@@ -80,6 +80,9 @@ The clean installation verifies that:
 - the versioned Tool API catalog imports from the installed Wheel, describes
   all eight operations, and keeps provider identity and protected approval or
   execution facts out of untrusted request schemas;
+- the trusted Tool runtime imports from the installed Wheel and declares its
+  opaque, SHA256-bound, short-lived, atomically single-use authorization
+  transport for protected operations;
 - offline Chat initializes safely without a model credential;
 - compatibility workspace initialization remains functional;
 - Doctor can inspect the installed environment.

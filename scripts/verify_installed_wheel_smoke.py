@@ -32,6 +32,11 @@ from protein_design_agent.agent.scientific_result_validation import (
 from protein_design_agent.agent.tool_api_contract import (
     get_tool_api_catalog,
 )
+from protein_design_agent.agent.tool_runtime_authorization import (
+    DEFAULT_AUTHORIZATION_TTL,
+    TrustedAuthorizationBroker,
+    TrustedToolRuntime,
+)
 from protein_design_agent.schemas.project_config import (
     ProjectConfig,
 )
@@ -169,6 +174,10 @@ tool_catalog = get_tool_api_catalog()
 assert tool_catalog.tool_count == 8
 assert tool_catalog.model_supplied_authorization_accepted is False
 assert tool_catalog.scientific_evidence_status == "SCIENTIFIC_VALIDATION_PENDING"
+assert tool_catalog.authorization_transport == "IN_PROCESS_OPAQUE_CAPABILITY"
+assert tool_catalog.authorization_grant_json_serializable is False
+assert tool_catalog.authorization_grant_single_use is True
+assert tool_catalog.authorization_grant_review_resource_bound is True
 
 tool_contracts = {
     tool.name: tool for tool in tool_catalog.tools
@@ -181,6 +190,17 @@ execution_properties = tool_contracts[
 ].input_json_schema["properties"]
 assert set(approval_properties) == {"bundle_dir"}
 assert "execution_confirmed" not in execution_properties
+assert tool_contracts["request_approval"].trusted_runtime_entrypoint == (
+    "TrustedToolRuntime.request_approval"
+)
+assert tool_contracts["execute_ranker"].trusted_runtime_entrypoint == (
+    "TrustedToolRuntime.execute_ranker"
+)
+assert DEFAULT_AUTHORIZATION_TTL.total_seconds() == 300
+trusted_runtime = TrustedToolRuntime(
+    TrustedAuthorizationBroker()
+)
+assert isinstance(trusted_runtime, TrustedToolRuntime)
 
 benchmark_dir = root / "benchmark"
 benchmark_dir.mkdir()

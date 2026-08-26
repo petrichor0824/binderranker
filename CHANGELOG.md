@@ -17,6 +17,10 @@ used by the corresponding release.
   exclude provider identity, approval identity, approval confirmation,
   smoke-test acknowledgement, approval notes, and execution confirmation from
   untrusted model-authored arguments.
+- Added a host-owned trusted authorization broker and protected Tool runtime.
+  Its opaque capabilities require an independent user confirmation, bind one
+  action and task plus the reviewed manifest SHA256, expire after five minutes
+  by default, and can be consumed atomically only once.
 - Added a sealed benchmark-bundle contract for v0.5 scientific-validation
   infrastructure, with explicit outcome, baseline, Ranker provenance,
   parameter-selection, blinding, fixed-budget, and target-split declarations.
@@ -50,6 +54,10 @@ used by the corresponding release.
   side-effect and authorization classification, strict request validation,
   host-field isolation, schema completeness, and existing Tool result-model
   import compatibility.
+- Added authorization regressions covering absent confirmation, opaque
+  transport, host-fact injection, replay, concurrency, expiry, cross-broker,
+  wrong-action, wrong-task, changed-review-resource, and unvalidated-request
+  rejection.
 - Extended the clean installed-Wheel smoke test to build the Tool API catalog
   and verify that protected authorization fields are absent from its untrusted
   request schemas outside the source checkout.

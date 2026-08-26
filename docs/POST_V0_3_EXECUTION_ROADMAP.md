@@ -448,9 +448,9 @@ input/output JSON Schemas, side effects, host-local path semantics,
 authorization requirements, and fields that a trusted host must inject.
 
 Strict untrusted request models exclude provider provenance and every current
-approval/execution fact. Protected tools are not yet safe to expose directly
-to an external model: Workstream 3D trusted runtime authorization injection
-remains the next blocker. See [`TOOL_API_CONTRACT.md`](TOOL_API_CONTRACT.md).
+approval/execution fact. Phase 2 now supplies the Workstream 3D trusted runtime
+primitive described below. A concrete external adapter is still not shipped.
+See [`TOOL_API_CONTRACT.md`](TOOL_API_CONTRACT.md).
 
 This is integration engineering under the existing scientific-validation
 boundary. It does not establish BinderRanker performance or biological
@@ -547,6 +547,18 @@ BinderRanker Tool API
 ```
 
 BinderRanker Core retains the final domain guard.
+
+Status: implemented in v0.6 Phase 2 for in-process host adapters. The
+host-owned broker issues a non-JSON, five-minute capability only after an
+independent confirmation event. Each capability is bound to one action, one
+canonical task directory, and the reviewed manifest SHA256; it is consumed
+atomically once and fails closed on expiry, replay, scope mismatch, or review
+resource changes. The issuance API must never be registered as a model Tool.
+
+This completes the shared trusted-runtime primitive, not an external adapter.
+Concrete adapters must still provide authenticated user interaction, workspace
+path constraints, error envelopes, and tests proving that broker issuance is
+outside the model-callable surface.
 
 ## Acceptance criteria
 

@@ -103,6 +103,13 @@ def test_catalog_exposes_authorization_and_scientific_boundaries() -> None:
 
     assert catalog.path_semantics == "HOST_LOCAL_PATH"
     assert catalog.model_supplied_authorization_accepted is False
+    assert catalog.authorization_transport == (
+        "IN_PROCESS_OPAQUE_CAPABILITY"
+    )
+    assert catalog.authorization_grant_json_serializable is False
+    assert catalog.authorization_grant_single_use is True
+    assert catalog.authorization_grant_review_resource_bound is True
+    assert catalog.authorization_grant_default_ttl_seconds == 300
     assert catalog.scientific_evidence_status == "SCIENTIFIC_VALIDATION_PENDING"
     assert catalog.performance_claims_established is False
 
@@ -116,6 +123,14 @@ def test_catalog_exposes_authorization_and_scientific_boundaries() -> None:
     )
     assert tool_by_name("prepare_task").host_injected_fields == (
         "provider_name",
+    )
+    assert (
+        tool_by_name("request_approval").trusted_runtime_entrypoint
+        == "TrustedToolRuntime.request_approval"
+    )
+    assert (
+        tool_by_name("execute_ranker").trusted_runtime_entrypoint
+        == "TrustedToolRuntime.execute_ranker"
     )
 
 
@@ -151,6 +166,20 @@ def test_catalog_rejects_count_mismatch_and_duplicate_names() -> None:
     duplicated = catalog.tools[:-1] + (catalog.tools[0],)
     with pytest.raises(ValidationError, match="tool names must be unique"):
         ToolAPICatalog(tool_count=8, tools=duplicated)
+
+    unsafe_protected_tool = catalog.tools[5].model_copy(
+        update={"trusted_runtime_entrypoint": None}
+    )
+    unsafe_tools = (
+        catalog.tools[:5]
+        + (unsafe_protected_tool,)
+        + catalog.tools[6:]
+    )
+    with pytest.raises(
+        ValidationError,
+        match="trusted runtime entrypoint",
+    ):
+        ToolAPICatalog(tool_count=8, tools=unsafe_tools)
 
 
 def test_tool_api_keeps_result_model_import_compatibility() -> None:

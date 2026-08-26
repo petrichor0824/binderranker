@@ -165,10 +165,13 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
   均不进入未受信请求 schema。现有 Python Tool 签名保持兼容。
 - 验证状态：catalog 确定性、JSON 序列化、完整 inventory、分类、授权字段隔离、
   schema 完整性和旧 result model import 均有回归测试，并进入 clean-Wheel smoke。
-- 下一切片：实现可信 runtime authorization context，由宿主独立获得真实用户确认
-  并注入 Tool 调用；在此之前，外部 Agent 不得直接调用 `request_approval` 或
-  `execute_ranker`。
-- 后续方向：补统一 adapter error envelope，再依据当前生态评审选择一个薄 adapter；
+- Phase 2 状态：已实现宿主持有的 `TrustedAuthorizationBroker` 和
+  `TrustedToolRuntime`。不透明 capability 绑定动作、canonical bundle 和审核文件
+  SHA256，默认 5 分钟过期，错作用域即失效，并保证并发时只能消费一次；只有消费成功
+  后 runtime 才向兼容 API 注入确认事实。
+- 安全限制：broker 签发方法不得注册为模型 Tool；capability 只在宿主进程内存在，
+  不序列化、不作为网络 token，用户认证和确认 UI 仍由具体 adapter 宿主负责。
+- 下一切片：补统一 adapter error envelope，再依据当前生态评审选择一个薄 adapter；
   所有路径继续复用 BinderRanker Tool API，不绕过 deterministic Core。
 
 ## P3 — Optional interaction and external-Agent integration

@@ -309,7 +309,9 @@ The v0.6 integration layer now publishes a versioned, machine-readable catalog
 for all eight Tool operations, including JSON schemas, side-effect classes,
 and trusted host-field requirements. Authorization and caller identity are
 excluded from untrusted request schemas; protected external execution remains
-blocked until a host runtime can inject independently verified user consent.
+available only through a trusted in-process runtime capability that is
+short-lived, action- and task-bound, review-hash-bound, and atomically
+single-use. No external adapter is shipped yet.
 
 The internal Python namespace remains `protein_design_agent` for backward
 compatibility. It is an implementation detail, not the public project

@@ -106,6 +106,7 @@ class ToolOperationContract(_StrictContractModel):
     side_effect: ToolSideEffect
     authorization_requirement: ToolAuthorizationRequirement
     host_injected_fields: tuple[str, ...] = ()
+    trusted_runtime_entrypoint: str | None = None
 
     input_schema_name: str
     output_schema_name: str
@@ -126,6 +127,13 @@ class ToolAPICatalog(_StrictContractModel):
     ] = "SCIENTIFIC_VALIDATION_PENDING"
     performance_claims_established: Literal[False] = False
     model_supplied_authorization_accepted: Literal[False] = False
+    authorization_transport: Literal[
+        "IN_PROCESS_OPAQUE_CAPABILITY"
+    ] = "IN_PROCESS_OPAQUE_CAPABILITY"
+    authorization_grant_json_serializable: Literal[False] = False
+    authorization_grant_single_use: Literal[True] = True
+    authorization_grant_review_resource_bound: Literal[True] = True
+    authorization_grant_default_ttl_seconds: Literal[300] = 300
 
     tool_count: int = Field(ge=1)
     tools: tuple[ToolOperationContract, ...]
@@ -163,10 +171,23 @@ class ToolAPICatalog(_StrictContractModel):
 
             if (
                 tool.authorization_requirement != "NONE"
-                and not tool.host_injected_fields
+                and (
+                    not tool.host_injected_fields
+                    or not tool.trusted_runtime_entrypoint
+                )
             ):
                 raise ValueError(
-                    "protected tools must declare host-injected fields"
+                    "protected tools must declare host-injected fields "
+                    "and a trusted runtime entrypoint"
+                )
+
+            if (
+                tool.authorization_requirement == "NONE"
+                and tool.trusted_runtime_entrypoint is not None
+            ):
+                raise ValueError(
+                    "unprotected tools must not declare a trusted "
+                    "authorization entrypoint"
                 )
 
         return self
@@ -189,6 +210,7 @@ def _operation(
     side_effect: ToolSideEffect,
     authorization_requirement: ToolAuthorizationRequirement,
     host_injected_fields: tuple[str, ...] = (),
+    trusted_runtime_entrypoint: str | None = None,
     request_model: type[BaseModel],
     response_model: type[BaseModel],
 ) -> ToolOperationContract:
@@ -198,6 +220,7 @@ def _operation(
         side_effect=side_effect,
         authorization_requirement=authorization_requirement,
         host_injected_fields=host_injected_fields,
+        trusted_runtime_entrypoint=trusted_runtime_entrypoint,
         input_schema_name=request_model.__name__,
         output_schema_name=response_model.__name__,
         input_json_schema=_schema(request_model, mode="validation"),
@@ -261,6 +284,9 @@ def get_tool_api_catalog() -> ToolAPICatalog:
                 "approval_note",
                 "acknowledge_smoke_test",
             ),
+            trusted_runtime_entrypoint=(
+                "TrustedToolRuntime.request_approval"
+            ),
             request_model=RequestApprovalToolRequest,
             response_model=ApprovalRecord,
         ),
@@ -270,6 +296,9 @@ def get_tool_api_catalog() -> ToolAPICatalog:
             side_effect="EXECUTING",
             authorization_requirement="TRUSTED_USER_EXECUTION_CONFIRMATION",
             host_injected_fields=("execution_confirmed",),
+            trusted_runtime_entrypoint=(
+                "TrustedToolRuntime.execute_ranker"
+            ),
             request_model=ExecuteRankerToolRequest,
             response_model=CompletedLocalExecution,
         ),
