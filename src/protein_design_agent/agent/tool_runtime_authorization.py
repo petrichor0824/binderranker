@@ -29,6 +29,10 @@ from protein_design_agent.agent.tool_api_contract import (
     ExecuteRankerToolRequest,
     RequestApprovalToolRequest,
 )
+from protein_design_agent.agent.tool_adapter_errors import (
+    AdapterErrorCode,
+    AdapterSafeError,
+)
 
 
 RuntimeAuthorizationAction = Literal[
@@ -44,8 +48,19 @@ _RESOURCE_FILE_BY_ACTION: dict[RuntimeAuthorizationAction, str] = {
 }
 
 
-class RuntimeAuthorizationError(RuntimeError):
+class RuntimeAuthorizationError(AdapterSafeError):
     """A trusted runtime authorization could not be issued or consumed."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        adapter_error_code: AdapterErrorCode = "AUTHORIZATION_REJECTED",
+    ) -> None:
+        super().__init__(
+            message,
+            adapter_error_code=adapter_error_code,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,7 +168,8 @@ class TrustedAuthorizationBroker:
     ) -> RuntimeAuthorizationGrant:
         if user_confirmed is not True:
             raise RuntimeAuthorizationError(
-                "宿主尚未获得真实用户确认，不能签发可信授权。"
+                "宿主尚未获得真实用户确认，不能签发可信授权。",
+                adapter_error_code="AUTHORIZATION_REQUIRED",
             )
 
         if not isinstance(authorized_by, str):
@@ -342,7 +358,8 @@ class TrustedToolRuntime:
 
         if not isinstance(request, RequestApprovalToolRequest):
             raise RuntimeAuthorizationError(
-                "request_approval 请求未通过公开 schema 验证。"
+                "request_approval 请求未通过公开 schema 验证。",
+                adapter_error_code="INVALID_REQUEST",
             )
 
         consumed = self._broker._consume(
@@ -371,7 +388,8 @@ class TrustedToolRuntime:
 
         if not isinstance(request, ExecuteRankerToolRequest):
             raise RuntimeAuthorizationError(
-                "execute_ranker 请求未通过公开 schema 验证。"
+                "execute_ranker 请求未通过公开 schema 验证。",
+                adapter_error_code="INVALID_REQUEST",
             )
 
         self._broker._consume(

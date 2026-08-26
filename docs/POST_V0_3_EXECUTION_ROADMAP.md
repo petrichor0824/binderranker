@@ -448,9 +448,10 @@ input/output JSON Schemas, side effects, host-local path semantics,
 authorization requirements, and fields that a trusted host must inject.
 
 Strict untrusted request models exclude provider provenance and every current
-approval/execution fact. Phase 2 now supplies the Workstream 3D trusted runtime
-primitive described below. A concrete external adapter is still not shipped.
-See [`TOOL_API_CONTRACT.md`](TOOL_API_CONTRACT.md).
+approval/execution fact. Phase 2 supplies the Workstream 3D trusted runtime
+primitive, and Phase 3 supplies the shared adapter error boundary described
+below. A concrete external adapter is still not shipped. See
+[`TOOL_API_CONTRACT.md`](TOOL_API_CONTRACT.md).
 
 This is integration engineering under the existing scientific-validation
 boundary. It does not establish BinderRanker performance or biological
@@ -503,9 +504,12 @@ Review all public Tool inputs/outputs for:
 
 Avoid exposing internal implementation classes merely because they are convenient today.
 
-Status: the initial adapter request/output schemas and installed-Wheel checks
-are implemented. Shared adapter error-envelope normalization remains a later
-bounded slice.
+Status: completed through v0.6 Phase 3. The catalog now publishes the shared
+`AdapterErrorEnvelope` schema and all stable codes. The shared boundary keeps
+successful result models unchanged, maps request/authorization/domain/
+scientific/execution/internal failures deterministically, never includes raw
+exception text or host details, and marks every v0.1 error non-retryable so an
+adapter cannot blindly replay a mutating or executing Tool.
 
 ## 3C — Observation vs planning advice
 
@@ -557,14 +561,16 @@ resource changes. The issuance API must never be registered as a model Tool.
 
 This completes the shared trusted-runtime primitive, not an external adapter.
 Concrete adapters must still provide authenticated user interaction, workspace
-path constraints, error envelopes, and tests proving that broker issuance is
-outside the model-callable surface.
+path constraints, use the shared error envelope, and prove that broker issuance
+is outside the model-callable surface.
 
 ## Acceptance criteria
 
 - Tool contracts documented;
 - read/write/execution classes explicit;
 - authorization cannot be forged by model output;
+- one stable, non-sensitive adapter error taxonomy is published;
+- adapter failures cannot trigger automatic execution replay;
 - JSON adapter tests pass;
 - built-in workflow regression remains green.
 

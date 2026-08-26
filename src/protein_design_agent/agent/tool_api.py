@@ -68,9 +68,12 @@ from protein_design_agent.agent.planning_session_resume import (
 from protein_design_agent.schemas.agent_models import (
     AgentPlan,
 )
+from protein_design_agent.agent.tool_adapter_errors import (
+    AdapterSafeError,
+)
 
 
-class ToolAPIError(RuntimeError):
+class ToolAPIError(AdapterSafeError):
     """PDA Tool API 无法可靠完成请求。"""
 
 
@@ -423,7 +426,8 @@ def execute_ranker(
         )
 
         raise ToolAPIError(
-            public_message
+            public_message,
+            adapter_error_code="EXECUTION_FAILED",
         ) from exc
 
 

@@ -171,8 +171,12 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
   后 runtime 才向兼容 API 注入确认事实。
 - 安全限制：broker 签发方法不得注册为模型 Tool；capability 只在宿主进程内存在，
   不序列化、不作为网络 token，用户认证和确认 UI 仍由具体 adapter 宿主负责。
-- 下一切片：补统一 adapter error envelope，再依据当前生态评审选择一个薄 adapter；
-  所有路径继续复用 BinderRanker Tool API，不绕过 deterministic Core。
+- Phase 3 状态：已新增版本化 `AdapterErrorEnvelope`、8 个稳定错误码和共享
+  `invoke_adapter_boundary()`。成功结果保持原模型；失败结果不会泄露原始异常、主机路径、
+  traceback、token、subprocess stderr 或 validation input。所有 v0.1 错误均明确为不可
+  自动重试，避免 approval、mutation 或 execution 被适配器盲目重放。
+- 下一切片：进行当前外部 Agent/API 生态评审，选择一个薄 adapter；所有路径继续复用
+  BinderRanker Tool API、可信授权 runtime 和共享错误边界，不绕过 deterministic Core。
 
 ## P3 — Optional interaction and external-Agent integration
 
@@ -262,11 +266,14 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
 ### Runtime authorization injection for mutating Tools
 
 - 发现位置：`agent/tool_api.py` 的 `request_approval()` / `execute_ranker()`，以及未来任何外部 Tool runtime。
-- 当前问题：framework-independent Tool API 目前通过 `approval_confirmed` 和 `execution_confirmed` 显式表达两次独立授权事实。这个契约适合当前 deterministic API，但未来若直接把这些布尔参数暴露给模型填写，LLM Tool Call 就可能被错误等同为真实用户授权。
-- 建议方向：外部 Agent 接入时通过可信 runtime context 注入用户身份和授权状态；模型只能请求执行某个 Tool，不能自行生成 approval 或 execution authorization。继续保留“批准计划”和“确认真正执行”两个独立步骤。
-- 为什么当前不做：当前 slice 只建立 framework-independent Tool boundary，尚未接入外部 Agent runtime。现在提前设计完整会话级授权容器会扩大范围；现有 Chat、CLI、approval core 和 local executor 已经完整执行双确认与一次性批准规则。
+- 当前状态：v0.6 Phase 2 已通过宿主持有的 opaque、短时、动作/任务/审核哈希绑定、
+  原子单次 capability 完成共享 runtime 授权注入。v0.6 Phase 3 又将授权失败映射为
+  稳定且不可自动重试的 adapter error code，不公开 capability 或内部异常内容。
+- 后续要求：外部 Agent 接入时只能通过该 trusted runtime 注入用户身份和授权状态；
+  模型只能请求操作，不能签发 capability，也不能自行生成 approval 或 execution
+  authorization。继续保留“批准计划”和“确认真正执行”两个独立步骤。
 - 优先级：任何 Agent 获得修改或执行类 Tool 之前的安全 blocker；不是 Agent 框架迁移目标。
-- 建议版本：首次开放此类外部 Tool 前完成。
+- 建议版本：共享 blocker 已完成；具体 adapter 仍需证明签发入口不在模型可调用 surface。
 
 ### Dataset observation / advice separation
 

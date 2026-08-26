@@ -19,6 +19,9 @@ from protein_design_agent.agent.tool_api_contract import (
     ToolAPICatalog,
     get_tool_api_catalog,
 )
+from protein_design_agent.agent.tool_adapter_errors import (
+    ADAPTER_ERROR_CODES,
+)
 
 
 EXPECTED_TOOLS = (
@@ -110,6 +113,15 @@ def test_catalog_exposes_authorization_and_scientific_boundaries() -> None:
     assert catalog.authorization_grant_single_use is True
     assert catalog.authorization_grant_review_resource_bound is True
     assert catalog.authorization_grant_default_ttl_seconds == 300
+    assert catalog.adapter_error_schema_version == "0.1"
+    assert catalog.adapter_error_schema_name == "AdapterErrorEnvelope"
+    assert catalog.adapter_error_codes == ADAPTER_ERROR_CODES
+    assert catalog.adapter_error_internal_details_exposed is False
+    assert catalog.adapter_error_automatic_retry_safe is False
+    assert catalog.adapter_error_json_schema["type"] == "object"
+    assert set(
+        catalog.adapter_error_json_schema["properties"]
+    ) == {"schema_version", "ok", "operation", "error"}
     assert catalog.scientific_evidence_status == "SCIENTIFIC_VALIDATION_PENDING"
     assert catalog.performance_claims_established is False
 
@@ -180,6 +192,16 @@ def test_catalog_rejects_count_mismatch_and_duplicate_names() -> None:
         match="trusted runtime entrypoint",
     ):
         ToolAPICatalog(tool_count=8, tools=unsafe_tools)
+
+    with pytest.raises(
+        ValidationError,
+        match="adapter error codes",
+    ):
+        ToolAPICatalog(
+            tool_count=8,
+            tools=catalog.tools,
+            adapter_error_codes=("INTERNAL_ERROR",),
+        )
 
 
 def test_tool_api_keeps_result_model_import_compatibility() -> None:

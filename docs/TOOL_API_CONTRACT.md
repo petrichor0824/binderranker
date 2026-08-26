@@ -45,7 +45,8 @@ payload = catalog.model_dump(mode="json")
 `payload` is JSON-serializable and includes the contract version, path
 semantics, side-effect classification, authorization requirement, untrusted
 request JSON Schema, response JSON Schema, host-injected fields, and trusted
-runtime entrypoints for all eight public operations.
+runtime entrypoints for all eight public operations. It also publishes the
+shared adapter error schema and its complete stable error-code inventory.
 
 The current catalog and schema version are both `0.1`. Additive compatible
 changes may retain the contract version; changes that invalidate an existing
@@ -165,10 +166,86 @@ BinderRanker's existing approval record, single-use execution guard, file
 fingerprints, and scientific completion validation remain the final domain
 guards. The catalog does not weaken or replace them.
 
+## Adapter error boundary
+
+All HTTP, MCP, workflow, and external-Agent adapters must normalize failures
+with `protein_design_agent.agent.tool_adapter_errors`. Successful Tool results
+remain the existing operation-specific Pydantic models; they are not wrapped or
+changed. Ordinary failures become an `AdapterErrorEnvelope` with schema version
+`0.1`:
+
+```json
+{
+  "schema_version": "0.1",
+  "ok": false,
+  "operation": "execute_ranker",
+  "error": {
+    "code": "AUTHORIZATION_REJECTED",
+    "category": "AUTHORIZATION",
+    "message": "The trusted authorization was rejected or is no longer valid.",
+    "retryable": false,
+    "recovery_action": "REAUTHORIZE",
+    "validation_issue_count": 0,
+    "validation_issues": []
+  }
+}
+```
+
+The published codes are:
+
+| Code | Meaning | Recovery action |
+| --- | --- | --- |
+| `INVALID_REQUEST` | Request failed the published Pydantic schema | `CORRECT_REQUEST` |
+| `UNKNOWN_OPERATION` | Name is outside the published Tool inventory | `SELECT_PUBLISHED_OPERATION` |
+| `AUTHORIZATION_REQUIRED` | A fresh trusted user decision is required | `OBTAIN_TRUSTED_AUTHORIZATION` |
+| `AUTHORIZATION_REJECTED` | Capability is invalid, expired, consumed, or out of scope | `REAUTHORIZE` |
+| `TOOL_REJECTED` | Domain state does not permit the operation | `REVIEW_TASK_STATE` |
+| `SCIENTIFIC_RESULT_INVALID` | Process output failed scientific semantic validation | `REVIEW_SCIENTIFIC_OUTPUT` |
+| `EXECUTION_FAILED` | Local BinderRanker execution did not complete | `INSPECT_EXECUTION_EVIDENCE` |
+| `INTERNAL_ERROR` | Unexpected adapter/runtime failure | `CONTACT_OPERATOR` |
+
+`retryable` is deliberately `false` for every v0.1 code. The adapter contract
+does not yet provide idempotency keys, so a host must not automatically replay
+a mutation, approval, or execution call. Recovery means that the host or user
+must perform the declared action and submit a new request, not blindly retry
+the same call.
+
+The external envelope never contains:
+
+- raw exception text or exception class names;
+- traceback or chained internal diagnostics;
+- host filesystem paths;
+- credentials, tokens, capability identifiers, subprocess stderr, or request
+  values copied from validation errors.
+
+For `INVALID_REQUEST`, `validation_issues` contains only a bounded list of
+published top-level request-field locations and stable Pydantic error types.
+Unknown or extra locations are reported as `$`, so caller-controlled keys are
+not reflected. The original exception chain remains available only inside the
+trusted host process for logging under that host's own privacy policy. Unknown
+operation names are likewise not reflected and use `operation=null`. Unknown
+exceptions fail closed as `INTERNAL_ERROR`.
+
+```python
+from protein_design_agent.agent.tool_adapter_errors import (
+    invoke_adapter_boundary,
+)
+
+result_or_error = invoke_adapter_boundary(
+    operation="get_task_status",
+    call=lambda: tool_api.get_task_status(bundle_dir=bundle_dir),
+)
+```
+
+The shared boundary catches ordinary `Exception` values only. Process-control
+signals such as `KeyboardInterrupt` and `SystemExit` are not converted into Tool
+responses.
+
 ## Current compatibility boundary
 
-The first two v0.6 slices add discovery, schema enforcement, and trusted
-in-process authorization without changing:
+The first three v0.6 slices add discovery, schema enforcement, trusted
+in-process authorization, and a stable adapter failure contract without
+changing:
 
 - the eight existing Tool function signatures;
 - scoring, ranking, or screening behavior;
@@ -176,6 +253,7 @@ in-process authorization without changing:
 - task execution or scientific completion semantics;
 - the optional built-in Agent architecture.
 
-The next bounded Tool/API slice is adapter-level error envelopes, followed by
-one deliberately selected thin external adapter. The adapter must use this
-runtime rather than exposing internal confirmation booleans.
+The next bounded slice is an evidence-based ecosystem review followed by one
+deliberately selected thin external adapter. That adapter must reuse this error
+boundary and trusted runtime rather than exposing internal confirmation
+booleans or internal exception details.

@@ -21,6 +21,11 @@ used by the corresponding release.
   Its opaque capabilities require an independent user confirmation, bind one
   action and task plus the reviewed manifest SHA256, expire after five minutes
   by default, and can be consumed atomically only once.
+- Added a versioned adapter error envelope with stable request, authorization,
+  domain-state, scientific-validity, execution, and internal error codes.
+  Successful Tool result models remain unchanged; failure envelopes never
+  publish raw exception text, host paths, tracebacks, credentials, capability
+  identifiers, subprocess stderr, or validation inputs.
 - Added a sealed benchmark-bundle contract for v0.5 scientific-validation
   infrastructure, with explicit outcome, baseline, Ranker provenance,
   parameter-selection, blinding, fixed-budget, and target-split declarations.
@@ -58,9 +63,16 @@ used by the corresponding release.
   transport, host-fact injection, replay, concurrency, expiry, cross-broker,
   wrong-action, wrong-task, changed-review-resource, and unvalidated-request
   rejection.
+- Added adapter-boundary regressions covering strict schema failures, stable
+  classifications, unknown operations, authorization failures, scientific
+  invalidity, execution failure, unexpected exceptions, information
+  sanitization, success-result compatibility, and no blind automatic retry.
 - Extended the clean installed-Wheel smoke test to build the Tool API catalog
   and verify that protected authorization fields are absent from its untrusted
   request schemas outside the source checkout.
+- Extended the clean installed-Wheel smoke test to import the shared adapter
+  error boundary and verify its schema, stable code inventory, sanitized
+  unknown-operation response, and non-retryable policy.
 - Extended the clean installed-Wheel smoke test to import the v0.5 scientific
   validation package, validate a synthetic sealed benchmark bundle, and
   compute fixed-budget BinderRanker/baseline metrics, target sensitivity, and

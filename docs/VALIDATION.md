@@ -83,6 +83,10 @@ The clean installation verifies that:
 - the trusted Tool runtime imports from the installed Wheel and declares its
   opaque, SHA256-bound, short-lived, atomically single-use authorization
   transport for protected operations;
+- the shared adapter error boundary imports from the installed Wheel, exposes
+  its deterministic schema and complete code inventory, sanitizes an unknown
+  operation failure, and declares every v0.1 error unsafe for blind automatic
+  retry;
 - offline Chat initializes safely without a model credential;
 - compatibility workspace initialization remains functional;
 - Doctor can inspect the installed environment.

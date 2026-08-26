@@ -32,6 +32,12 @@ from protein_design_agent.agent.scientific_result_validation import (
 from protein_design_agent.agent.tool_api_contract import (
     get_tool_api_catalog,
 )
+from protein_design_agent.agent.tool_adapter_errors import (
+    ADAPTER_ERROR_CODES,
+    AdapterErrorEnvelope,
+    UnknownToolOperationError,
+    adapter_error_from_exception,
+)
 from protein_design_agent.agent.tool_runtime_authorization import (
     DEFAULT_AUTHORIZATION_TTL,
     TrustedAuthorizationBroker,
@@ -178,6 +184,18 @@ assert tool_catalog.authorization_transport == "IN_PROCESS_OPAQUE_CAPABILITY"
 assert tool_catalog.authorization_grant_json_serializable is False
 assert tool_catalog.authorization_grant_single_use is True
 assert tool_catalog.authorization_grant_review_resource_bound is True
+assert tool_catalog.adapter_error_codes == ADAPTER_ERROR_CODES
+assert tool_catalog.adapter_error_internal_details_exposed is False
+assert tool_catalog.adapter_error_automatic_retry_safe is False
+assert tool_catalog.adapter_error_json_schema["type"] == "object"
+
+adapter_error = adapter_error_from_exception(
+    operation="not_published",
+    error=UnknownToolOperationError("not_published"),
+)
+assert isinstance(adapter_error, AdapterErrorEnvelope)
+assert adapter_error.error.code == "UNKNOWN_OPERATION"
+assert adapter_error.error.retryable is False
 
 tool_contracts = {
     tool.name: tool for tool in tool_catalog.tools

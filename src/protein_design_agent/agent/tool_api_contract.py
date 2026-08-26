@@ -29,6 +29,12 @@ from protein_design_agent.agent.planning_session_resume import (
 )
 from protein_design_agent.agent.request_evidence import RequestExtraction
 from protein_design_agent.agent.tool_api import CurrentPlanResult, TaskStatusResult
+from protein_design_agent.agent.tool_adapter_errors import (
+    ADAPTER_ERROR_CODES,
+    ADAPTER_ERROR_SCHEMA_VERSION,
+    AdapterErrorCode,
+    adapter_error_json_schema,
+)
 
 
 TOOL_API_CONTRACT_VERSION = "0.1"
@@ -134,6 +140,18 @@ class ToolAPICatalog(_StrictContractModel):
     authorization_grant_single_use: Literal[True] = True
     authorization_grant_review_resource_bound: Literal[True] = True
     authorization_grant_default_ttl_seconds: Literal[300] = 300
+    adapter_error_schema_version: Literal["0.1"] = (
+        ADAPTER_ERROR_SCHEMA_VERSION
+    )
+    adapter_error_schema_name: Literal[
+        "AdapterErrorEnvelope"
+    ] = "AdapterErrorEnvelope"
+    adapter_error_codes: tuple[AdapterErrorCode, ...] = ADAPTER_ERROR_CODES
+    adapter_error_internal_details_exposed: Literal[False] = False
+    adapter_error_automatic_retry_safe: Literal[False] = False
+    adapter_error_json_schema: dict[str, Any] = Field(
+        default_factory=adapter_error_json_schema
+    )
 
     tool_count: int = Field(ge=1)
     tools: tuple[ToolOperationContract, ...]
@@ -148,6 +166,14 @@ class ToolAPICatalog(_StrictContractModel):
         names = [tool.name for tool in self.tools]
         if len(set(names)) != len(names):
             raise ValueError("tool names must be unique")
+
+        if self.adapter_error_codes != ADAPTER_ERROR_CODES:
+            raise ValueError(
+                "adapter error codes must match the published profile"
+            )
+
+        if self.adapter_error_json_schema.get("type") != "object":
+            raise ValueError("adapter error schema must describe an object")
 
         for tool in self.tools:
             request_fields = set(
