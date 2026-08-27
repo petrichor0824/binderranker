@@ -656,6 +656,19 @@ Before implementation, research the current state of:
 
 MCP is likely the best first neutral adapter, but the choice must be evidence-based at implementation time.
 
+### Selection result — 2026-08-26
+
+MCP was selected for the first adapter after reviewing the OpenAI remote-MCP
+interface and the official MCP Python SDK v2 stable line. It provides a neutral
+cross-host protocol, structured outputs, tool annotations, local `stdio`, and
+an in-memory Client suitable for protocol regression tests. A vendor-specific
+OpenClaw, DeepSeek Harness, or Python-Agent wrapper would add a narrower
+dependency without improving the BinderRanker scientific boundary.
+
+The first implementation uses local `stdio` only. Remote Streamable HTTP,
+authentication, multi-tenant isolation, and deployment are not implied by this
+selection.
+
 ## Adapter principles
 
 The adapter must:
@@ -682,6 +695,25 @@ Prefer a narrow but complete useful set:
 - execution request with independent host confirmation.
 
 If authorization support is not mature enough, ship read-only/planning Tools first and explicitly defer execution Tools rather than weakening the safety boundary.
+
+### Phase 4 implementation checkpoint
+
+The bounded first slice is implemented with:
+
+- `get_current_plan`, `get_task_status`, and `inspect_dataset` only;
+- one configured BinderRanker workspace and validated managed `task_name` input;
+- no arbitrary path arguments, mutation, approval, execution, or analysis write;
+- path-free, stored-free-text-free structured result views;
+- shared `AdapterErrorEnvelope` failures plus MCP `isError=true`;
+- a machine-readable capability resource;
+- official `mcp>=2,<3` as an optional dependency;
+- in-memory MCP parity tests and a clean installed-Wheel MCP smoke test.
+
+This completes the safe read-only portion of Workstream 5. The full acceptance
+sequence remains open for protected operations because no trusted external-host
+confirmation bridge has been approved. A remote OpenAI Responses API connection
+also remains open because the current server intentionally has no HTTP or
+authentication layer.
 
 ## Acceptance test
 

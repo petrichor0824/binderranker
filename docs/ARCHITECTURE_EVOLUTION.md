@@ -311,6 +311,23 @@ The project should not hard-bind scientific logic to one Agent vendor.
 
 All adapters must converge on the same BinderRanker Tool API and deterministic Core.
 
+As of v0.6 Phase 4, the first concrete adapter is a local read-only MCP server.
+The choice follows an implementation-time review of the OpenAI remote-MCP
+interface and the official MCP Python SDK v2 stable line. The server uses the
+official SDK, local `stdio`, structured outputs, read-only/idempotent/closed-
+world annotations, and the shared BinderRanker error envelope.
+
+Only `get_current_plan`, `get_task_status`, and `inspect_dataset` are exposed.
+The adapter accepts managed task names rather than paths and emits purpose-built
+views without host paths or stored free-form request text. Preparation,
+mutation, approval, execution, and append-only analysis remain unavailable
+until a host-specific design can authenticate the human and bind a real
+confirmation event to BinderRanker's trusted runtime. MCP protocol support by
+itself does not satisfy that domain authorization requirement.
+
+The current server is not a remote API: it has no HTTP listener, OAuth, tenant
+model, or public deployment. Those are separate future decisions.
+
 ---
 
 ## 7. The modes must be isolated at the interaction layer, not duplicated at the scientific layer

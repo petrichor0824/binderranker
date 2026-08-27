@@ -61,3 +61,24 @@ def test_citation_version_parser_rejects_ambiguous_metadata(
         verifier.parse_citation_version(
             content
         )
+
+
+def test_release_metadata_requires_mcp_optional_extra() -> None:
+    verifier = load_verifier_module()
+    metadata = verifier.parse_metadata(
+        "Name: binderranker\n"
+        "Version: 0.4.0\n"
+        "Summary: Interpretable ranking and layered screening "
+        "for generated protein backbone candidates\n"
+        "License-Expression: Apache-2.0\n"
+        "Requires-Python: >=3.10\n"
+    )
+
+    with pytest.raises(
+        verifier.ReleaseAssetError,
+        match="mcp optional extra is missing",
+    ):
+        verifier.require_metadata(
+            metadata,
+            source="test metadata",
+        )

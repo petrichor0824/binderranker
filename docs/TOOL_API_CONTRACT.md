@@ -243,9 +243,9 @@ responses.
 
 ## Current compatibility boundary
 
-The first three v0.6 slices add discovery, schema enforcement, trusted
-in-process authorization, and a stable adapter failure contract without
-changing:
+The first four v0.6 slices add discovery, schema enforcement, trusted
+in-process authorization, a stable adapter failure contract, and one local
+read-only MCP adapter without changing:
 
 - the eight existing Tool function signatures;
 - scoring, ranking, or screening behavior;
@@ -253,7 +253,17 @@ changing:
 - task execution or scientific completion semantics;
 - the optional built-in Agent architecture.
 
-The next bounded slice is an evidence-based ecosystem review followed by one
-deliberately selected thin external adapter. That adapter must reuse this error
-boundary and trusted runtime rather than exposing internal confirmation
-booleans or internal exception details.
+The MCP adapter accepts only managed `task_name` values inside one
+BinderRanker-initialized workspace. It exposes `get_current_plan`,
+`get_task_status`, and `inspect_dataset`, calls this Tool API directly, maps
+successes into explicit path-free external views, and maps failures through
+`AdapterErrorEnvelope` with MCP `isError=true`. The optional dependency is
+`mcp>=2,<3`; the base BinderRanker installation does not import or require it.
+
+Protected and mutating operations remain deferred. They must not be registered
+until a concrete host can provide authenticated user identity and verifiable,
+independent confirmation events to the trusted runtime. The current server is
+local `stdio` only; it is not an unauthenticated HTTP or remote API service.
+
+See `docs/integrations/MCP.md` for the selection evidence, installation, host
+configuration, workspace boundary, and scientific limitations.

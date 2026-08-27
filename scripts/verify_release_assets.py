@@ -29,6 +29,10 @@ CANONICAL_ENTRY_POINT = (
 LEGACY_ENTRY_POINT = (
     "protein_design_agent.cli:main"
 )
+MCP_ENTRY_POINT = (
+    "protein_design_agent.adapters."
+    "mcp_entrypoint:main"
+)
 
 RANKER_SUFFIX = (
     "protein_design_agent/resources/"
@@ -134,6 +138,33 @@ def require_metadata(
         f"{source}: Version is missing",
     )
 
+    extras = set(
+        metadata.get_all(
+            "Provides-Extra",
+            [],
+        )
+    )
+    requirements = metadata.get_all(
+        "Requires-Dist",
+        [],
+    )
+
+    require(
+        "mcp" in extras,
+        f"{source}: mcp optional extra is missing",
+    )
+    require(
+        any(
+            requirement.startswith("mcp")
+            and 'extra == "mcp"' in requirement
+            for requirement in requirements
+        ),
+        (
+            f"{source}: mcp optional dependency "
+            "metadata is missing"
+        ),
+    )
+
     return version
 
 
@@ -222,6 +253,15 @@ def inspect_wheel(
             == LEGACY_ENTRY_POINT,
             (
                 "wheel: legacy CLI compatibility "
+                "entry point is invalid"
+            ),
+        )
+
+        require(
+            scripts.get("binderranker-mcp")
+            == MCP_ENTRY_POINT,
+            (
+                "wheel: read-only MCP adapter "
                 "entry point is invalid"
             ),
         )

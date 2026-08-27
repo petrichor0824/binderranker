@@ -170,6 +170,14 @@ jobs:
           /tmp/pda-clean-venv/bin/python \
             "$GITHUB_WORKSPACE/scripts/verify_installed_wheel_smoke.py"
 
+      - name: Install and verify optional MCP adapter
+        working-directory: /tmp
+        run: |
+          /tmp/pda-clean-venv/bin/python \
+            -m pip install "mcp>=2,<3"
+          /tmp/pda-clean-venv/bin/python \
+            "$GITHUB_WORKSPACE/scripts/verify_installed_mcp_smoke.py"
+
       - name: Verify no-argument chat from clean wheel
         working-directory: /tmp
         run: |

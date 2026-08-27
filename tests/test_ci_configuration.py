@@ -62,3 +62,15 @@ def test_windows_ci_runs_full_suite_on_python_312() -> None:
     )
     assert "pytest -q" in run_commands
     assert "binderranker doctor" in run_commands
+
+
+def test_package_ci_verifies_optional_mcp_from_clean_wheel() -> None:
+    workflow = load_ci_workflow()
+    package_job = workflow["jobs"]["package"]
+    run_commands = "\n".join(
+        str(step.get("run", ""))
+        for step in package_job["steps"]
+    )
+
+    assert 'pip install "mcp>=2,<3"' in run_commands
+    assert "verify_installed_mcp_smoke.py" in run_commands

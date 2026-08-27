@@ -43,6 +43,10 @@ from protein_design_agent.agent.tool_runtime_authorization import (
     TrustedAuthorizationBroker,
     TrustedToolRuntime,
 )
+from protein_design_agent.adapters.read_only import (
+    READ_ONLY_ADAPTER_OPERATIONS,
+    ReadOnlyAdapterCapabilities,
+)
 from protein_design_agent.schemas.project_config import (
     ProjectConfig,
 )
@@ -219,6 +223,13 @@ trusted_runtime = TrustedToolRuntime(
     TrustedAuthorizationBroker()
 )
 assert isinstance(trusted_runtime, TrustedToolRuntime)
+read_only_capabilities = ReadOnlyAdapterCapabilities()
+assert read_only_capabilities.exposed_operations == (
+    READ_ONLY_ADAPTER_OPERATIONS
+)
+assert read_only_capabilities.read_only is True
+assert read_only_capabilities.host_paths_exposed is False
+assert read_only_capabilities.execution_operations_exposed is False
 
 benchmark_dir = root / "benchmark"
 benchmark_dir.mkdir()
@@ -434,6 +445,7 @@ print(
     f"({validation.valid_candidate_count} valid candidates; "
     "scientific interpretation modules available; "
     "versioned Tool API contract validated; "
+    "read-only adapter core available without MCP extra; "
     "benchmark contract, fixed-budget metrics, target sensitivity, and "
     "readiness boundaries "
     "validated)"

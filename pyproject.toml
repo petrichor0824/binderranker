@@ -33,8 +33,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+mcp = [
+    "mcp>=2,<3"
+]
 dev = [
-    "pytest>=8,<10"
+    "pytest>=8,<10",
+    "mcp>=2,<3"
 ]
 
 [tool.setuptools]
@@ -49,6 +53,7 @@ testpaths = ["tests"]
 
 [project.scripts]
 binderranker = "protein_design_agent.cli:main"
+binderranker-mcp = "protein_design_agent.adapters.mcp_entrypoint:main"
 protein-design-agent = "protein_design_agent.cli:main"
 
 [project.urls]

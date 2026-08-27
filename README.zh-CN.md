@@ -375,7 +375,20 @@ v0.6 集成层现在为全部 8 个 Tool 操作提供带版本的机器可读 ca
 不能提交授权或调用者身份；受保护操作只能通过可信的进程内 capability
 进入，该 capability 短期有效，绑定动作、任务和审核文件哈希，并且只能原子
 消费一次。适配层失败现在统一使用带版本、无敏感内部细节的错误 schema，提供稳定
-机器错误码，并禁止自动重试受保护操作。当前尚未发布具体外部 adapter。
+机器错误码，并禁止自动重试受保护操作。
+
+第一个外部 adapter 现已作为可选的本地**只读 MCP server**提供。它只向受管工作区
+任务开放当前计划、任务状态和确定性数据集检查。外部调用只能提交经过校验的
+`task_name`，不能提交任意主机路径；成功结果不会暴露主机路径或已保存的自由文本请求。
+批准、执行、任务修改、分析写入、HTTP 服务和远程认证均未开放。
+
+安装并通过 MCP host 启动：
+
+    python -m pip install "binderranker[mcp]"
+    binderranker-mcp --workspace /path/to/binderranker-workspace
+
+宿主配置、精确能力边界和当前远程 API 限制见
+[`docs/integrations/MCP.md`](docs/integrations/MCP.md)。
 
 为保持向后兼容，内部 Python namespace 继续使用：
 

@@ -175,8 +175,15 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
   `invoke_adapter_boundary()`。成功结果保持原模型；失败结果不会泄露原始异常、主机路径、
   traceback、token、subprocess stderr 或 validation input。所有 v0.1 错误均明确为不可
   自动重试，避免 approval、mutation 或 execution 被适配器盲目重放。
-- 下一切片：进行当前外部 Agent/API 生态评审，选择一个薄 adapter；所有路径继续复用
-  BinderRanker Tool API、可信授权 runtime 和共享错误边界，不绕过 deterministic Core。
+- Phase 4 状态：完成 2026-08-26 生态评审并选择 MCP。首个具体 adapter 使用官方
+  `mcp>=2,<3`、本地 stdio 和结构化输出，只开放 `get_current_plan`、
+  `get_task_status`、`inspect_dataset`。外部请求只接受受管 `task_name`，成功视图不暴露
+  主机路径或已保存自由文本；失败复用共享 envelope 并设置 MCP `isError=true`。
+- Phase 4 安全限制：未开放任务修改、批准、执行、分析写入、HTTP 或远程认证。MCP host
+  的普通 Tool approval 不自动等价于 BinderRanker 的可信用户授权。
+- 下一切片：先评审远程部署、身份认证、租户隔离、审计和真实用户确认桥接；只有这些
+  条件可证明时才考虑 Streamable HTTP 或受保护 Tool。也可在不扩大权限的前提下验证更多
+  本地 MCP host 的兼容性。
 
 ## P3 — Optional interaction and external-Agent integration
 
@@ -192,8 +199,9 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
 - 建议阶段：可选，且不是科学路线图前置条件。
 
 ### OpenClaw / MCP gateway
-- 方向：把外部 Agent 接到同一 Tool API，而不是绕过 deterministic core。
-- 建议阶段：科学能力、可复现性和 Tool/API 契约满足当前阶段要求后，再按真实集成需求安排。
+- 当前：中立的本地只读 MCP gateway 已完成，复用同一 Tool API 和错误契约。
+- 后续：OpenClaw/DeepSeek Harness 专用包装仅在出现真实兼容需求时增加；不得复制
+  BinderRanker domain logic。远程或受保护操作必须先完成认证与可信确认设计。
 
 ## P2 — Error UX 后续增强
 

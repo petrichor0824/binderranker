@@ -26,6 +26,16 @@ used by the corresponding release.
   Successful Tool result models remain unchanged; failure envelopes never
   publish raw exception text, host paths, tracebacks, credentials, capability
   identifiers, subprocess stderr, or validation inputs.
+- Added the first concrete external adapter as an optional local MCP server
+  using the official `mcp>=2,<3` SDK. It exposes only current-plan, task-status,
+  and deterministic dataset-inspection operations over `stdio`.
+- Added a workspace-scoped read-only adapter core that accepts managed task
+  names instead of paths and projects Tool results into explicit structured
+  views without host-local paths, stored free-form request text, or raw warning
+  and exception details.
+- Added a machine-readable MCP capability resource that explicitly declares
+  deferred mutation, approval, execution, and analysis-write operations plus
+  the unchanged `SCIENTIFIC_VALIDATION_PENDING` evidence boundary.
 - Added a sealed benchmark-bundle contract for v0.5 scientific-validation
   infrastructure, with explicit outcome, baseline, Ranker provenance,
   parameter-selection, blinding, fixed-budget, and target-split declarations.
@@ -67,6 +77,13 @@ used by the corresponding release.
   classifications, unknown operations, authorization failures, scientific
   invalidity, execution failure, unexpected exceptions, information
   sanitization, success-result compatibility, and no blind automatic retry.
+- Added read-only adapter and in-memory MCP regressions for tool discovery,
+  annotations, workspace/traversal/symlink isolation, path-free projections,
+  structured success output, MCP `isError` failures, capability discovery, and
+  the absence of approval and execution tools.
+- Added a clean installed-Wheel MCP smoke test after installing the optional
+  extra, while retaining a base-Wheel smoke assertion that the adapter core is
+  importable without the MCP dependency.
 - Extended the clean installed-Wheel smoke test to build the Tool API catalog
   and verify that protected authorization fields are absent from its untrusted
   request schemas outside the source checkout.

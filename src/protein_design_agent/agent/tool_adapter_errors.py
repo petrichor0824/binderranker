@@ -232,6 +232,7 @@ _PUBLISHED_REQUEST_ROOT_FIELDS = frozenset(
         "extraction",
         "raw_text",
         "supplement_text",
+        "task_name",
     }
 )
 _ResultT = TypeVar("_ResultT")

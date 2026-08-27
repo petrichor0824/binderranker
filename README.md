@@ -312,8 +312,22 @@ excluded from untrusted request schemas; protected external execution remains
 available only through a trusted in-process runtime capability that is
 short-lived, action- and task-bound, review-hash-bound, and atomically
 single-use. Adapter failures now use one versioned, non-sensitive error schema
-with stable machine codes and no automatic retry of protected operations. No
-external adapter is shipped yet.
+with stable machine codes and no automatic retry of protected operations.
+
+The first external adapter is now available as an optional, local **read-only
+MCP server**. It exposes current plan, task status, and deterministic dataset
+inspection for managed workspace tasks. External calls accept a validated
+`task_name`, never an arbitrary host path; successful views omit host paths and
+stored free-form request text. Approval, execution, mutation, analysis writes,
+HTTP serving, and remote authentication are deliberately not exposed.
+
+Install and launch it through an MCP host with:
+
+    python -m pip install "binderranker[mcp]"
+    binderranker-mcp --workspace /path/to/binderranker-workspace
+
+See [`docs/integrations/MCP.md`](docs/integrations/MCP.md) for the host
+configuration, exact capability boundary, and current remote-API limitation.
 
 The internal Python namespace remains `protein_design_agent` for backward
 compatibility. It is an implementation detail, not the public project
