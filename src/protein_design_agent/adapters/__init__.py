@@ -9,8 +9,14 @@ from protein_design_agent.adapters.read_only import (
     READ_ONLY_ADAPTER_OPERATIONS,
     ReadOnlyToolAdapter,
 )
+from protein_design_agent.adapters.tunnel_readiness import (
+    PrivateTunnelReadinessReport,
+    assess_private_tunnel_readiness,
+)
 
 __all__ = [
     "READ_ONLY_ADAPTER_OPERATIONS",
+    "PrivateTunnelReadinessReport",
     "ReadOnlyToolAdapter",
+    "assess_private_tunnel_readiness",
 ]

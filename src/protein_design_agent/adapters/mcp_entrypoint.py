@@ -22,11 +22,30 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Initialized BinderRanker workspace containing the runs directory.",
     )
+    parser.add_argument(
+        "--check-tunnel-readiness",
+        action="store_true",
+        help=(
+            "Print a path-free JSON report for private stdio tunnel "
+            "configuration, then exit without starting the MCP server."
+        ),
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
+
+    if args.check_tunnel_readiness:
+        from protein_design_agent.adapters.tunnel_readiness import (
+            assess_private_tunnel_readiness,
+        )
+
+        report = assess_private_tunnel_readiness(args.workspace)
+        print(report.model_dump_json(indent=2))
+        if not report.local_preflight_passed:
+            raise SystemExit(2)
+        return
 
     try:
         from protein_design_agent.adapters.mcp_server import run_mcp_server

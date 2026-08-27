@@ -389,6 +389,11 @@ v0.6 集成层现在为全部 8 个 Tool 操作提供带版本的机器可读 ca
 
 宿主配置、精确能力边界和当前远程 API 限制见
 [`docs/integrations/MCP.md`](docs/integrations/MCP.md)。
+私有 OpenAI 接入可以通过 Secure MCP Tunnel 复用同一 stdio 命令，不需要开放
+BinderRanker 公网端口。先运行
+`binderranker-mcp --workspace /path --check-tunnel-readiness`，再按照
+[`docs/integrations/REMOTE_MCP_SECURITY.md`](docs/integrations/REMOTE_MCP_SECURITY.md)
+中的威胁模型配置。预检不会伪称 OpenAI 账号权限或真实 Tunnel 已验证。
 
 为保持向后兼容，内部 Python namespace 继续使用：
 

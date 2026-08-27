@@ -328,6 +328,18 @@ itself does not satisfy that domain authorization requirement.
 The current server is not a remote API: it has no HTTP listener, OAuth, tenant
 model, or public deployment. Those are separate future decisions.
 
+As of v0.6 Phase 5A, private OpenAI connectivity no longer requires a public
+BinderRanker HTTP listener. OpenAI Secure MCP Tunnel can invoke the existing
+stdio command through an outbound-only tunnel-client process. BinderRanker now
+publishes a local readiness preflight and a threat model, but it does not own or
+infer OpenAI control-plane permissions, runtime authentication, organization or
+workspace association, or live tunnel health.
+
+This remains a single-trust-domain design: one process is bound to one managed
+workspace. The tunnel does not provide BinderRanker with a trusted caller
+identity or human-confirmation event, so protected Tools remain deferred even
+after a successful read-only tunnel connection.
+
 ---
 
 ## 7. The modes must be isolated at the interaction layer, not duplicated at the scientific layer

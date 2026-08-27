@@ -267,3 +267,11 @@ local `stdio` only; it is not an unauthenticated HTTP or remote API service.
 
 See `docs/integrations/MCP.md` for the selection evidence, installation, host
 configuration, workspace boundary, and scientific limitations.
+
+Phase 5A adds no Tool and changes no Tool signature. The existing stdio server
+may be used through OpenAI Secure MCP Tunnel after the local
+`--check-tunnel-readiness` contract passes. That preflight verifies only local
+workspace, dependency, transport, and read-only scope facts. It does not grant
+authority, verify a caller identity, confirm OpenAI control-plane access, or
+establish a live connection. See
+`docs/integrations/REMOTE_MCP_SECURITY.md` for the threat model.

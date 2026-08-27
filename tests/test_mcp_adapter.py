@@ -120,6 +120,9 @@ def test_mcp_capability_resource_declares_deferred_execution(
 
 def test_mcp_documentation_preserves_scope_and_remote_boundary() -> None:
     document = Path("docs/integrations/MCP.md").read_text(encoding="utf-8")
+    security = Path(
+        "docs/integrations/REMOTE_MCP_SECURITY.md"
+    ).read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
     readme_zh = Path("README.zh-CN.md").read_text(encoding="utf-8")
 
@@ -129,6 +132,8 @@ def test_mcp_documentation_preserves_scope_and_remote_boundary() -> None:
         "inspect_dataset",
         "task_name",
         "local `stdio` only",
+        "--check-tunnel-readiness",
+        "Secure MCP Tunnel",
         "SCIENTIFIC_VALIDATION_PENDING",
         "Do not expose this local server directly",
     ):
@@ -136,6 +141,19 @@ def test_mcp_documentation_preserves_scope_and_remote_boundary() -> None:
 
     assert "docs/integrations/MCP.md" in readme
     assert "docs/integrations/MCP.md" in readme_zh
+    assert "docs/integrations/REMOTE_MCP_SECURITY.md" in readme
+    assert "docs/integrations/REMOTE_MCP_SECURITY.md" in readme_zh
+
+    for required in (
+        "outbound-only",
+        "single trust domain",
+        "Do not add a public HTTP listener",
+        "MCP_SDK_NOT_INSTALLED",
+        "openai_control_plane_access_verified",
+        "live_tunnel_connection_verified",
+        "approval cannot create BinderRanker's",
+    ):
+        assert required in security
 
 
 def test_mcp_entrypoint_reports_invalid_workspace_without_traceback(

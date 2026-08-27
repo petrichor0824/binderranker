@@ -328,6 +328,12 @@ Install and launch it through an MCP host with:
 
 See [`docs/integrations/MCP.md`](docs/integrations/MCP.md) for the host
 configuration, exact capability boundary, and current remote-API limitation.
+Private OpenAI integration can reuse the same stdio command through Secure MCP
+Tunnel without opening a public BinderRanker port. Run
+`binderranker-mcp --workspace /path --check-tunnel-readiness` first, then follow
+the threat model in
+[`docs/integrations/REMOTE_MCP_SECURITY.md`](docs/integrations/REMOTE_MCP_SECURITY.md).
+This preflight does not verify OpenAI account permissions or a live tunnel.
 
 The internal Python namespace remains `protein_design_agent` for backward
 compatibility. It is an implementation detail, not the public project

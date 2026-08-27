@@ -6,6 +6,8 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -13,6 +15,9 @@ import protein_design_agent
 from mcp import Client
 
 from protein_design_agent.adapters.mcp_server import create_mcp_server
+from protein_design_agent.adapters.tunnel_readiness import (
+    assess_private_tunnel_readiness,
+)
 from protein_design_agent.agent.workspace_init import WORKSPACE_MARKER_TEMPLATE
 
 
@@ -67,6 +72,33 @@ async def verify() -> None:
 
 asyncio.run(verify())
 
+tunnel_readiness = assess_private_tunnel_readiness(root)
+assert tunnel_readiness.local_preflight_passed is True
+assert tunnel_readiness.status == "READY_FOR_PRIVATE_TUNNEL_CONFIGURATION"
+assert tunnel_readiness.public_network_listener_exposed is False
+assert tunnel_readiness.protected_operations_exposed is False
+assert tunnel_readiness.openai_control_plane_access_verified is False
+assert tunnel_readiness.live_tunnel_connection_verified is False
+
+preflight = subprocess.run(
+    [
+        sys.executable,
+        "-m",
+        "protein_design_agent.adapters.mcp_entrypoint",
+        "--workspace",
+        str(root),
+        "--check-tunnel-readiness",
+    ],
+    text=True,
+    capture_output=True,
+    check=False,
+)
+assert preflight.returncode == 0, preflight.stderr
+preflight_payload = json.loads(preflight.stdout)
+assert preflight_payload["local_preflight_passed"] is True
+assert preflight_payload["live_tunnel_connection_verified"] is False
+assert str(root.resolve()) not in preflight.stdout
+
 package_path = Path(protein_design_agent.__file__).resolve()
 repository_root = Path(__file__).resolve().parents[1]
 environment_root = Path(__import__("sys").prefix).resolve()
@@ -80,5 +112,6 @@ assert package_path.is_relative_to(environment_root), (
 
 print(
     "PASS: installed BinderRanker MCP extra exposed three read-only tools, "
-    "returned structured path-free evidence, and preserved stable errors"
+    "returned structured path-free evidence, preserved stable errors, and "
+    "passed the local private-tunnel readiness contract"
 )

@@ -101,6 +101,19 @@ A typical host configuration has this shape:
 Use an absolute workspace path in host configuration. Do not add API keys or
 other secrets to the MCP arguments.
 
+Validate local private-tunnel prerequisites without starting the server:
+
+```bash
+binderranker-mcp \
+  --workspace /path/to/workspace \
+  --check-tunnel-readiness
+```
+
+The JSON report is path-free and credential-free. A PASS means only that the
+local workspace, MCP SDK, stdio transport, and read-only Tool scope are ready
+for private tunnel configuration. It never claims that OpenAI permissions,
+runtime authentication, or a live tunnel have been verified.
+
 ## Workspace and disclosure boundary
 
 External calls accept `task_name`, not `bundle_dir` or another path. The
@@ -125,15 +138,22 @@ the shared `AdapterErrorEnvelope`; MCP also marks them with `isError=true`.
 
 ## Transport boundary
 
-This release supports **local `stdio` only**. It does not open a port, provide
-OAuth, publish a remote URL, or make a private workstation reachable from the
-Internet.
+The BinderRanker server supports **local `stdio` only**. It does not open a
+port, provide OAuth, publish a remote URL, or make a private workstation
+reachable from the Internet.
 
-The OpenAI Responses API consumes remote MCP servers through a server URL (or a
-supported secure tunnel). A future remote BinderRanker adapter therefore needs
-an explicit deployment, authentication, tenant isolation, audit, and trusted
-human-approval design. Do not expose this local server directly as an
-unauthenticated HTTP endpoint.
+OpenAI Secure MCP Tunnel can connect supported OpenAI surfaces to this private
+stdio server through an outbound-only tunnel-client process. This avoids a
+public BinderRanker HTTP endpoint and is the approved Phase 5A route for private
+testing. See [`REMOTE_MCP_SECURITY.md`](REMOTE_MCP_SECURITY.md) for the threat
+model, local preflight semantics, operator-controlled setup, and remaining
+identity and authorization gates.
+
+Do not expose this local server directly as an unauthenticated HTTP endpoint.
+The tunnel authenticates and transports requests at the OpenAI control-plane
+boundary, but BinderRanker still receives no trusted per-user identity and has
+no external human-confirmation bridge. Deploy only one workspace per trust
+domain.
 
 ## Scientific boundary
 

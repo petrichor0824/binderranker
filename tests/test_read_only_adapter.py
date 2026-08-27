@@ -331,6 +331,10 @@ def test_adapter_capability_profile_is_explicit_and_json_safe(
     assert payload["authorization_operations_exposed"] is False
     assert payload["execution_operations_exposed"] is False
     assert payload["host_paths_exposed"] is False
+    assert payload["private_stdio_tunnel_compatible"] is True
+    assert payload["public_network_listener_exposed"] is False
+    assert payload["caller_identity_contract_available"] is False
+    assert payload["trusted_human_confirmation_bridge_available"] is False
     assert payload["performance_claims_established"] is False
     assert json.loads(json.dumps(payload, sort_keys=True)) == payload
 

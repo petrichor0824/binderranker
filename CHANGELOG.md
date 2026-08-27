@@ -36,6 +36,14 @@ used by the corresponding release.
 - Added a machine-readable MCP capability resource that explicitly declares
   deferred mutation, approval, execution, and analysis-write operations plus
   the unchanged `SCIENTIFIC_VALIDATION_PENDING` evidence boundary.
+- Added a path-free `--check-tunnel-readiness` preflight for private OpenAI
+  Secure MCP Tunnel configuration. It validates only locally provable
+  workspace, SDK, transport, and Tool-scope facts and explicitly leaves OpenAI
+  permissions, caller identity, live connectivity, and trusted human
+  confirmation unverified.
+- Added a remote-MCP threat model covering private stdio tunneling, single
+  trust-domain deployment, credential separation, disclosure controls,
+  approval confusion, audit ownership, and deferred public/multi-tenant gates.
 - Added a sealed benchmark-bundle contract for v0.5 scientific-validation
   infrastructure, with explicit outcome, baseline, Ranker provenance,
   parameter-selection, blinding, fixed-budget, and target-split declarations.
@@ -84,6 +92,10 @@ used by the corresponding release.
 - Added a clean installed-Wheel MCP smoke test after installing the optional
   extra, while retaining a base-Wheel smoke assertion that the adapter core is
   importable without the MCP dependency.
+- Extended the installed-Wheel MCP smoke and regressions with private-tunnel
+  readiness PASS/BLOCKED states, missing and unsupported SDK versions, unsafe
+  workspaces, nonzero preflight exit semantics, and no false live-connection
+  claims.
 - Extended the clean installed-Wheel smoke test to build the Tool API catalog
   and verify that protected authorization fields are absent from its untrusted
   request schemas outside the source checkout.

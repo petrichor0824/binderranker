@@ -107,6 +107,10 @@ class ReadOnlyAdapterCapabilities(_StrictAdapterView):
     execution_operations_exposed: Literal[False] = False
     host_paths_exposed: Literal[False] = False
     stored_free_text_exposed: Literal[False] = False
+    private_stdio_tunnel_compatible: Literal[True] = True
+    public_network_listener_exposed: Literal[False] = False
+    caller_identity_contract_available: Literal[False] = False
+    trusted_human_confirmation_bridge_available: Literal[False] = False
     scientific_evidence_status: Literal[
         "SCIENTIFIC_VALIDATION_PENDING"
     ] = "SCIENTIFIC_VALIDATION_PENDING"

@@ -181,9 +181,16 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
   主机路径或已保存自由文本；失败复用共享 envelope 并设置 MCP `isError=true`。
 - Phase 4 安全限制：未开放任务修改、批准、执行、分析写入、HTTP 或远程认证。MCP host
   的普通 Tool approval 不自动等价于 BinderRanker 的可信用户授权。
-- 下一切片：先评审远程部署、身份认证、租户隔离、审计和真实用户确认桥接；只有这些
-  条件可证明时才考虑 Streamable HTTP 或受保护 Tool。也可在不扩大权限的前提下验证更多
-  本地 MCP host 的兼容性。
+- Phase 5A 状态：完成 2026-08-27 私有远程接入评审。OpenAI Secure MCP Tunnel 可通过
+  出站 HTTPS 直接转发现有 stdio server，因此无需先开放 BinderRanker HTTP 端口。新增
+  `--check-tunnel-readiness` 机器可读预检和远程 MCP 威胁模型；预检只证明本地 workspace、
+  MCP SDK、stdio 与只读 Tool scope 就绪，不伪造 OpenAI 权限或真实连接状态。
+- Phase 5A 安全限制：当前仍是一进程、一 workspace、单信任域；BinderRanker 无调用者
+  身份契约、无外部可信确认桥接。OpenAI tunnel/runtime 认证归 control plane 与 operator
+  所有，普通 MCP approval 仍不能授权执行。
+- 下一切片：由 owner 完成 Tunnel ID、运行时 API key、组织/workspace 关联和开发者模式
+  权限后，执行真实 ChatGPT/Codex/Responses API 只读端到端验证。只有获得该证据后才评审
+  是否需要额外 host adapter；受保护 Tool 和多租户服务继续延后。
 
 ## P3 — Optional interaction and external-Agent integration
 

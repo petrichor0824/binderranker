@@ -711,9 +711,29 @@ The bounded first slice is implemented with:
 
 This completes the safe read-only portion of Workstream 5. The full acceptance
 sequence remains open for protected operations because no trusted external-host
-confirmation bridge has been approved. A remote OpenAI Responses API connection
-also remains open because the current server intentionally has no HTTP or
-authentication layer.
+confirmation bridge has been approved.
+
+### Phase 5A private tunnel checkpoint — 2026-08-27
+
+Current OpenAI documentation establishes a safer private route than adding a
+public BinderRanker HTTP endpoint: Secure MCP Tunnel can forward MCP requests
+to the existing local stdio command through an outbound-only tunnel-client
+process. BinderRanker therefore keeps the Phase 4 transport and adds:
+
+- `--check-tunnel-readiness` with a versioned, path-free JSON report;
+- deterministic local checks for initialized workspace, supported MCP SDK,
+  stdio transport, and the three-operation read-only scope;
+- explicit false values for OpenAI control-plane access, live tunnel status,
+  caller identity, and trusted human-confirmation availability;
+- a single-trust-domain deployment rule and remote-MCP threat model;
+- installed-Wheel and regression coverage for PASS and BLOCKED preflight states.
+
+This completes local readiness, not live remote acceptance. The owner/operator
+must still create or select a Tunnel ID, supply tunnel-client runtime
+credentials outside BinderRanker, configure organization/workspace associations
+and permissions, run tunnel-client doctor, and verify real read-only calls from
+the intended OpenAI surface. Public HTTP, multi-tenant routing, and protected
+Tools remain deferred.
 
 ## Acceptance test
 
