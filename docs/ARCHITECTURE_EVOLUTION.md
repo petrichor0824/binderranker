@@ -340,6 +340,14 @@ workspace. The tunnel does not provide BinderRanker with a trusted caller
 identity or human-confirmation event, so protected Tools remain deferred even
 after a successful read-only tunnel connection.
 
+Phase 5B-local validates the same boundary without an API credential: a generic
+local MCP Host launches the official entry point as a real stdio subprocess,
+receives BinderRanker's server identity/version/instructions, discovers only
+the three read-only Tools, and observes both successful and fail-closed calls.
+Codex configuration adds a matching host-side Tool allow list. This is local
+Host interoperability evidence, not remote tunnel or scientific-performance
+evidence.
+
 ---
 
 ## 7. The modes must be isolated at the interaction layer, not duplicated at the scientific layer

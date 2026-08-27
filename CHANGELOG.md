@@ -44,6 +44,11 @@ used by the corresponding release.
 - Added a remote-MCP threat model covering private stdio tunneling, single
   trust-domain deployment, credential separation, disclosure controls,
   approval confusion, audit ownership, and deferred public/multi-tenant gates.
+- Added an API-key-free local Codex MCP runbook and forward-safe configuration
+  template with an explicit three-Tool allow list and `writes` approval mode.
+- Added a real stdio subprocess interoperability probe that verifies MCP server
+  name/version/instructions, Tool discovery, success and fail-closed calls,
+  capability boundaries, and path-free evidence outside the server process.
 - Added a sealed benchmark-bundle contract for v0.5 scientific-validation
   infrastructure, with explicit outcome, baseline, Ranker provenance,
   parameter-selection, blinding, fixed-budget, and target-split declarations.

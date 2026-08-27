@@ -191,6 +191,12 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
 - 下一切片：由 owner 完成 Tunnel ID、运行时 API key、组织/workspace 关联和开发者模式
   权限后，执行真实 ChatGPT/Codex/Responses API 只读端到端验证。只有获得该证据后才评审
   是否需要额外 host adapter；受保护 Tool 和多租户服务继续延后。
+- Phase 5B-local 状态：在 owner 暂无 OpenAI API key 时，先完成免 Key 的本机 stdio Host
+  验证。新增 Codex 配置模板和真实子进程探针；Host 已收到 BinderRanker 名称、安装版本与
+  server instructions，发现且只发现三个只读 Tool，并验证成功状态调用、受控失败、能力
+  resource 和无路径泄露。刷新后的 Codex UI Tool 列表仍需一次人工可见确认。
+- 远程 Tunnel 状态：明确记为 `EXTERNAL_CREDENTIAL_PENDING`，不是本地代码失败；不以本机
+  Host 证据替代 Tunnel ID、runtime key、组织权限或真实远程调用证据。
 
 ## P3 — Optional interaction and external-Agent integration
 

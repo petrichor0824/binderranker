@@ -1,5 +1,6 @@
 import asyncio
 import json
+from importlib.metadata import version
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,12 @@ def test_mcp_server_exposes_only_read_only_workspace_scoped_tools(
 
     async def exercise() -> None:
         async with Client(server) as client:
+            assert client.server_info is not None
+            assert client.server_info.name == "BinderRanker"
+            assert client.server_info.version == version("binderranker")
+            assert client.instructions is not None
+            assert client.instructions.startswith("Read-only access")
+
             page = await client.list_tools()
             assert [tool.name for tool in page.tools] == [
                 "get_current_plan",
@@ -123,6 +130,9 @@ def test_mcp_documentation_preserves_scope_and_remote_boundary() -> None:
     security = Path(
         "docs/integrations/REMOTE_MCP_SECURITY.md"
     ).read_text(encoding="utf-8")
+    codex_local = Path(
+        "docs/integrations/CODEX_LOCAL_MCP.md"
+    ).read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
     readme_zh = Path("README.zh-CN.md").read_text(encoding="utf-8")
 
@@ -143,6 +153,8 @@ def test_mcp_documentation_preserves_scope_and_remote_boundary() -> None:
     assert "docs/integrations/MCP.md" in readme_zh
     assert "docs/integrations/REMOTE_MCP_SECURITY.md" in readme
     assert "docs/integrations/REMOTE_MCP_SECURITY.md" in readme_zh
+    assert "docs/integrations/CODEX_LOCAL_MCP.md" in readme
+    assert "docs/integrations/CODEX_LOCAL_MCP.md" in readme_zh
 
     for required in (
         "outbound-only",
@@ -154,6 +166,17 @@ def test_mcp_documentation_preserves_scope_and_remote_boundary() -> None:
         "approval cannot create BinderRanker's",
     ):
         assert required in security
+
+    for required in (
+        "requires no",
+        "OpenAI API key",
+        "stdio subprocess",
+        "enabled_tools",
+        'default_tools_approval_mode = "writes"',
+        "SCIENTIFIC_VALIDATION_PENDING",
+        "Remote Secure MCP Tunnel acceptance remains",
+    ):
+        assert required in codex_local
 
 
 def test_mcp_entrypoint_reports_invalid_workspace_without_traceback(

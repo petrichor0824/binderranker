@@ -735,6 +735,27 @@ and permissions, run tunnel-client doctor, and verify real read-only calls from
 the intended OpenAI surface. Public HTTP, multi-tenant routing, and protected
 Tools remain deferred.
 
+### Phase 5B-local Host checkpoint — 2026-08-27
+
+Because the owner does not currently have an OpenAI Platform runtime API key,
+the live Secure MCP Tunnel checkpoint is recorded as
+`EXTERNAL_CREDENTIAL_PENDING`, not as a BinderRanker failure. Development
+continues through the credential-free local Host path supported by Codex:
+
+- a portable Codex stdio configuration template uses an exact three-Tool allow
+  list and forward-safe `writes` approval mode;
+- a standalone verifier launches the installed BinderRanker MCP entry point as
+  a real child process rather than calling the server in-process;
+- acceptance covers MCP server name, installed version, instructions, Tool
+  annotations, a successful lifecycle read, a fail-closed dataset read, the
+  capability resource, and absence of returned host paths;
+- no API key, public listener, caller-identity claim, protected Tool, or
+  scientific-performance claim is added.
+
+A refreshed local Codex client must still visibly list the configured server
+and the same three Tools. Remote tunnel validation resumes only when the owner
+chooses to provision the external credential and permissions.
+
 ## Acceptance test
 
 From a fresh environment:

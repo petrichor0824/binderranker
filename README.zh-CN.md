@@ -395,6 +395,10 @@ BinderRanker 公网端口。先运行
 [`docs/integrations/REMOTE_MCP_SECURITY.md`](docs/integrations/REMOTE_MCP_SECURITY.md)
 中的威胁模型配置。预检不会伪称 OpenAI 账号权限或真实 Tunnel 已验证。
 
+没有 OpenAI API Key 时，本机 Codex 仍可直接启动同一个只读 stdio server。
+免 Key 配置、前向安全 Tool 白名单和真实子进程验证流程见
+[`docs/integrations/CODEX_LOCAL_MCP.md`](docs/integrations/CODEX_LOCAL_MCP.md)。
+
 为保持向后兼容，内部 Python namespace 继续使用：
 
 `protein_design_agent`

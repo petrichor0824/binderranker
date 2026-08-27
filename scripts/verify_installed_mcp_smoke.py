@@ -9,11 +9,15 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from importlib.metadata import version
 from pathlib import Path
 
 import protein_design_agent
 from mcp import Client
 
+from protein_design_agent.adapters.local_host_validation import (
+    verify_local_mcp_host,
+)
 from protein_design_agent.adapters.mcp_server import create_mcp_server
 from protein_design_agent.adapters.tunnel_readiness import (
     assess_private_tunnel_readiness,
@@ -34,6 +38,12 @@ bundle.mkdir(parents=True)
 async def verify() -> None:
     server = create_mcp_server(root)
     async with Client(server) as client:
+        assert client.server_info is not None
+        assert client.server_info.name == "BinderRanker"
+        assert client.server_info.version == version("binderranker")
+        assert client.instructions is not None
+        assert client.instructions.startswith("Read-only access")
+
         page = await client.list_tools()
         names = [tool.name for tool in page.tools]
         assert names == [
@@ -71,6 +81,33 @@ async def verify() -> None:
 
 
 asyncio.run(verify())
+
+subprocess_probe = asyncio.run(
+    verify_local_mcp_host(
+        python_executable=Path(sys.executable),
+        workspace=root,
+        task_name="smoke_task",
+    )
+)
+assert subprocess_probe["transport"] == "MCP_STDIO_SUBPROCESS"
+assert subprocess_probe["server_name"] == "BinderRanker"
+assert subprocess_probe["server_version"] == version("binderranker")
+assert subprocess_probe["tool_names"] == [
+    "get_current_plan",
+    "get_task_status",
+    "inspect_dataset",
+]
+assert subprocess_probe["all_tools_read_only"] is True
+assert subprocess_probe["protected_tools_absent"] is True
+assert subprocess_probe["status_call"] == {
+    "ok": True,
+    "current_stage": "EMPTY",
+}
+assert subprocess_probe["closed_failure_call"] == {
+    "is_error": True,
+    "error_code": "TOOL_REJECTED",
+}
+assert str(root.resolve()) not in json.dumps(subprocess_probe)
 
 tunnel_readiness = assess_private_tunnel_readiness(root)
 assert tunnel_readiness.local_preflight_passed is True
@@ -112,6 +149,7 @@ assert package_path.is_relative_to(environment_root), (
 
 print(
     "PASS: installed BinderRanker MCP extra exposed three read-only tools, "
-    "returned structured path-free evidence, preserved stable errors, and "
-    "passed the local private-tunnel readiness contract"
+    "passed the real stdio subprocess contract, returned structured "
+    "path-free evidence, preserved stable errors, and passed the local "
+    "private-tunnel readiness contract"
 )

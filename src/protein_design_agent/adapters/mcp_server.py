@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Annotated, TypeAlias
 
@@ -52,6 +53,13 @@ _READ_ONLY_ANNOTATIONS = ToolAnnotations(
 )
 
 
+def _binderranker_version() -> str:
+    try:
+        return version("binderranker")
+    except PackageNotFoundError:
+        return "0+unknown"
+
+
 def _call_result(value: object) -> CallToolResult:
     if not hasattr(value, "model_dump"):
         raise TypeError("adapter result must be a Pydantic model")
@@ -77,6 +85,7 @@ def create_mcp_server(workspace_dir: Path) -> MCPServer:
     adapter = ReadOnlyToolAdapter(workspace_dir)
     server = MCPServer(
         "BinderRanker",
+        version=_binderranker_version(),
         instructions=(
             "Read-only access to managed BinderRanker task plans, lifecycle "
             "status, and deterministic dataset inspection. This server does "

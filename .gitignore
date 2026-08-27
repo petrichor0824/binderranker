@@ -29,3 +29,6 @@ configs/models/private/
 
 # BinderRanker local workspace
 .protein-design-agent/
+
+# Machine-specific Codex MCP configuration
+.codex/config.toml

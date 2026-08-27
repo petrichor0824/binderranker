@@ -1,0 +1,21 @@
+# Use this template only in a trusted local Codex project or desktop setup.
+# Replace every placeholder with an absolute local path. Do not add secrets.
+
+[mcp_servers.binderranker_readonly]
+command = "<ABSOLUTE_PYTHON_EXECUTABLE>"
+args = [
+  "-m",
+  "protein_design_agent.adapters.mcp_entrypoint",
+  "--workspace",
+  "<ABSOLUTE_INITIALIZED_BINDERRANKER_WORKSPACE>",
+]
+startup_timeout_sec = 20
+tool_timeout_sec = 60
+enabled = true
+required = false
+enabled_tools = [
+  "get_current_plan",
+  "get_task_status",
+  "inspect_dataset",
+]
+default_tools_approval_mode = "writes"

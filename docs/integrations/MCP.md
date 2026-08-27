@@ -114,6 +114,12 @@ local workspace, MCP SDK, stdio transport, and read-only Tool scope are ready
 for private tunnel configuration. It never claims that OpenAI permissions,
 runtime authentication, or a live tunnel have been verified.
 
+For an API-key-free local Codex integration, use the project-safe configuration
+template and real stdio subprocess probe in
+[`CODEX_LOCAL_MCP.md`](CODEX_LOCAL_MCP.md). That path validates local Host
+interoperability only; it does not convert local evidence into remote tunnel
+evidence.
+
 ## Workspace and disclosure boundary
 
 External calls accept `task_name`, not `bundle_dir` or another path. The

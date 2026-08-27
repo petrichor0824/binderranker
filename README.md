@@ -335,6 +335,11 @@ the threat model in
 [`docs/integrations/REMOTE_MCP_SECURITY.md`](docs/integrations/REMOTE_MCP_SECURITY.md).
 This preflight does not verify OpenAI account permissions or a live tunnel.
 
+Without an OpenAI API key, a local Codex client can start the same read-only
+stdio server directly. The API-key-free setup, forward-safe Tool allow list,
+and real subprocess validation are documented in
+[`docs/integrations/CODEX_LOCAL_MCP.md`](docs/integrations/CODEX_LOCAL_MCP.md).
+
 The internal Python namespace remains `protein_design_agent` for backward
 compatibility. It is an implementation detail, not the public project
 identity.
