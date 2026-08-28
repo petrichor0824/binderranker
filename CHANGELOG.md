@@ -48,7 +48,9 @@ used by the corresponding release.
   template with an explicit three-Tool allow list and `writes` approval mode.
 - Added a real stdio subprocess interoperability probe that verifies MCP server
   name/version/instructions, Tool discovery, success and fail-closed calls,
-  capability boundaries, and path-free evidence outside the server process.
+  capability boundaries, and path-free evidence outside the server process;
+  the probe preserves virtual-environment launchers across symlink-based POSIX
+  environments and retains Python 3.10 test compatibility.
 - Added a sealed benchmark-bundle contract for v0.5 scientific-validation
   infrastructure, with explicit outcome, baseline, Ranker provenance,
   parameter-selection, blinding, fixed-budget, and target-split declarations.

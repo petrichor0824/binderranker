@@ -1,9 +1,13 @@
 import json
 import subprocess
 import sys
-import tomllib
 from importlib.metadata import version
 from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10 CI
+    import tomli as tomllib
 
 from protein_design_agent.agent.workspace_init import WORKSPACE_MARKER_TEMPLATE
 

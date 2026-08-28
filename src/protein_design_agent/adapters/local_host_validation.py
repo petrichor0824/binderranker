@@ -58,13 +58,25 @@ async def verify_local_mcp_host(
 ) -> dict[str, Any]:
     """Exercise the same subprocess boundary used by a local Codex Host."""
 
+    command_path = python_executable.absolute()
+    resolved_command_path = python_executable.resolve()
+    workspace_path = workspace.resolve()
+    sensitive_values = tuple(
+        dict.fromkeys(
+            (
+                str(workspace_path),
+                str(command_path),
+                str(resolved_command_path),
+            )
+        )
+    )
     parameters = StdioServerParameters(
-        command=str(python_executable.resolve()),
+        command=str(command_path),
         args=[
             "-m",
             "protein_design_agent.adapters.mcp_entrypoint",
             "--workspace",
-            str(workspace.resolve()),
+            str(workspace_path),
         ],
     )
 
@@ -141,10 +153,6 @@ async def verify_local_mcp_host(
         if actual_capabilities != expected_capabilities:
             raise RuntimeError("unexpected MCP capability boundary")
 
-        sensitive_values = (
-            str(workspace.resolve()),
-            str(python_executable.resolve()),
-        )
         raw_responses = (
             status.structured_content,
             rejected.structured_content,
