@@ -1,6 +1,8 @@
 import json
+import queue
 import subprocess
 import sys
+import threading
 from importlib.metadata import version
 from pathlib import Path
 
@@ -82,33 +84,7 @@ def test_stdio_tool_discovery_supports_codex_2025_06_18_protocol(
     tmp_path: Path,
 ) -> None:
     workspace = make_workspace(tmp_path)
-    requests = [
-        {
-            "jsonrpc": "2.0",
-            "id": 0,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2025-06-18",
-                "capabilities": {},
-                "clientInfo": {
-                    "name": "codex-compatibility-regression",
-                    "version": "1",
-                },
-            },
-        },
-        {
-            "jsonrpc": "2.0",
-            "method": "notifications/initialized",
-            "params": {},
-        },
-        {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/list",
-            "params": {},
-        },
-    ]
-    completed = subprocess.run(
+    process = subprocess.Popen(
         [
             sys.executable,
             "-m",
@@ -116,21 +92,89 @@ def test_stdio_tool_discovery_supports_codex_2025_06_18_protocol(
             "--workspace",
             str(workspace),
         ],
-        input="\n".join(json.dumps(item) for item in requests) + "\n",
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        capture_output=True,
-        check=False,
-        timeout=15,
+        bufsize=1,
     )
+    assert process.stdin is not None
+    assert process.stdout is not None
+    assert process.stderr is not None
 
-    assert completed.returncode == 0, completed.stderr
-    responses = [
-        json.loads(line)
-        for line in completed.stdout.splitlines()
-        if line.strip()
-    ]
-    initialize = next(item for item in responses if item.get("id") == 0)
-    tools_page = next(item for item in responses if item.get("id") == 1)
+    response_lines: queue.Queue[str | None] = queue.Queue()
+
+    def collect_responses() -> None:
+        for line in process.stdout:
+            response_lines.put(line)
+        response_lines.put(None)
+
+    reader = threading.Thread(target=collect_responses, daemon=True)
+    reader.start()
+
+    def send(payload: dict[str, object]) -> None:
+        process.stdin.write(json.dumps(payload) + "\n")
+        process.stdin.flush()
+
+    def receive(request_id: int) -> dict[str, object]:
+        while True:
+            try:
+                line = response_lines.get(timeout=15)
+            except queue.Empty as exc:
+                raise AssertionError(
+                    f"timed out waiting for MCP response {request_id}"
+                ) from exc
+            if line is None:
+                raise AssertionError(
+                    f"MCP server closed before response {request_id}"
+                )
+            response = json.loads(line)
+            if response.get("id") == request_id:
+                return response
+
+    try:
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 0,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {
+                        "name": "codex-compatibility-regression",
+                        "version": "1",
+                    },
+                },
+            }
+        )
+        initialize = receive(0)
+        send(
+            {
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized",
+                "params": {},
+            }
+        )
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/list",
+                "params": {},
+            }
+        )
+        tools_page = receive(1)
+        process.stdin.close()
+        returncode = process.wait(timeout=15)
+        stderr = process.stderr.read()
+        assert returncode == 0, stderr
+    finally:
+        if not process.stdin.closed:
+            process.stdin.close()
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
 
     assert initialize["result"]["protocolVersion"] == "2025-06-18"
     assert [
