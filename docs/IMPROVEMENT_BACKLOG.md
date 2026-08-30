@@ -194,7 +194,10 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
 - Phase 5B-local 状态：在 owner 暂无 OpenAI API key 时，先完成免 Key 的本机 stdio Host
   验证。新增 Codex 配置模板和真实子进程探针；Host 已收到 BinderRanker 名称、安装版本与
   server instructions，发现且只发现三个只读 Tool，并验证成功状态调用、受控失败、能力
-  resource 和无路径泄露。刷新后的 Codex UI Tool 列表仍需一次人工可见确认。
+  resource 和无路径泄露。2026-08-30 的真实 Codex Host 验收进一步发现并修复
+  `2025-06-18` 路径要求 `outputSchema` 具有对象根的问题；新增精确 wire regression 后，
+  临时只读 Codex 会话已实际调用三个 Tool，两个读取成功，空数据集检查按预期返回
+  `TOOL_REJECTED`。本机 Host checkpoint 已完成。
 - 远程 Tunnel 状态：明确记为 `EXTERNAL_CREDENTIAL_PENDING`，不是本地代码失败；不以本机
   Host 证据替代 Tunnel ID、runtime key、组织权限或真实远程调用证据。
 

@@ -80,7 +80,11 @@ async def verify_local_mcp_host(
         ],
     )
 
-    async with Client(parameters, read_timeout_seconds=30) as client:
+    async with Client(
+        parameters,
+        read_timeout_seconds=30,
+        mode="legacy",
+    ) as client:
         server_name = _server_field(client.server_info, "name")
         server_version = _server_field(client.server_info, "version")
         if server_name != "BinderRanker":
@@ -168,6 +172,8 @@ async def verify_local_mcp_host(
             "schema_version": "0.1",
             "host_contract": "GENERIC_LOCAL_MCP_HOST",
             "transport": "MCP_STDIO_SUBPROCESS",
+            "client_mode": "legacy",
+            "protocol_version": client.protocol_version,
             "server_name": server_name,
             "server_version": server_version,
             "server_instructions_received": True,

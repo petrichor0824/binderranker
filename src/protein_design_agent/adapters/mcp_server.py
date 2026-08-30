@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Annotated, TypeAlias
+from typing import Annotated, Generic, TypeAlias, TypeVar
 
-from pydantic import Field, RootModel
+from pydantic import ConfigDict, Field, RootModel
 
 from mcp.server import MCPServer
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
@@ -33,15 +33,26 @@ TaskNameArgument: TypeAlias = Annotated[
 ]
 
 
-class CurrentPlanMCPOutput(RootModel[CurrentPlanAdapterResponse]):
+MCPOutputT = TypeVar("MCPOutputT")
+
+
+class _ObjectMCPOutput(RootModel[MCPOutputT], Generic[MCPOutputT]):
+    """Keep structured Tool outputs valid on legacy MCP protocol surfaces."""
+
+    model_config = ConfigDict(json_schema_extra={"type": "object"})
+
+
+class CurrentPlanMCPOutput(_ObjectMCPOutput[CurrentPlanAdapterResponse]):
     """MCP structured output for ``get_current_plan``."""
 
 
-class TaskStatusMCPOutput(RootModel[TaskStatusAdapterResponse]):
+class TaskStatusMCPOutput(_ObjectMCPOutput[TaskStatusAdapterResponse]):
     """MCP structured output for ``get_task_status``."""
 
 
-class DatasetInspectionMCPOutput(RootModel[DatasetInspectionAdapterResponse]):
+class DatasetInspectionMCPOutput(
+    _ObjectMCPOutput[DatasetInspectionAdapterResponse]
+):
     """MCP structured output for ``inspect_dataset``."""
 
 

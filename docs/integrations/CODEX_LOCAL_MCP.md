@@ -40,12 +40,16 @@ python scripts/verify_local_mcp_host.py \
 
 Unlike an in-process unit test, this command launches
 `protein_design_agent.adapters.mcp_entrypoint` as a child process and exchanges
-MCP JSON-RPC over stdin/stdout. A successful path-free JSON report proves:
+MCP JSON-RPC over stdin/stdout. The verifier deliberately uses the legacy MCP
+handshake family used by the current Codex Host and reports the negotiated
+protocol version. A successful path-free JSON report proves:
 
 - MCP initialization returns the BinderRanker name, installed version, and
   read-only server instructions;
 - exactly `get_current_plan`, `get_task_status`, and `inspect_dataset` are
   discoverable;
+- each structured Tool output schema has an object root compatible with the
+  Codex `2025-06-18` Tool-discovery path;
 - all three Tools are annotated read-only and non-destructive;
 - a valid task-status call succeeds;
 - an invalid empty-dataset inspection fails closed through the shared stable
@@ -112,6 +116,11 @@ Phase 5B-local is complete only when both layers pass:
 
 1. the deterministic subprocess probe passes in a clean supported environment;
 2. a refreshed local Codex client lists the server and the same three Tools.
+
+Both layers passed on 2026-08-30. A real ephemeral Codex CLI session discovered
+and called all three Tools: current-plan and task-status reads succeeded, and
+empty-dataset inspection failed closed with `TOOL_REJECTED`. No API key,
+protected Tool, host path, or scientific-performance claim was introduced.
 
 Remote Secure MCP Tunnel acceptance remains a separate credential-dependent
 checkpoint.

@@ -752,9 +752,17 @@ continues through the credential-free local Host path supported by Codex:
 - no API key, public listener, caller-identity claim, protected Tool, or
   scientific-performance claim is added.
 
-A refreshed local Codex client must still visibly list the configured server
-and the same three Tools. Remote tunnel validation resumes only when the owner
-chooses to provision the external credential and permissions.
+The live local Codex Host check completed on 2026-08-30. It first exposed a
+legacy `2025-06-18` Tool-discovery incompatibility that the MCP SDK's newer
+default protocol path had not exercised: union output schemas lacked an
+explicit object root. Shared schema generation was corrected, the subprocess
+probe was moved to the legacy handshake family, and an exact `2025-06-18` wire
+regression was added. A fresh ephemeral Codex session then discovered and
+called all three Tools; status and plan reads succeeded and dataset inspection
+failed closed with `TOOL_REJECTED` as designed.
+
+Remote tunnel validation resumes only when the owner chooses to provision the
+external credential and permissions.
 
 ## Acceptance test
 

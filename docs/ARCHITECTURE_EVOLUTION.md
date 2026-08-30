@@ -344,9 +344,10 @@ Phase 5B-local validates the same boundary without an API credential: a generic
 local MCP Host launches the official entry point as a real stdio subprocess,
 receives BinderRanker's server identity/version/instructions, discovers only
 the three read-only Tools, and observes both successful and fail-closed calls.
-Codex configuration adds a matching host-side Tool allow list. This is local
-Host interoperability evidence, not remote tunnel or scientific-performance
-evidence.
+Codex configuration adds a matching host-side Tool allow list. The 2026-08-30
+live local check also fixes and covers the Codex `2025-06-18` requirement that
+structured Tool output schemas have an explicit object root. This is local Host
+interoperability evidence, not remote tunnel or scientific-performance evidence.
 
 ---
 

@@ -45,6 +45,11 @@ def test_local_mcp_host_probe_uses_real_stdio_subprocess(
     assert completed.returncode == 0, completed.stderr
     report = json.loads(completed.stdout)
     assert report["transport"] == "MCP_STDIO_SUBPROCESS"
+    assert report["client_mode"] == "legacy"
+    assert report["protocol_version"] in {
+        "2025-06-18",
+        "2025-11-25",
+    }
     assert report["server_name"] == "BinderRanker"
     assert report["server_version"] == version("binderranker")
     assert report["server_instructions_received"] is True
@@ -71,6 +76,74 @@ def test_local_mcp_host_probe_uses_real_stdio_subprocess(
     }
     assert str(workspace.resolve()) not in completed.stdout
     assert str(Path(sys.executable).resolve()) not in completed.stdout
+
+
+def test_stdio_tool_discovery_supports_codex_2025_06_18_protocol(
+    tmp_path: Path,
+) -> None:
+    workspace = make_workspace(tmp_path)
+    requests = [
+        {
+            "jsonrpc": "2.0",
+            "id": 0,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "codex-compatibility-regression",
+                    "version": "1",
+                },
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+            "params": {},
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/list",
+            "params": {},
+        },
+    ]
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "protein_design_agent.adapters.mcp_entrypoint",
+            "--workspace",
+            str(workspace),
+        ],
+        input="\n".join(json.dumps(item) for item in requests) + "\n",
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=15,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    responses = [
+        json.loads(line)
+        for line in completed.stdout.splitlines()
+        if line.strip()
+    ]
+    initialize = next(item for item in responses if item.get("id") == 0)
+    tools_page = next(item for item in responses if item.get("id") == 1)
+
+    assert initialize["result"]["protocolVersion"] == "2025-06-18"
+    assert [
+        tool["name"] for tool in tools_page["result"]["tools"]
+    ] == [
+        "get_current_plan",
+        "get_task_status",
+        "inspect_dataset",
+    ]
+    assert [
+        tool["outputSchema"]["type"]
+        for tool in tools_page["result"]["tools"]
+    ] == ["object", "object", "object"]
 
 
 def test_codex_project_config_example_is_forward_safe() -> None:

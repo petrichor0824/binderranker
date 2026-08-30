@@ -50,9 +50,32 @@ def test_mcp_server_exposes_only_read_only_workspace_scoped_tools(
                 assert tool.annotations.idempotent_hint is True
                 assert tool.annotations.open_world_hint is False
                 assert tool.output_schema is not None
+                assert tool.output_schema["type"] == "object"
 
             assert "execute_ranker" not in {tool.name for tool in page.tools}
             assert "request_approval" not in {tool.name for tool in page.tools}
+
+    asyncio.run(exercise())
+
+
+def test_mcp_tool_schemas_support_legacy_codex_clients(
+    tmp_path: Path,
+) -> None:
+    server = create_mcp_server(make_workspace(tmp_path))
+
+    async def exercise() -> None:
+        async with Client(server, mode="legacy") as client:
+            page = await client.list_tools()
+
+            assert client.protocol_version in {
+                "2025-06-18",
+                "2025-11-25",
+            }
+            assert [tool.output_schema["type"] for tool in page.tools] == [
+                "object",
+                "object",
+                "object",
+            ]
 
     asyncio.run(exercise())
 

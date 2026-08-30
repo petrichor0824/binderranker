@@ -78,6 +78,13 @@ used by the corresponding release.
   structure and method prerequisites, and keep independent verification,
   performance benefit, and formal inference explicitly unestablished.
 
+### Fixed
+
+- Fixed local Codex Tool discovery on the MCP `2025-06-18` handshake path by
+  keeping all three structured Tool output schemas object-rooted. The generic
+  subprocess verifier now exercises the legacy handshake family instead of
+  relying only on the MCP SDK's newer default protocol path.
+
 ### Validation
 
 - Added Tool contract regressions for complete inventory, stable serialization,
@@ -96,6 +103,9 @@ used by the corresponding release.
   annotations, workspace/traversal/symlink isolation, path-free projections,
   structured success output, MCP `isError` failures, capability discovery, and
   the absence of approval and execution tools.
+- Added explicit legacy-client and raw `2025-06-18` stdio regressions for the
+  three object-rooted MCP output schemas, matching the protocol path exercised
+  by the current local Codex Host.
 - Added a clean installed-Wheel MCP smoke test after installing the optional
   extra, while retaining a base-Wheel smoke assertion that the adapter core is
   importable without the MCP dependency.
