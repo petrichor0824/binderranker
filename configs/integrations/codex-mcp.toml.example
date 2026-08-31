@@ -17,5 +17,6 @@ enabled_tools = [
   "get_current_plan",
   "get_task_status",
   "inspect_dataset",
+  "get_result_summary",
 ]
 default_tools_approval_mode = "writes"

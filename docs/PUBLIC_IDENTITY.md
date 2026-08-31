@@ -144,6 +144,7 @@ Current examples include:
 - `inspect_dataset`
 - `get_current_plan`
 - `get_task_status`
+- `get_result_summary`
 - `request_approval`
 - `execute_ranker`
 - `analyze_results`

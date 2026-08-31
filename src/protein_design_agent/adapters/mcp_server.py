@@ -15,6 +15,7 @@ from protein_design_agent.adapters.read_only import (
     CurrentPlanAdapterResponse,
     DatasetInspectionAdapterResponse,
     ReadOnlyToolAdapter,
+    ResultSummaryAdapterResponse,
     TaskStatusAdapterResponse,
 )
 from protein_design_agent.agent.tool_adapter_errors import AdapterErrorEnvelope
@@ -28,6 +29,18 @@ TaskNameArgument: TypeAlias = Annotated[
         description=(
             "Name of an existing BinderRanker task under the configured "
             "workspace runs directory. Paths are not accepted."
+        ),
+    ),
+]
+
+ResultLimitArgument: TypeAlias = Annotated[
+    int,
+    Field(
+        ge=1,
+        le=100,
+        description=(
+            "Maximum number of candidates to return in engineering-rank "
+            "order. The full sealed result remains unchanged."
         ),
     ),
 ]
@@ -54,6 +67,12 @@ class DatasetInspectionMCPOutput(
     _ObjectMCPOutput[DatasetInspectionAdapterResponse]
 ):
     """MCP structured output for ``inspect_dataset``."""
+
+
+class ResultSummaryMCPOutput(
+    _ObjectMCPOutput[ResultSummaryAdapterResponse]
+):
+    """MCP structured output for ``get_result_summary``."""
 
 
 _READ_ONLY_ANNOTATIONS = ToolAnnotations(
@@ -99,9 +118,10 @@ def create_mcp_server(workspace_dir: Path) -> MCPServer:
         version=_binderranker_version(),
         instructions=(
             "Read-only access to managed BinderRanker task plans, lifecycle "
-            "status, and deterministic dataset inspection. This server does "
-            "not prepare, approve, execute, or analyze tasks. BinderRanker "
-            "scientific performance remains unvalidated pending real data."
+            "status, deterministic dataset inspection, and integrity-verified "
+            "result summaries. This server does not prepare, approve, execute, "
+            "or create analyses. BinderRanker scientific performance remains "
+            "unvalidated pending real data."
         ),
     )
 
@@ -138,6 +158,20 @@ def create_mcp_server(workspace_dir: Path) -> MCPServer:
 
         return _call_result(adapter.inspect_dataset(task_name))
 
+    @server.tool(
+        title="Get BinderRanker sealed result summary",
+        annotations=_READ_ONLY_ANNOTATIONS,
+    )
+    def get_result_summary(
+        task_name: TaskNameArgument,
+        limit: ResultLimitArgument = 20,
+    ) -> Annotated[CallToolResult, ResultSummaryMCPOutput]:
+        """Read ranked evidence from the latest sealed deterministic analysis."""
+
+        return _call_result(
+            adapter.get_result_summary(task_name, limit=limit)
+        )
+
     @server.resource(
         "binderranker://adapter/capabilities",
         title="BinderRanker adapter capabilities",
@@ -159,6 +193,7 @@ def run_mcp_server(workspace_dir: Path) -> None:
 __all__ = [
     "CurrentPlanMCPOutput",
     "DatasetInspectionMCPOutput",
+    "ResultSummaryMCPOutput",
     "TaskStatusMCPOutput",
     "create_mcp_server",
     "run_mcp_server",

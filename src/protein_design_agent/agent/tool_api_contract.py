@@ -28,7 +28,11 @@ from protein_design_agent.agent.planning_session_resume import (
     SupplementExtraction,
 )
 from protein_design_agent.agent.request_evidence import RequestExtraction
-from protein_design_agent.agent.tool_api import CurrentPlanResult, TaskStatusResult
+from protein_design_agent.agent.tool_api import (
+    CurrentPlanResult,
+    SealedResultSummaryResult,
+    TaskStatusResult,
+)
 from protein_design_agent.agent.tool_adapter_errors import (
     ADAPTER_ERROR_CODES,
     ADAPTER_ERROR_SCHEMA_VERSION,
@@ -37,7 +41,7 @@ from protein_design_agent.agent.tool_adapter_errors import (
 )
 
 
-TOOL_API_CONTRACT_VERSION = "0.1"
+TOOL_API_CONTRACT_VERSION = "0.2"
 TOOL_API_SCHEMA_VERSION = "0.1"
 UNTRUSTED_REQUEST_FORBIDDEN_FIELDS = frozenset(
     {
@@ -125,7 +129,7 @@ class ToolAPICatalog(_StrictContractModel):
 
     schema_version: Literal["0.1"] = TOOL_API_SCHEMA_VERSION
     api_name: Literal["BinderRanker Tool API"] = "BinderRanker Tool API"
-    contract_version: Literal["0.1"] = TOOL_API_CONTRACT_VERSION
+    contract_version: Literal["0.2"] = TOOL_API_CONTRACT_VERSION
 
     path_semantics: Literal["HOST_LOCAL_PATH"] = "HOST_LOCAL_PATH"
     scientific_evidence_status: Literal[
@@ -255,7 +259,7 @@ def _operation(
 
 
 def get_tool_api_catalog() -> ToolAPICatalog:
-    """Build the deterministic v0.1 contract for all eight public tools."""
+    """Build the deterministic v0.2 contract for all nine public tools."""
 
     tools = (
         _operation(
@@ -336,6 +340,17 @@ def get_tool_api_catalog() -> ToolAPICatalog:
             request_model=BundleToolRequest,
             response_model=AnalyzeRunResult,
         ),
+        _operation(
+            name="get_result_summary",
+            summary=(
+                "Read the latest integrity-verified deterministic result "
+                "summary without modifying task state."
+            ),
+            side_effect="READ_ONLY",
+            authorization_requirement="NONE",
+            request_model=BundleToolRequest,
+            response_model=SealedResultSummaryResult,
+        ),
     )
 
     return ToolAPICatalog(tool_count=len(tools), tools=tools)
@@ -348,6 +363,7 @@ __all__ = [
     "PrepareTaskToolRequest",
     "ProvideInformationToolRequest",
     "RequestApprovalToolRequest",
+    "SealedResultSummaryResult",
     "TOOL_API_CONTRACT_VERSION",
     "TOOL_API_SCHEMA_VERSION",
     "UNTRUSTED_REQUEST_FORBIDDEN_FIELDS",

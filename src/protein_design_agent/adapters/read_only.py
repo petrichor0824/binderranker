@@ -48,6 +48,7 @@ READ_ONLY_ADAPTER_OPERATIONS = (
     "get_current_plan",
     "get_task_status",
     "inspect_dataset",
+    "get_result_summary",
 )
 DEFERRED_ADAPTER_OPERATIONS = (
     "provide_information",
@@ -69,6 +70,7 @@ SafeScientificToken: TypeAlias = Annotated[
 
 class _StrictAdapterView(BaseModel):
     model_config = ConfigDict(
+        allow_inf_nan=False,
         extra="forbid",
         frozen=True,
         str_strip_whitespace=True,
@@ -89,6 +91,12 @@ class ManagedTaskRequest(_StrictAdapterView):
             raise ValueError("invalid managed task name") from exc
 
 
+class ResultSummaryRequest(ManagedTaskRequest):
+    """Bounded external request for sealed deterministic ranking evidence."""
+
+    limit: int = Field(default=20, ge=1, le=100)
+
+
 class ReadOnlyAdapterCapabilities(_StrictAdapterView):
     """Machine-readable safety and capability profile for the adapter."""
 
@@ -96,7 +104,7 @@ class ReadOnlyAdapterCapabilities(_StrictAdapterView):
     adapter_name: Literal["BinderRanker read-only MCP adapter"] = (
         "BinderRanker read-only MCP adapter"
     )
-    tool_api_contract_version: Literal["0.1"] = TOOL_API_CONTRACT_VERSION
+    tool_api_contract_version: Literal["0.2"] = TOOL_API_CONTRACT_VERSION
     transport: Literal["MCP_STDIO"] = "MCP_STDIO"
     request_scope: Literal["MANAGED_TASK_NAME"] = "MANAGED_TASK_NAME"
     exposed_operations: tuple[str, ...] = READ_ONLY_ADAPTER_OPERATIONS
@@ -239,6 +247,70 @@ class DatasetInspectionAdapterResult(_StrictAdapterView):
     caution_count: int = Field(default=0, ge=0)
 
 
+class RankedCandidateAdapterView(_StrictAdapterView):
+    """Path-free evidence for one candidate in sealed engineering-rank order."""
+
+    candidate_id: str = Field(min_length=1, max_length=255)
+    engineering_rank: int = Field(ge=1)
+    final_score_v4: float
+    public_filter_level: SafeScientificToken | None = None
+    public_filter_status: SafeScientificToken
+    broad_pass: bool
+    medium_pass: bool
+    strict_pass: bool
+    broad_reasons: tuple[SafeScientificToken, ...] = ()
+    medium_reasons: tuple[SafeScientificToken, ...] = ()
+    strict_reasons: tuple[SafeScientificToken, ...] = ()
+    component_scores: dict[SafeScientificToken, float]
+    key_metrics: dict[SafeScientificToken, float]
+    primary_score_contributions: dict[SafeScientificToken, float]
+
+    @field_validator("candidate_id")
+    @classmethod
+    def validate_candidate_identifier(cls, value: str) -> str:
+        invalid = (
+            value in {".", ".."}
+            or "/" in value
+            or "\\" in value
+            or any(ord(char) < 32 for char in value)
+        )
+        if invalid:
+            raise ValueError("candidate identifier is not path-safe")
+        return value
+
+
+class ResultSummaryAdapterResult(_StrictAdapterView):
+    """Bounded external view of one sealed deterministic result summary."""
+
+    schema_version: Literal["0.1"] = READ_ONLY_ADAPTER_SCHEMA_VERSION
+    ok: Literal[True] = True
+    operation: Literal["get_result_summary"] = "get_result_summary"
+    task_name: str
+    provenance_status: Literal["SEALED_VERIFIED"] = "SEALED_VERIFIED"
+    result_summary_sha256: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    source_summary_schema_version: SafeScientificToken
+    analysis_scope_level: SafeScientificToken
+    reporting_mode: SafeScientificToken
+    result_use: SafeScientificToken
+    candidate_count: int = Field(ge=1)
+    returned_candidate_count: int = Field(ge=1)
+    truncated: bool
+    formal_candidate_recommendation_allowed: bool
+    thresholds_formally_interpretable: bool
+    score_decomposition_status: SafeScientificToken
+    scientific_interpretation_status: SafeScientificToken
+    candidate_comparison_status: SafeScientificToken
+    public_pool_counts: dict[SafeScientificToken, int | None]
+    public_pool_status: dict[SafeScientificToken, SafeScientificToken]
+    primary_score_formula: str | None = Field(default=None, max_length=512)
+    primary_score_weights: dict[SafeScientificToken, float]
+    candidates_by_engineering_rank: tuple[RankedCandidateAdapterView, ...]
+
+
 CurrentPlanAdapterResponse: TypeAlias = (
     CurrentPlanAdapterResult | AdapterErrorEnvelope
 )
@@ -247,6 +319,9 @@ TaskStatusAdapterResponse: TypeAlias = (
 )
 DatasetInspectionAdapterResponse: TypeAlias = (
     DatasetInspectionAdapterResult | AdapterErrorEnvelope
+)
+ResultSummaryAdapterResponse: TypeAlias = (
+    ResultSummaryAdapterResult | AdapterErrorEnvelope
 )
 
 
@@ -400,8 +475,66 @@ def project_dataset_inspection(
     )
 
 
+def project_result_summary(
+    *,
+    task_name: str,
+    result: tool_api.SealedResultSummaryResult,
+    limit: int,
+) -> ResultSummaryAdapterResult:
+    summary = result.summary
+    selected = summary.candidates_by_engineering_rank[:limit]
+    policy = summary.pool_reporting.policy
+    return ResultSummaryAdapterResult(
+        task_name=task_name,
+        result_summary_sha256=result.result_summary_sha256,
+        source_summary_schema_version=summary.schema_version,
+        analysis_scope_level=policy.analysis_scope_level,
+        reporting_mode=policy.reporting_mode,
+        result_use=summary.result_use,
+        candidate_count=summary.candidate_count,
+        returned_candidate_count=len(selected),
+        truncated=len(selected) < summary.candidate_count,
+        formal_candidate_recommendation_allowed=(
+            summary.formal_candidate_recommendation_allowed
+        ),
+        thresholds_formally_interpretable=(
+            summary.thresholds_formally_interpretable
+        ),
+        score_decomposition_status=summary.score_decomposition_status,
+        scientific_interpretation_status=(
+            summary.scientific_interpretation_status
+        ),
+        candidate_comparison_status=summary.candidate_comparison_status,
+        public_pool_counts=dict(summary.pool_reporting.public_pool_counts),
+        public_pool_status=dict(summary.pool_reporting.public_pool_status),
+        primary_score_formula=summary.primary_score_formula,
+        primary_score_weights=dict(summary.primary_score_weights),
+        candidates_by_engineering_rank=tuple(
+            RankedCandidateAdapterView(
+                candidate_id=candidate.pdb_name,
+                engineering_rank=candidate.engineering_rank,
+                final_score_v4=candidate.final_score_v4,
+                public_filter_level=candidate.public_filter_level,
+                public_filter_status=candidate.public_filter_status,
+                broad_pass=candidate.broad_pass,
+                medium_pass=candidate.medium_pass,
+                strict_pass=candidate.strict_pass,
+                broad_reasons=tuple(candidate.broad_reasons),
+                medium_reasons=tuple(candidate.medium_reasons),
+                strict_reasons=tuple(candidate.strict_reasons),
+                component_scores=dict(candidate.component_scores),
+                key_metrics=dict(candidate.key_metrics),
+                primary_score_contributions=dict(
+                    candidate.primary_score_contributions
+                ),
+            )
+            for candidate in selected
+        ),
+    )
+
+
 class ReadOnlyToolAdapter:
-    """Invoke the three safe Tool operations within one managed workspace."""
+    """Invoke safe read-only Tool operations within one managed workspace."""
 
     def __init__(self, workspace_dir: Path) -> None:
         workspace = workspace_dir.expanduser().resolve()
@@ -506,7 +639,46 @@ class ReadOnlyToolAdapter:
                 "dataset evidence contains unsafe external-view fields"
             ) from exc
 
-    def invoke(self, operation: object, *, task_name: object) -> BaseModel:
+    def get_result_summary(
+        self,
+        task_name: object,
+        *,
+        limit: object = 20,
+    ) -> ResultSummaryAdapterResponse:
+        return invoke_adapter_boundary(
+            operation="get_result_summary",
+            call=lambda: self._get_result_summary(task_name, limit=limit),
+        )
+
+    def _get_result_summary(
+        self,
+        task_name: object,
+        *,
+        limit: object,
+    ) -> ResultSummaryAdapterResult:
+        request = ResultSummaryRequest.model_validate(
+            {"task_name": task_name, "limit": limit}
+        )
+        bundle = self._bundle_for(request)
+        result = tool_api.get_result_summary(bundle)
+        try:
+            return project_result_summary(
+                task_name=request.task_name,
+                result=result,
+                limit=request.limit,
+            )
+        except ValidationError as exc:
+            raise AdapterProjectionError(
+                "result summary contains unsafe external-view fields"
+            ) from exc
+
+    def invoke(
+        self,
+        operation: object,
+        *,
+        task_name: object,
+        limit: object = 20,
+    ) -> BaseModel:
         """Dispatch a published read-only operation without dynamic imports."""
 
         if operation == "get_current_plan":
@@ -515,6 +687,8 @@ class ReadOnlyToolAdapter:
             return self.get_task_status(task_name)
         if operation == "inspect_dataset":
             return self.inspect_dataset(task_name)
+        if operation == "get_result_summary":
+            return self.get_result_summary(task_name, limit=limit)
 
         error = UnknownToolOperationError(operation)
         result = invoke_adapter_boundary(
@@ -535,14 +709,19 @@ __all__ = [
     "DEFERRED_ADAPTER_OPERATIONS",
     "ManagedTaskRequest",
     "PlanRequestView",
+    "RankedCandidateAdapterView",
     "READ_ONLY_ADAPTER_OPERATIONS",
     "READ_ONLY_ADAPTER_SCHEMA_VERSION",
     "ReadOnlyAdapterCapabilities",
     "ReadOnlyAdapterConfigurationError",
     "ReadOnlyToolAdapter",
+    "ResultSummaryAdapterResponse",
+    "ResultSummaryAdapterResult",
+    "ResultSummaryRequest",
     "TaskStatusAdapterResponse",
     "TaskStatusAdapterResult",
     "project_current_plan",
     "project_dataset_inspection",
+    "project_result_summary",
     "project_task_status",
 ]

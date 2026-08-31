@@ -453,6 +453,11 @@ primitive, and Phase 3 supplies the shared adapter error boundary described
 below. A concrete external adapter is still not shipped. See
 [`TOOL_API_CONTRACT.md`](TOOL_API_CONTRACT.md).
 
+The v0.6 Phase 6 additive result-read slice advances the contract to `0.2`
+and nine operations. `get_result_summary` is a new read-only operation over
+the latest SHA256-sealed deterministic analysis; all eight pre-existing Tool
+signatures and the catalog envelope schema remain unchanged.
+
 This is integration engineering under the existing scientific-validation
 boundary. It does not establish BinderRanker performance or biological
 validity and does not modify the frozen ranking algorithm.
@@ -763,6 +768,35 @@ failed closed with `TOOL_REJECTED` as designed.
 
 Remote tunnel validation resumes only when the owner chooses to provision the
 external credential and permissions.
+
+### Phase 6 sealed result-read checkpoint — 2026-08-31
+
+The local external-Agent surface now exposes useful post-execution evidence
+without opening execution or analysis writes:
+
+- `get_result_summary` is the ninth Tool API operation and fourth read-only MCP
+  Tool;
+- the shared artifact resolver selects the latest completed analysis and
+  verifies result-summary, failure-analysis, deterministic-report, and
+  execution-manifest SHA256 seals;
+- the versioned `RankerResultSummary` is revalidated before projection;
+- MCP responses are bounded to 1--100 candidates and omit artifact/source
+  paths, stored project text, and report prose;
+- missing and legacy unsealed evidence is rejected as unavailable task state;
+  malformed or tampered sealed evidence is classified as
+  `SCIENTIFIC_RESULT_INVALID`;
+- the Tool remains read-only, idempotent, closed-world, and compatible with the
+  Codex `writes` approval policy.
+
+The clean installed-Wheel subprocess check and a fresh real Codex client call
+both passed on 2026-08-31. The client read one bounded candidate from sealed
+fixture evidence, observed `SEALED_VERIFIED` provenance, and received no host
+path. This acceptance used the existing Codex login session and no OpenAI
+Platform API key.
+
+This completes local read access to existing sealed ranking evidence. It does
+not create analyses, recompute scores, expose protected operations, establish
+remote Tunnel acceptance, or claim scientific performance.
 
 ## Acceptance test
 

@@ -14,6 +14,7 @@ EXPECTED_LOCAL_HOST_TOOLS = (
     "get_current_plan",
     "get_task_status",
     "inspect_dataset",
+    "get_result_summary",
 )
 PROTECTED_TOOLS = {
     "provide_information",
@@ -133,6 +134,21 @@ async def verify_local_mcp_host(
         if rejected_code != "TOOL_REJECTED":
             raise RuntimeError("unexpected fail-closed error code")
 
+        result_rejected = await client.call_tool(
+            "get_result_summary",
+            {"task_name": task_name, "limit": 5},
+        )
+        if (
+            not result_rejected.is_error
+            or result_rejected.structured_content is None
+        ):
+            raise RuntimeError("missing result summary did not fail closed")
+        result_rejected_code = (
+            result_rejected.structured_content.get("error", {}).get("code")
+        )
+        if result_rejected_code != "TOOL_REJECTED":
+            raise RuntimeError("unexpected result-summary error code")
+
         resources = await client.list_resources()
         resource_uris = tuple(str(item.uri) for item in resources.resources)
         if resource_uris != (CAPABILITY_RESOURCE,):
@@ -160,6 +176,7 @@ async def verify_local_mcp_host(
         raw_responses = (
             status.structured_content,
             rejected.structured_content,
+            result_rejected.structured_content,
             capabilities,
         )
         if any(
@@ -191,6 +208,10 @@ async def verify_local_mcp_host(
             "closed_failure_call": {
                 "is_error": rejected.is_error,
                 "error_code": rejected_code,
+            },
+            "result_summary_closed_failure_call": {
+                "is_error": result_rejected.is_error,
+                "error_code": result_rejected_code,
             },
             "capability_resource": {
                 "read_only": capabilities.get("read_only"),

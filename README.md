@@ -306,7 +306,7 @@ path. Agent interfaces improve accessibility and integration; they do not own
 or redefine scientific behavior.
 
 The v0.6 integration layer now publishes a versioned, machine-readable catalog
-for all eight Tool operations, including JSON schemas, side-effect classes,
+for all nine Tool operations, including JSON schemas, side-effect classes,
 and trusted host-field requirements. Authorization and caller identity are
 excluded from untrusted request schemas; protected external execution remains
 available only through a trusted in-process runtime capability that is
@@ -315,11 +315,14 @@ single-use. Adapter failures now use one versioned, non-sensitive error schema
 with stable machine codes and no automatic retry of protected operations.
 
 The first external adapter is now available as an optional, local **read-only
-MCP server**. It exposes current plan, task status, and deterministic dataset
-inspection for managed workspace tasks. External calls accept a validated
-`task_name`, never an arbitrary host path; successful views omit host paths and
-stored free-form request text. Approval, execution, mutation, analysis writes,
-HTTP serving, and remote authentication are deliberately not exposed.
+MCP server**. It exposes current plan, task status, deterministic dataset
+inspection, and bounded reads of the latest integrity-verified result summary
+for managed workspace tasks. External calls accept a validated `task_name`,
+never an arbitrary host path; successful views omit host paths and stored
+free-form request text. Result reads require a current SHA256-sealed analysis
+and never create or recompute analysis artifacts. Approval, execution,
+mutation, analysis writes, HTTP serving, and remote authentication are
+deliberately not exposed.
 
 Install and launch it through an MCP host with:
 

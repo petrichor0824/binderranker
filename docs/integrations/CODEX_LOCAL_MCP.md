@@ -46,14 +46,16 @@ protocol version. A successful path-free JSON report proves:
 
 - MCP initialization returns the BinderRanker name, installed version, and
   read-only server instructions;
-- exactly `get_current_plan`, `get_task_status`, and `inspect_dataset` are
-  discoverable;
+- exactly `get_current_plan`, `get_task_status`, `inspect_dataset`, and
+  `get_result_summary` are discoverable;
 - each structured Tool output schema has an object root compatible with the
   Codex `2025-06-18` Tool-discovery path;
-- all three Tools are annotated read-only and non-destructive;
+- all four Tools are annotated read-only and non-destructive;
 - a valid task-status call succeeds;
 - an invalid empty-dataset inspection fails closed through the shared stable
   error envelope;
+- a result-summary read on an empty task also fails closed without creating an
+  analysis;
 - the capability resource declares no execution access, no host-path
   disclosure, and `SCIENTIFIC_VALIDATION_PENDING`.
 
@@ -85,6 +87,7 @@ enabled_tools = [
   "get_current_plan",
   "get_task_status",
   "inspect_dataset",
+  "get_result_summary",
 ]
 default_tools_approval_mode = "writes"
 ```
@@ -95,7 +98,7 @@ select **Restart**. In a refreshed Codex session, use `/mcp` to confirm the
 server and Tool list.
 
 `enabled_tools` is a host-side allow list in addition to BinderRanker's own
-three-Tool registration boundary. The `writes` approval mode permits correctly
+four-Tool registration boundary. The `writes` approval mode permits correctly
 annotated read-only calls while ensuring that any future non-read-only Tool
 would require confirmation. It does not grant BinderRanker execution
 authorization.
@@ -115,12 +118,21 @@ authorization.
 Phase 5B-local is complete only when both layers pass:
 
 1. the deterministic subprocess probe passes in a clean supported environment;
-2. a refreshed local Codex client lists the server and the same three Tools.
+2. a refreshed local Codex client lists the server and the same four Tools.
 
-Both layers passed on 2026-08-30. A real ephemeral Codex CLI session discovered
-and called all three Tools: current-plan and task-status reads succeeded, and
-empty-dataset inspection failed closed with `TOOL_REJECTED`. No API key,
-protected Tool, host path, or scientific-performance claim was introduced.
+The Phase 5B-local three-Tool baseline passed on 2026-08-30. The additive
+Phase 6 result-read surface retains that same process boundary and adds a
+fourth read-only Tool. It requires a current SHA256-sealed deterministic
+analysis for success; missing, legacy unsealed, malformed, and tampered result
+artifacts fail closed. No API key, protected Tool, host path, analysis write,
+or scientific-performance claim is introduced.
+
+The four-Tool installed-Wheel subprocess probe and a fresh real Codex client
+call both passed on 2026-08-31. The live client called `get_result_summary`
+against sealed fixture evidence with `limit=1`, received
+`SEALED_VERIFIED` provenance, observed the expected bounded/truncated result,
+and received no host path. The check used the existing Codex login session and
+did not require an OpenAI Platform API key.
 
 Remote Secure MCP Tunnel acceptance remains a separate credential-dependent
 checkpoint.

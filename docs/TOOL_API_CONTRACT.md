@@ -45,11 +45,12 @@ payload = catalog.model_dump(mode="json")
 `payload` is JSON-serializable and includes the contract version, path
 semantics, side-effect classification, authorization requirement, untrusted
 request JSON Schema, response JSON Schema, host-injected fields, and trusted
-runtime entrypoints for all eight public operations. It also publishes the
+runtime entrypoints for all nine public operations. It also publishes the
 shared adapter error schema and its complete stable error-code inventory.
 
-The current catalog and schema version are both `0.1`. Additive compatible
-changes may retain the contract version; changes that invalidate an existing
+The current catalog contract version is `0.2`; its envelope schema remains
+`0.1`. The `0.2` contract additively publishes `get_result_summary` without
+changing any pre-existing Tool signature. Changes that invalidate an existing
 adapter require an explicit contract-version decision and migration note.
 
 ## Operation inventory
@@ -64,9 +65,17 @@ adapter require an explicit contract-version decision and migration note.
 | `request_approval` | `AUTHORIZATION_CHANGING` | `TRUSTED_USER_PLAN_APPROVAL` |
 | `execute_ranker` | `EXECUTING` | `TRUSTED_USER_EXECUTION_CONFIRMATION` |
 | `analyze_results` | `APPEND_ONLY_ARTIFACT` | `NONE` |
+| `get_result_summary` | `READ_ONLY` | `NONE` |
 
 `analyze_results` is not read-only: it creates a new append-only analysis
 directory and never overwrites an earlier analysis artifact.
+
+`get_result_summary` is read-only. It selects the latest completed analysis
+through the shared artifact resolver, requires a complete SHA256 provenance
+seal, revalidates the versioned `RankerResultSummary`, and does not create,
+rewrite, or recompute an analysis. Missing and legacy unsealed results are
+domain-state rejections; malformed or tampered sealed evidence is a
+`SCIENTIFIC_RESULT_INVALID` adapter failure.
 
 ## Untrusted request boundary
 
@@ -243,11 +252,11 @@ responses.
 
 ## Current compatibility boundary
 
-The first four v0.6 slices add discovery, schema enforcement, trusted
-in-process authorization, a stable adapter failure contract, and one local
-read-only MCP adapter without changing:
+The v0.6 slices add discovery, schema enforcement, trusted in-process
+authorization, a stable adapter failure contract, and one local read-only MCP
+adapter without changing:
 
-- the eight existing Tool function signatures;
+- the eight pre-existing Tool function signatures;
 - scoring, ranking, or screening behavior;
 - the frozen Ranker resources;
 - task execution or scientific completion semantics;
@@ -255,9 +264,11 @@ read-only MCP adapter without changing:
 
 The MCP adapter accepts only managed `task_name` values inside one
 BinderRanker-initialized workspace. It exposes `get_current_plan`,
-`get_task_status`, and `inspect_dataset`, calls this Tool API directly, maps
-successes into explicit path-free external views, and maps failures through
-`AdapterErrorEnvelope` with MCP `isError=true`. The optional dependency is
+`get_task_status`, `inspect_dataset`, and `get_result_summary`, calls this Tool
+API directly, maps successes into explicit path-free external views, and maps
+failures through `AdapterErrorEnvelope` with MCP `isError=true`. Result-summary
+responses are bounded to 1--100 candidates and omit all artifact paths, source
+paths, stored project text, and report prose. The optional dependency is
 `mcp>=2,<3`; the base BinderRanker installation does not import or require it.
 
 Protected and mutating operations remain deferred. They must not be registered

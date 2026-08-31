@@ -198,6 +198,13 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
   `2025-06-18` 路径要求 `outputSchema` 具有对象根的问题；新增精确 wire regression 后，
   临时只读 Codex 会话已实际调用三个 Tool，两个读取成功，空数据集检查按预期返回
   `TOOL_REJECTED`。本机 Host checkpoint 已完成。
+- Phase 6 状态：Tool API contract 已加法升级到 `0.2` 和 9 个操作；新增
+  `get_result_summary` 作为第四个只读 MCP Tool。它只读取最新 SHA256 封存且重新通过
+  `RankerResultSummary` 验证的确定性分析，按 `limit=1..100` 返回有界排名、记录分数、
+  filter evidence、component/key metrics 和主分贡献，并移除 artifact/source 路径、
+  stored project text 与 report prose。缺失或 legacy 未封存结果按任务状态拒绝，篡改或
+  malformed sealed evidence 归类为 `SCIENTIFIC_RESULT_INVALID`；不会创建分析、执行 Ranker
+  或改变科学结论。
 - 远程 Tunnel 状态：明确记为 `EXTERNAL_CREDENTIAL_PENDING`，不是本地代码失败；不以本机
   Host 证据替代 Tunnel ID、runtime key、组织权限或真实远程调用证据。
 

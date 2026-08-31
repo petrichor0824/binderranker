@@ -43,6 +43,7 @@ def test_private_tunnel_preflight_reports_only_locally_provable_readiness(
         "get_current_plan",
         "get_task_status",
         "inspect_dataset",
+        "get_result_summary",
     )
     assert report.protected_operations_exposed is False
     assert report.caller_identity_contract_available is False

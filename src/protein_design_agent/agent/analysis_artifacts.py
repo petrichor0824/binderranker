@@ -60,6 +60,10 @@ class AnalysisArtifactError(RuntimeError):
     """无法安全确定分析产物。"""
 
 
+class AnalysisArtifactNotFoundError(AnalysisArtifactError):
+    """当前 Bundle 尚无可读取的完整分析产物。"""
+
+
 class AnalysisArtifacts(BaseModel):
     """一次解释所使用的确定性分析产物。"""
 
@@ -752,7 +756,7 @@ def resolve_analysis_artifacts(
             ),
         )
 
-    raise AnalysisArtifactError(
+    raise AnalysisArtifactNotFoundError(
         "结果解释缺少必要输入："
         "没有找到可用的 COMPLETED analysis，"
         "也没有找到完整的旧版 Bundle 根目录结果文件"

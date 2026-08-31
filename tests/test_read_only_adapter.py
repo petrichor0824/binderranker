@@ -9,6 +9,7 @@ from protein_design_agent.adapters.read_only import (
     DatasetInspectionAdapterResult,
     ReadOnlyAdapterConfigurationError,
     ReadOnlyToolAdapter,
+    ResultSummaryAdapterResult,
     TaskStatusAdapterResult,
 )
 from protein_design_agent.agent.dataset_advisor import (
@@ -326,6 +327,7 @@ def test_adapter_capability_profile_is_explicit_and_json_safe(
         "get_current_plan",
         "get_task_status",
         "inspect_dataset",
+        "get_result_summary",
     ]
     assert payload["mutating_operations_exposed"] is False
     assert payload["authorization_operations_exposed"] is False
@@ -344,6 +346,7 @@ def test_adapter_success_models_are_strict_and_path_free() -> None:
         CurrentPlanAdapterResult,
         TaskStatusAdapterResult,
         DatasetInspectionAdapterResult,
+        ResultSummaryAdapterResult,
     ):
         schema = model.model_json_schema(mode="serialization")
         encoded = json.dumps(schema, sort_keys=True)

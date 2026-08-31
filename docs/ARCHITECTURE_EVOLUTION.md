@@ -317,9 +317,9 @@ interface and the official MCP Python SDK v2 stable line. The server uses the
 official SDK, local `stdio`, structured outputs, read-only/idempotent/closed-
 world annotations, and the shared BinderRanker error envelope.
 
-Only `get_current_plan`, `get_task_status`, and `inspect_dataset` are exposed.
-The adapter accepts managed task names rather than paths and emits purpose-built
-views without host paths or stored free-form request text. Preparation,
+Phase 4 initially exposed only `get_current_plan`, `get_task_status`, and
+`inspect_dataset`. The adapter accepts managed task names rather than paths and
+emits purpose-built views without host paths or stored free-form request text. Preparation,
 mutation, approval, execution, and append-only analysis remain unavailable
 until a host-specific design can authenticate the human and bind a real
 confirmation event to BinderRanker's trusted runtime. MCP protocol support by
@@ -348,6 +348,16 @@ Codex configuration adds a matching host-side Tool allow list. The 2026-08-30
 live local check also fixes and covers the Codex `2025-06-18` requirement that
 structured Tool output schemas have an explicit object root. This is local Host
 interoperability evidence, not remote tunnel or scientific-performance evidence.
+
+As of v0.6 Phase 6, `get_result_summary` is the fourth read-only MCP Tool and
+the ninth Tool API operation. It reads only the latest SHA256-sealed
+deterministic analysis, revalidates the versioned result summary, and projects
+a bounded engineering-rank view without artifact paths, source paths, stored
+project text, or report prose. Missing and legacy unsealed evidence fails
+closed; malformed or tampered sealed evidence is a scientific-validity error.
+This adds result consumption, not result generation: execution, analysis
+writes, authorization, remote identity, and scientific-performance claims
+remain unchanged.
 
 ---
 

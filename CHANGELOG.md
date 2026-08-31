@@ -9,7 +9,7 @@ used by the corresponding release.
 
 ### Added
 
-- Added a versioned, machine-readable catalog for all eight public BinderRanker
+- Added a versioned, machine-readable catalog for all nine public BinderRanker
   Tool operations, with deterministic input/output JSON Schemas, explicit
   side-effect classes, host-local path semantics, and trusted host-field
   declarations for future HTTP, MCP, workflow, and external-Agent adapters.
@@ -33,6 +33,11 @@ used by the corresponding release.
   names instead of paths and projects Tool results into explicit structured
   views without host-local paths, stored free-form request text, or raw warning
   and exception details.
+- Added `get_result_summary` as a fourth read-only MCP operation and a ninth
+  Tool API operation. It reads only the latest SHA256-sealed deterministic
+  analysis, revalidates the versioned result model, returns a bounded
+  engineering-rank view, and rejects missing, unsealed, malformed, or tampered
+  artifacts without exposing host paths or stored free text.
 - Added a machine-readable MCP capability resource that explicitly declares
   deferred mutation, approval, execution, and analysis-write operations plus
   the unchanged `SCIENTIFIC_VALIDATION_PENDING` evidence boundary.
@@ -45,7 +50,7 @@ used by the corresponding release.
   trust-domain deployment, credential separation, disclosure controls,
   approval confusion, audit ownership, and deferred public/multi-tenant gates.
 - Added an API-key-free local Codex MCP runbook and forward-safe configuration
-  template with an explicit three-Tool allow list and `writes` approval mode.
+  template with an explicit four-Tool allow list and `writes` approval mode.
 - Added a real stdio subprocess interoperability probe that verifies MCP server
   name/version/instructions, Tool discovery, success and fail-closed calls,
   capability boundaries, and path-free evidence outside the server process;
@@ -81,7 +86,7 @@ used by the corresponding release.
 ### Fixed
 
 - Fixed local Codex Tool discovery on the MCP `2025-06-18` handshake path by
-  keeping all three structured Tool output schemas object-rooted. The generic
+  keeping all four structured Tool output schemas object-rooted. The generic
   subprocess verifier now exercises the legacy handshake family instead of
   relying only on the MCP SDK's newer default protocol path.
 
@@ -104,7 +109,7 @@ used by the corresponding release.
   structured success output, MCP `isError` failures, capability discovery, and
   the absence of approval and execution tools.
 - Added explicit legacy-client and raw `2025-06-18` stdio regressions for the
-  three object-rooted MCP output schemas, matching the protocol path exercised
+  four object-rooted MCP output schemas, matching the protocol path exercised
   by the current local Codex Host.
 - Added a clean installed-Wheel MCP smoke test after installing the optional
   extra, while retaining a base-Wheel smoke assertion that the adapter core is

@@ -181,7 +181,7 @@ assert "### `final_score_v4`" in (
 )
 
 tool_catalog = get_tool_api_catalog()
-assert tool_catalog.tool_count == 8
+assert tool_catalog.tool_count == 9
 assert tool_catalog.model_supplied_authorization_accepted is False
 assert tool_catalog.scientific_evidence_status == "SCIENTIFIC_VALIDATION_PENDING"
 assert tool_catalog.authorization_transport == "IN_PROCESS_OPAQUE_CAPABILITY"

@@ -7,13 +7,14 @@ or provenance logic.
 
 ## Current scope
 
-The v0.6 first slice exposes exactly three model-callable tools:
+The current v0.6 adapter exposes exactly four model-callable tools:
 
 | MCP tool | Behavior |
 | --- | --- |
 | `get_current_plan` | Read the canonical plan for a managed task |
 | `get_task_status` | Read planning and execution lifecycle state |
 | `inspect_dataset` | Run deterministic, read-only inspection of the dataset recorded by the task |
+| `get_result_summary` | Read a bounded engineering-rank view from the latest SHA256-sealed deterministic analysis |
 
 The server also exposes the application-controlled resource
 `binderranker://adapter/capabilities`. It declares the exposed and deferred
@@ -31,6 +32,19 @@ The following operations are deliberately **not** registered as MCP tools:
 No MCP call can approve or execute BinderRanker in this slice. A model or MCP
 client claiming that a user approved an action is not sufficient evidence for
 BinderRanker's trusted authorization runtime.
+
+`get_result_summary` accepts an optional `limit` from 1 to 100, defaulting to
+20. It never runs BinderRanker or creates an analysis. The shared Tool API
+selects the latest completed analysis, verifies its provenance seal and
+versioned result schema, then the adapter returns only bounded candidate
+identifiers, engineering ranks, recorded scores, filter evidence, component
+scores, key metrics, and direct-primary contributions. Host paths, source-file
+locations, stored project text, and free-form report prose are omitted.
+
+An empty task or legacy unsealed result fails closed. A malformed or tampered
+sealed artifact returns the shared `SCIENTIFIC_RESULT_INVALID` error. This
+integrity gate establishes that the returned evidence matches a sealed local
+analysis; it does not establish biological predictive accuracy.
 
 ## Why MCP was selected
 

@@ -33,6 +33,7 @@ EXPECTED_TOOLS = (
     "request_approval",
     "execute_ranker",
     "analyze_results",
+    "get_result_summary",
 )
 
 
@@ -41,10 +42,10 @@ def tool_by_name(name: str):
     return next(tool for tool in catalog.tools if tool.name == name)
 
 
-def test_catalog_has_all_eight_public_tools_in_stable_order() -> None:
+def test_catalog_has_all_nine_public_tools_in_stable_order() -> None:
     catalog = get_tool_api_catalog()
 
-    assert catalog.tool_count == 8
+    assert catalog.tool_count == 9
     assert tuple(tool.name for tool in catalog.tools) == EXPECTED_TOOLS
 
     assert {
@@ -58,6 +59,7 @@ def test_catalog_has_all_eight_public_tools_in_stable_order() -> None:
         "request_approval": "AUTHORIZATION_CHANGING",
         "execute_ranker": "EXECUTING",
         "analyze_results": "APPEND_ONLY_ARTIFACT",
+        "get_result_summary": "READ_ONLY",
     }
 
 
@@ -177,7 +179,7 @@ def test_catalog_rejects_count_mismatch_and_duplicate_names() -> None:
 
     duplicated = catalog.tools[:-1] + (catalog.tools[0],)
     with pytest.raises(ValidationError, match="tool names must be unique"):
-        ToolAPICatalog(tool_count=8, tools=duplicated)
+        ToolAPICatalog(tool_count=9, tools=duplicated)
 
     unsafe_protected_tool = catalog.tools[5].model_copy(
         update={"trusted_runtime_entrypoint": None}
@@ -191,14 +193,14 @@ def test_catalog_rejects_count_mismatch_and_duplicate_names() -> None:
         ValidationError,
         match="trusted runtime entrypoint",
     ):
-        ToolAPICatalog(tool_count=8, tools=unsafe_tools)
+        ToolAPICatalog(tool_count=9, tools=unsafe_tools)
 
     with pytest.raises(
         ValidationError,
         match="adapter error codes",
     ):
         ToolAPICatalog(
-            tool_count=8,
+            tool_count=9,
             tools=catalog.tools,
             adapter_error_codes=("INTERNAL_ERROR",),
         )

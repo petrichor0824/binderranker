@@ -11,8 +11,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+from protein_design_agent.agent.analysis_artifacts import (
+    AnalysisArtifactError,
+    AnalysisArtifactNotFoundError,
+    resolve_analysis_artifacts,
+    sha256_file,
+)
 
 from protein_design_agent.agent.dataset_advisor import (
     DatasetAdvisorError,
@@ -24,6 +32,10 @@ from protein_design_agent.agent.analyze_run import (
     AnalyzeRunResult,
     next_analysis_directory,
     run_analyze_run,
+)
+from protein_design_agent.agent.failure_analysis import (
+    FailureAnalysisError,
+    load_result_summary,
 )
 from protein_design_agent.agent.approval import (
     ApprovalError,
@@ -37,6 +49,9 @@ from protein_design_agent.agent.local_executor import (
     CompletedLocalExecution,
     LocalExecutionError,
     execute_approved_binderranker,
+)
+from protein_design_agent.agent.ranker_result_parser import (
+    RankerResultSummary,
 )
 
 from protein_design_agent.agent.plan_materializer import (
@@ -105,6 +120,22 @@ class CurrentPlanResult(BaseModel):
         default_factory=list
     )
     plan: AgentPlan | None = None
+
+
+class SealedResultSummaryResult(BaseModel):
+    """Latest integrity-verified deterministic result summary for one task."""
+
+    schema_version: Literal["0.1"] = "0.1"
+    bundle_dir: Path
+    analysis_manifest: Path
+    result_summary_path: Path
+    result_summary_sha256: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    provenance_status: Literal["SEALED_VERIFIED"] = "SEALED_VERIFIED"
+    summary: RankerResultSummary
 
 
 def get_current_plan(
@@ -201,6 +232,70 @@ def get_task_status(
             current_plan.planning_session
         ),
         run_status=run_status,
+    )
+
+
+def get_result_summary(
+    bundle_dir: Path,
+) -> SealedResultSummaryResult:
+    """Read the latest sealed deterministic analysis without modifying it.
+
+    Legacy or explicit unsealed artifacts are intentionally rejected at this
+    external-integration boundary. Callers must create a current deterministic
+    analysis first so provenance and artifact integrity can be verified.
+    """
+
+    bundle = bundle_dir.resolve()
+    if not bundle.is_dir():
+        raise ToolAPIError(
+            f"任务目录不存在：{bundle}"
+        )
+
+    try:
+        artifacts = resolve_analysis_artifacts(
+            bundle_dir=bundle,
+        )
+    except AnalysisArtifactNotFoundError as exc:
+        raise ToolAPIError(
+            "当前任务尚无可读取的完整确定性分析。"
+        ) from exc
+    except AnalysisArtifactError as exc:
+        raise ToolAPIError(
+            "确定性分析产物未通过完整性验证。",
+            adapter_error_code="SCIENTIFIC_RESULT_INVALID",
+        ) from exc
+
+    if (
+        artifacts.provenance_status != "SEALED_VERIFIED"
+        or artifacts.analysis_manifest_path is None
+    ):
+        raise ToolAPIError(
+            "当前结果摘要没有完整 provenance seal；"
+            "请先生成当前版本的确定性分析。"
+        )
+
+    try:
+        summary = load_result_summary(
+            artifacts.result_summary_path
+        )
+    except FailureAnalysisError as exc:
+        raise ToolAPIError(
+            "已封存结果摘要未通过结构化科学验证。",
+            adapter_error_code="SCIENTIFIC_RESULT_INVALID",
+        ) from exc
+
+    return SealedResultSummaryResult(
+        bundle_dir=bundle,
+        analysis_manifest=(
+            artifacts.analysis_manifest_path
+        ),
+        result_summary_path=(
+            artifacts.result_summary_path
+        ),
+        result_summary_sha256=sha256_file(
+            artifacts.result_summary_path
+        ),
+        summary=summary,
     )
 
 

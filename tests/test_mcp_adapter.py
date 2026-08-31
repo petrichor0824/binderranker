@@ -40,10 +40,14 @@ def test_mcp_server_exposes_only_read_only_workspace_scoped_tools(
                 "get_current_plan",
                 "get_task_status",
                 "inspect_dataset",
+                "get_result_summary",
             ]
 
             for tool in page.tools:
-                assert set(tool.input_schema["properties"]) == {"task_name"}
+                expected_inputs = {"task_name"}
+                if tool.name == "get_result_summary":
+                    expected_inputs.add("limit")
+                assert set(tool.input_schema["properties"]) == expected_inputs
                 assert tool.annotations is not None
                 assert tool.annotations.read_only_hint is True
                 assert tool.annotations.destructive_hint is False
@@ -72,6 +76,7 @@ def test_mcp_tool_schemas_support_legacy_codex_clients(
                 "2025-11-25",
             }
             assert [tool.output_schema["type"] for tool in page.tools] == [
+                "object",
                 "object",
                 "object",
                 "object",
@@ -163,6 +168,7 @@ def test_mcp_documentation_preserves_scope_and_remote_boundary() -> None:
         "get_current_plan",
         "get_task_status",
         "inspect_dataset",
+        "get_result_summary",
         "task_name",
         "local `stdio` only",
         "--check-tunnel-readiness",
