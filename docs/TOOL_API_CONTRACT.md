@@ -45,13 +45,14 @@ payload = catalog.model_dump(mode="json")
 `payload` is JSON-serializable and includes the contract version, path
 semantics, side-effect classification, authorization requirement, untrusted
 request JSON Schema, response JSON Schema, host-injected fields, and trusted
-runtime entrypoints for all nine public operations. It also publishes the
+runtime entrypoints for all ten public operations. It also publishes the
 shared adapter error schema and its complete stable error-code inventory.
 
-The current catalog contract version is `0.2`; its envelope schema remains
-`0.1`. The `0.2` contract additively publishes `get_result_summary` without
-changing any pre-existing Tool signature. Changes that invalidate an existing
-adapter require an explicit contract-version decision and migration note.
+The current catalog contract version is `0.3`; its envelope schema remains
+`0.1`. The `0.2` contract additively published `get_result_summary`; `0.3`
+additively publishes `list_tasks`. No pre-existing Tool signature changed.
+Changes that invalidate an existing adapter require an explicit
+contract-version decision and migration note.
 
 ## Operation inventory
 
@@ -66,6 +67,7 @@ adapter require an explicit contract-version decision and migration note.
 | `execute_ranker` | `EXECUTING` | `TRUSTED_USER_EXECUTION_CONFIRMATION` |
 | `analyze_results` | `APPEND_ONLY_ARTIFACT` | `NONE` |
 | `get_result_summary` | `READ_ONLY` | `NONE` |
+| `list_tasks` | `READ_ONLY` | `NONE` |
 
 `analyze_results` is not read-only: it creates a new append-only analysis
 directory and never overwrites an earlier analysis artifact.
@@ -76,6 +78,14 @@ seal, revalidates the versioned `RankerResultSummary`, and does not create,
 rewrite, or recompute an analysis. Missing and legacy unsealed results are
 domain-state rejections; malformed or tampered sealed evidence is a
 `SCIENTIFIC_RESULT_INVALID` adapter failure.
+
+`list_tasks` is read-only and workspace-scoped. It returns a deterministic
+page of valid managed task names plus lifecycle and sealed-result availability.
+`offset` must be non-negative and `limit` is bounded to 1--100. One malformed
+task is marked invalid without hiding other tasks. Unsafe names, files, and
+symbolic-link bundles are not published. The external projection omits
+workspace and bundle paths, stored request text, timestamps, result prose, and
+internal failure details.
 
 ## Untrusted request boundary
 
@@ -256,16 +266,17 @@ The v0.6 slices add discovery, schema enforcement, trusted in-process
 authorization, a stable adapter failure contract, and one local read-only MCP
 adapter without changing:
 
-- the eight pre-existing Tool function signatures;
+- the nine pre-existing Tool function signatures;
 - scoring, ranking, or screening behavior;
 - the frozen Ranker resources;
 - task execution or scientific completion semantics;
 - the optional built-in Agent architecture.
 
-The MCP adapter accepts only managed `task_name` values inside one
-BinderRanker-initialized workspace. It exposes `get_current_plan`,
-`get_task_status`, `inspect_dataset`, and `get_result_summary`, calls this Tool
-API directly, maps successes into explicit path-free external views, and maps
+The MCP adapter is bound to one BinderRanker-initialized workspace. Task-level
+calls accept only managed `task_name` values; `list_tasks` needs only bounded
+pagination. It exposes `get_current_plan`, `get_task_status`,
+`inspect_dataset`, `get_result_summary`, and `list_tasks`, calls this Tool API
+directly, maps successes into explicit path-free external views, and maps
 failures through `AdapterErrorEnvelope` with MCP `isError=true`. Result-summary
 responses are bounded to 1--100 candidates and omit all artifact paths, source
 paths, stored project text, and report prose. The optional dependency is

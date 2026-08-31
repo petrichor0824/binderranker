@@ -51,6 +51,7 @@ async def verify() -> None:
             "get_task_status",
             "inspect_dataset",
             "get_result_summary",
+            "list_tasks",
         ]
         assert all(
             tool.annotations is not None
@@ -66,6 +67,19 @@ async def verify() -> None:
         assert status.structured_content is not None
         assert status.structured_content["current_stage"] == "EMPTY"
         assert str(root.resolve()) not in json.dumps(status.structured_content)
+
+        task_list = await client.call_tool(
+            "list_tasks",
+            {"offset": 0, "limit": 20},
+        )
+        assert task_list.is_error is False
+        assert task_list.structured_content is not None
+        assert task_list.structured_content["tasks"][0]["task_name"] == (
+            "smoke_task"
+        )
+        assert str(root.resolve()) not in json.dumps(
+            task_list.structured_content
+        )
 
         rejected = await client.call_tool(
             "inspect_dataset",
@@ -108,9 +122,16 @@ assert subprocess_probe["tool_names"] == [
     "get_task_status",
     "inspect_dataset",
     "get_result_summary",
+    "list_tasks",
 ]
 assert subprocess_probe["all_tools_read_only"] is True
 assert subprocess_probe["protected_tools_absent"] is True
+assert subprocess_probe["task_list_call"] == {
+    "ok": True,
+    "total_task_count": 1,
+    "returned_task_count": 1,
+    "contains_probe_task": True,
+}
 assert subprocess_probe["status_call"] == {
     "ok": True,
     "current_stage": "EMPTY",
@@ -164,7 +185,7 @@ assert package_path.is_relative_to(environment_root), (
 )
 
 print(
-    "PASS: installed BinderRanker MCP extra exposed four read-only tools, "
+    "PASS: installed BinderRanker MCP extra exposed five read-only tools, "
     "passed the real stdio subprocess contract, returned structured "
     "path-free evidence, preserved stable errors, and passed the local "
     "private-tunnel readiness contract"

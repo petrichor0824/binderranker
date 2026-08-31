@@ -78,7 +78,7 @@ The clean installation verifies that:
   computes its evaluation-only fixed-budget BinderRanker/baseline report, and
   builds target-level removal-sensitivity and fixture-only readiness reports;
 - the versioned Tool API catalog imports from the installed Wheel, describes
-  all nine operations, and keeps provider identity and protected approval or
+  all ten operations, and keeps provider identity and protected approval or
   execution facts out of untrusted request schemas;
 - the trusted Tool runtime imports from the installed Wheel and declares its
   opaque, SHA256-bound, short-lived, atomically single-use authorization

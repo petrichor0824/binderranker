@@ -16,6 +16,7 @@ from protein_design_agent.adapters.read_only import (
     DatasetInspectionAdapterResponse,
     ReadOnlyToolAdapter,
     ResultSummaryAdapterResponse,
+    TaskListAdapterResponse,
     TaskStatusAdapterResponse,
 )
 from protein_design_agent.agent.tool_adapter_errors import AdapterErrorEnvelope
@@ -42,6 +43,23 @@ ResultLimitArgument: TypeAlias = Annotated[
             "Maximum number of candidates to return in engineering-rank "
             "order. The full sealed result remains unchanged."
         ),
+    ),
+]
+
+TaskListOffsetArgument: TypeAlias = Annotated[
+    int,
+    Field(
+        ge=0,
+        description="Zero-based offset into the deterministic task list.",
+    ),
+]
+
+TaskListLimitArgument: TypeAlias = Annotated[
+    int,
+    Field(
+        ge=1,
+        le=100,
+        description="Maximum number of managed tasks to return.",
     ),
 ]
 
@@ -73,6 +91,10 @@ class ResultSummaryMCPOutput(
     _ObjectMCPOutput[ResultSummaryAdapterResponse]
 ):
     """MCP structured output for ``get_result_summary``."""
+
+
+class TaskListMCPOutput(_ObjectMCPOutput[TaskListAdapterResponse]):
+    """MCP structured output for ``list_tasks``."""
 
 
 _READ_ONLY_ANNOTATIONS = ToolAnnotations(
@@ -117,11 +139,11 @@ def create_mcp_server(workspace_dir: Path) -> MCPServer:
         "BinderRanker",
         version=_binderranker_version(),
         instructions=(
-            "Read-only access to managed BinderRanker task plans, lifecycle "
-            "status, deterministic dataset inspection, and integrity-verified "
-            "result summaries. This server does not prepare, approve, execute, "
-            "or create analyses. BinderRanker scientific performance remains "
-            "unvalidated pending real data."
+            "Read-only access to managed BinderRanker task discovery, plans, "
+            "lifecycle status, deterministic dataset inspection, and "
+            "integrity-verified result summaries. This server does not prepare, "
+            "approve, execute, or create analyses. BinderRanker scientific "
+            "performance remains unvalidated pending real data."
         ),
     )
 
@@ -172,6 +194,18 @@ def create_mcp_server(workspace_dir: Path) -> MCPServer:
             adapter.get_result_summary(task_name, limit=limit)
         )
 
+    @server.tool(
+        title="List BinderRanker managed tasks",
+        annotations=_READ_ONLY_ANNOTATIONS,
+    )
+    def list_tasks(
+        offset: TaskListOffsetArgument = 0,
+        limit: TaskListLimitArgument = 20,
+    ) -> Annotated[CallToolResult, TaskListMCPOutput]:
+        """Discover task names and readable lifecycle/result availability."""
+
+        return _call_result(adapter.list_tasks(offset=offset, limit=limit))
+
     @server.resource(
         "binderranker://adapter/capabilities",
         title="BinderRanker adapter capabilities",
@@ -194,6 +228,7 @@ __all__ = [
     "CurrentPlanMCPOutput",
     "DatasetInspectionMCPOutput",
     "ResultSummaryMCPOutput",
+    "TaskListMCPOutput",
     "TaskStatusMCPOutput",
     "create_mcp_server",
     "run_mcp_server",

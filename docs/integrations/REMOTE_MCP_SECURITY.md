@@ -30,7 +30,7 @@ service.
 | Boundary | Owner | BinderRanker guarantee |
 | --- | --- | --- |
 | Scientific state and managed task paths | BinderRanker | One initialized workspace per process; external callers submit only `task_name` |
-| Tool registration and result projection | BinderRanker | Four read-only tools; no host paths, raw request text, or protected operations |
+| Tool registration and result projection | BinderRanker | Five read-only tools; no host paths, raw request text, or protected operations |
 | Tunnel runtime authentication | OpenAI Platform and `tunnel-client` operator | Not accepted, stored, or inferred by BinderRanker |
 | Organization/workspace tunnel access | OpenAI Platform/ChatGPT administration | Not locally observable; reported as unverified |
 | Model Tool approval | Agent host/developer | Useful host policy, but not BinderRanker trusted execution authorization |
@@ -38,7 +38,7 @@ service.
 
 The current adapter is single trust domain. Every caller that can reach the
 configured tunnel can read the same managed BinderRanker workspace through the
-same four path-free tools. There is no per-user workspace routing or
+same five path-free tools. There is no per-user workspace routing or
 BinderRanker-side identity contract.
 
 ## Threat analysis
@@ -67,9 +67,9 @@ Threat: an Agent calls preparation, approval, execution, or analysis-write
 operations through the tunnel.
 
 Control: those operations are not registered. The MCP server exposes only
-`get_current_plan`, `get_task_status`, `inspect_dataset`, and the sealed,
-read-only `get_result_summary`. Host-side MCP approval cannot create BinderRanker's
-in-process authorization capability.
+`get_current_plan`, `get_task_status`, `inspect_dataset`, the sealed read-only
+`get_result_summary`, and bounded read-only `list_tasks`. Host-side MCP
+approval cannot create BinderRanker's in-process authorization capability.
 
 ### Cross-tenant access
 
@@ -125,7 +125,7 @@ A successful report has status
 - the BinderRanker workspace is initialized and path-safe;
 - the supported MCP SDK major version is installed;
 - the server is local stdio with no public listener;
-- exactly four read-only operations remain exposed;
+- exactly five read-only operations remain exposed;
 - protected operations and trusted confirmation remain unavailable.
 
 The report intentionally keeps these fields false:

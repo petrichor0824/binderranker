@@ -15,6 +15,7 @@ EXPECTED_LOCAL_HOST_TOOLS = (
     "get_task_status",
     "inspect_dataset",
     "get_result_summary",
+    "list_tasks",
 )
 PROTECTED_TOOLS = {
     "provide_information",
@@ -111,6 +112,24 @@ async def verify_local_mcp_host(
         if not all_tools_read_only:
             raise RuntimeError("MCP Tool annotations are not read-only")
 
+        task_list = await client.call_tool(
+            "list_tasks",
+            {"offset": 0, "limit": 20},
+        )
+        if task_list.is_error or task_list.structured_content is None:
+            raise RuntimeError("read-only task discovery call failed")
+        listed_tasks = task_list.structured_content.get("tasks")
+        if (
+            task_list.structured_content.get("ok") is not True
+            or not isinstance(listed_tasks, list)
+            or not any(
+                isinstance(item, dict)
+                and item.get("task_name") == task_name
+                for item in listed_tasks
+            )
+        ):
+            raise RuntimeError("probe task missing from task discovery")
+
         status = await client.call_tool(
             "get_task_status",
             {"task_name": task_name},
@@ -174,6 +193,7 @@ async def verify_local_mcp_host(
             raise RuntimeError("unexpected MCP capability boundary")
 
         raw_responses = (
+            task_list.structured_content,
             status.structured_content,
             rejected.structured_content,
             result_rejected.structured_content,
@@ -199,6 +219,16 @@ async def verify_local_mcp_host(
             "protected_tools_absent": not bool(
                 PROTECTED_TOOLS.intersection(tool_names)
             ),
+            "task_list_call": {
+                "ok": task_list.structured_content.get("ok"),
+                "total_task_count": task_list.structured_content.get(
+                    "total_task_count"
+                ),
+                "returned_task_count": task_list.structured_content.get(
+                    "returned_task_count"
+                ),
+                "contains_probe_task": True,
+            },
             "status_call": {
                 "ok": status.structured_content.get("ok"),
                 "current_stage": status.structured_content.get(

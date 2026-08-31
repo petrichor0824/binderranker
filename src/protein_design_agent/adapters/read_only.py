@@ -49,6 +49,7 @@ READ_ONLY_ADAPTER_OPERATIONS = (
     "get_task_status",
     "inspect_dataset",
     "get_result_summary",
+    "list_tasks",
 )
 DEFERRED_ADAPTER_OPERATIONS = (
     "provide_information",
@@ -97,6 +98,13 @@ class ResultSummaryRequest(ManagedTaskRequest):
     limit: int = Field(default=20, ge=1, le=100)
 
 
+class TaskListRequest(_StrictAdapterView):
+    """Bounded task-discovery request for the configured workspace."""
+
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=20, ge=1, le=100)
+
+
 class ReadOnlyAdapterCapabilities(_StrictAdapterView):
     """Machine-readable safety and capability profile for the adapter."""
 
@@ -104,9 +112,11 @@ class ReadOnlyAdapterCapabilities(_StrictAdapterView):
     adapter_name: Literal["BinderRanker read-only MCP adapter"] = (
         "BinderRanker read-only MCP adapter"
     )
-    tool_api_contract_version: Literal["0.2"] = TOOL_API_CONTRACT_VERSION
+    tool_api_contract_version: Literal["0.3"] = TOOL_API_CONTRACT_VERSION
     transport: Literal["MCP_STDIO"] = "MCP_STDIO"
-    request_scope: Literal["MANAGED_TASK_NAME"] = "MANAGED_TASK_NAME"
+    request_scope: Literal["BOUND_WORKSPACE_MANAGED_TASKS"] = (
+        "BOUND_WORKSPACE_MANAGED_TASKS"
+    )
     exposed_operations: tuple[str, ...] = READ_ONLY_ADAPTER_OPERATIONS
     deferred_operations: tuple[str, ...] = DEFERRED_ADAPTER_OPERATIONS
     read_only: Literal[True] = True
@@ -311,6 +321,43 @@ class ResultSummaryAdapterResult(_StrictAdapterView):
     candidates_by_engineering_rank: tuple[RankedCandidateAdapterView, ...]
 
 
+class TaskDiscoveryAdapterItem(_StrictAdapterView):
+    """Path-free lifecycle and sealed-result availability for one task."""
+
+    task_name: str = Field(min_length=1, max_length=64)
+    lifecycle_status: Literal["AVAILABLE", "INVALID"]
+    current_stage: SafeScientificToken | None = None
+    sealed_result_status: Literal[
+        "SEALED_VERIFIED",
+        "NOT_AVAILABLE",
+        "INVALID",
+    ]
+    candidate_count: int | None = Field(default=None, ge=1)
+
+    @field_validator("task_name")
+    @classmethod
+    def validate_discovered_name(cls, value: str) -> str:
+        try:
+            return validate_task_name(value)
+        except TaskPathError as exc:
+            raise ValueError("invalid discovered task name") from exc
+
+
+class TaskListAdapterResult(_StrictAdapterView):
+    """Bounded path-free inventory for the configured workspace."""
+
+    schema_version: Literal["0.1"] = READ_ONLY_ADAPTER_SCHEMA_VERSION
+    ok: Literal[True] = True
+    operation: Literal["list_tasks"] = "list_tasks"
+    total_task_count: int = Field(ge=0)
+    offset: int = Field(ge=0)
+    limit: int = Field(ge=1, le=100)
+    returned_task_count: int = Field(ge=0)
+    truncated: bool
+    next_offset: int | None = Field(default=None, ge=0)
+    tasks: tuple[TaskDiscoveryAdapterItem, ...]
+
+
 CurrentPlanAdapterResponse: TypeAlias = (
     CurrentPlanAdapterResult | AdapterErrorEnvelope
 )
@@ -322,6 +369,9 @@ DatasetInspectionAdapterResponse: TypeAlias = (
 )
 ResultSummaryAdapterResponse: TypeAlias = (
     ResultSummaryAdapterResult | AdapterErrorEnvelope
+)
+TaskListAdapterResponse: TypeAlias = (
+    TaskListAdapterResult | AdapterErrorEnvelope
 )
 
 
@@ -533,6 +583,29 @@ def project_result_summary(
     )
 
 
+def project_task_list(
+    result: tool_api.WorkspaceTaskDiscoveryResult,
+) -> TaskListAdapterResult:
+    return TaskListAdapterResult(
+        total_task_count=result.total_task_count,
+        offset=result.offset,
+        limit=result.limit,
+        returned_task_count=result.returned_task_count,
+        truncated=result.truncated,
+        next_offset=result.next_offset,
+        tasks=tuple(
+            TaskDiscoveryAdapterItem(
+                task_name=item.task_name,
+                lifecycle_status=item.lifecycle_status,
+                current_stage=item.current_stage,
+                sealed_result_status=item.sealed_result_status,
+                candidate_count=item.candidate_count,
+            )
+            for item in result.tasks
+        ),
+    )
+
+
 class ReadOnlyToolAdapter:
     """Invoke safe read-only Tool operations within one managed workspace."""
 
@@ -563,6 +636,38 @@ class ReadOnlyToolAdapter:
 
     def capabilities(self) -> ReadOnlyAdapterCapabilities:
         return ReadOnlyAdapterCapabilities()
+
+    def list_tasks(
+        self,
+        *,
+        offset: object = 0,
+        limit: object = 20,
+    ) -> TaskListAdapterResponse:
+        return invoke_adapter_boundary(
+            operation="list_tasks",
+            call=lambda: self._list_tasks(offset=offset, limit=limit),
+        )
+
+    def _list_tasks(
+        self,
+        *,
+        offset: object,
+        limit: object,
+    ) -> TaskListAdapterResult:
+        request = TaskListRequest.model_validate(
+            {"offset": offset, "limit": limit}
+        )
+        result = tool_api.list_tasks(
+            self._workspace,
+            offset=request.offset,
+            limit=request.limit,
+        )
+        try:
+            return project_task_list(result)
+        except ValidationError as exc:
+            raise AdapterProjectionError(
+                "task inventory contains unsafe external-view fields"
+            ) from exc
 
     def _bundle_for(self, request: ManagedTaskRequest) -> Path:
         raw_bundle = self._workspace / "runs" / request.task_name
@@ -676,11 +781,14 @@ class ReadOnlyToolAdapter:
         self,
         operation: object,
         *,
-        task_name: object,
+        task_name: object = None,
+        offset: object = 0,
         limit: object = 20,
     ) -> BaseModel:
         """Dispatch a published read-only operation without dynamic imports."""
 
+        if operation == "list_tasks":
+            return self.list_tasks(offset=offset, limit=limit)
         if operation == "get_current_plan":
             return self.get_current_plan(task_name)
         if operation == "get_task_status":
@@ -718,10 +826,15 @@ __all__ = [
     "ResultSummaryAdapterResponse",
     "ResultSummaryAdapterResult",
     "ResultSummaryRequest",
+    "TaskDiscoveryAdapterItem",
+    "TaskListAdapterResponse",
+    "TaskListAdapterResult",
+    "TaskListRequest",
     "TaskStatusAdapterResponse",
     "TaskStatusAdapterResult",
     "project_current_plan",
     "project_dataset_inspection",
     "project_result_summary",
+    "project_task_list",
     "project_task_status",
 ]

@@ -9,7 +9,7 @@ used by the corresponding release.
 
 ### Added
 
-- Added a versioned, machine-readable catalog for all nine public BinderRanker
+- Added a versioned, machine-readable catalog for all ten public BinderRanker
   Tool operations, with deterministic input/output JSON Schemas, explicit
   side-effect classes, host-local path semantics, and trusted host-field
   declarations for future HTTP, MCP, workflow, and external-Agent adapters.
@@ -38,6 +38,13 @@ used by the corresponding release.
   analysis, revalidates the versioned result model, returns a bounded
   engineering-rank view, and rejects missing, unsealed, malformed, or tampered
   artifacts without exposing host paths or stored free text.
+- Added `list_tasks` as a fifth read-only MCP operation and a tenth Tool API
+  operation. It returns deterministic, bounded pages of safe managed task
+  names, lifecycle availability, sealed-result availability, and candidate
+  counts without requiring the caller to know a task name in advance.
+- Task discovery skips unsafe names and symbolic-link bundles, isolates
+  malformed task state instead of failing the whole inventory, and omits host
+  paths, stored request text, timestamps, report prose, and internal errors.
 - Added a machine-readable MCP capability resource that explicitly declares
   deferred mutation, approval, execution, and analysis-write operations plus
   the unchanged `SCIENTIFIC_VALIDATION_PENDING` evidence boundary.
@@ -50,7 +57,7 @@ used by the corresponding release.
   trust-domain deployment, credential separation, disclosure controls,
   approval confusion, audit ownership, and deferred public/multi-tenant gates.
 - Added an API-key-free local Codex MCP runbook and forward-safe configuration
-  template with an explicit four-Tool allow list and `writes` approval mode.
+  template with an explicit five-Tool allow list and `writes` approval mode.
 - Added a real stdio subprocess interoperability probe that verifies MCP server
   name/version/instructions, Tool discovery, success and fail-closed calls,
   capability boundaries, and path-free evidence outside the server process;
@@ -86,7 +93,7 @@ used by the corresponding release.
 ### Fixed
 
 - Fixed local Codex Tool discovery on the MCP `2025-06-18` handshake path by
-  keeping all four structured Tool output schemas object-rooted. The generic
+  keeping all five structured Tool output schemas object-rooted. The generic
   subprocess verifier now exercises the legacy handshake family instead of
   relying only on the MCP SDK's newer default protocol path.
 
@@ -96,6 +103,11 @@ used by the corresponding release.
   side-effect and authorization classification, strict request validation,
   host-field isolation, schema completeness, and existing Tool result-model
   import compatibility.
+- Added task-discovery regressions for deterministic pagination, read-only
+  filesystem behavior, invalid-name and symlink exclusion, malformed-task
+  isolation, sealed-result availability, path-free projections, legacy MCP
+  schemas, clean installed-Wheel subprocess calls, and an isolated real Codex
+  call over synthetic task metadata.
 - Added authorization regressions covering absent confirmation, opaque
   transport, host-fact injection, replay, concurrency, expiry, cross-broker,
   wrong-action, wrong-task, changed-review-resource, and unvalidated-request
@@ -109,7 +121,7 @@ used by the corresponding release.
   structured success output, MCP `isError` failures, capability discovery, and
   the absence of approval and execution tools.
 - Added explicit legacy-client and raw `2025-06-18` stdio regressions for the
-  four object-rooted MCP output schemas, matching the protocol path exercised
+  five object-rooted MCP output schemas, matching the protocol path exercised
   by the current local Codex Host.
 - Added a clean installed-Wheel MCP smoke test after installing the optional
   extra, while retaining a base-Wheel smoke assertion that the adapter core is

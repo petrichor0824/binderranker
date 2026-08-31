@@ -205,6 +205,11 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
   stored project text 与 report prose。缺失或 legacy 未封存结果按任务状态拒绝，篡改或
   malformed sealed evidence 归类为 `SCIENTIFIC_RESULT_INVALID`；不会创建分析、执行 Ranker
   或改变科学结论。
+- Phase 7 状态：Tool API contract 已加法升级到 `0.3` 和 10 个操作；新增
+  `list_tasks` 作为第五个只读 MCP Tool。外部 Agent 不再需要预先知道
+  `task_name`，可按确定性顺序分页发现受管任务，并读取 lifecycle 与封存结果的
+  可用性。输出不含 workspace/bundle 路径、存储请求文本、时间戳、报告正文或内部
+  错误；非法名称与 symlink 目录不公开，单个损坏任务不会阻断其他任务发现。
 - 远程 Tunnel 状态：明确记为 `EXTERNAL_CREDENTIAL_PENDING`，不是本地代码失败；不以本机
   Host 证据替代 Tunnel ID、runtime key、组织权限或真实远程调用证据。
 

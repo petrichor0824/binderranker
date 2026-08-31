@@ -17,6 +17,7 @@ from protein_design_agent.agent.tool_api_contract import (
     RequestApprovalToolRequest,
     TaskStatusResult,
     ToolAPICatalog,
+    WorkspaceTaskListToolRequest,
     get_tool_api_catalog,
 )
 from protein_design_agent.agent.tool_adapter_errors import (
@@ -34,6 +35,7 @@ EXPECTED_TOOLS = (
     "execute_ranker",
     "analyze_results",
     "get_result_summary",
+    "list_tasks",
 )
 
 
@@ -42,10 +44,11 @@ def tool_by_name(name: str):
     return next(tool for tool in catalog.tools if tool.name == name)
 
 
-def test_catalog_has_all_nine_public_tools_in_stable_order() -> None:
+def test_catalog_has_all_ten_public_tools_in_stable_order() -> None:
     catalog = get_tool_api_catalog()
 
-    assert catalog.tool_count == 9
+    assert catalog.tool_count == 10
+    assert catalog.contract_version == "0.3"
     assert tuple(tool.name for tool in catalog.tools) == EXPECTED_TOOLS
 
     assert {
@@ -60,6 +63,7 @@ def test_catalog_has_all_nine_public_tools_in_stable_order() -> None:
         "execute_ranker": "EXECUTING",
         "analyze_results": "APPEND_ONLY_ARTIFACT",
         "get_result_summary": "READ_ONLY",
+        "list_tasks": "READ_ONLY",
     }
 
 
@@ -170,6 +174,14 @@ def test_request_models_are_strict_and_frozen() -> None:
             unknown=True,  # type: ignore[call-arg]
         )
 
+    task_list_request = WorkspaceTaskListToolRequest(
+        workspace_dir=Path("workspace"),
+        offset=5,
+        limit=10,
+    )
+    assert task_list_request.offset == 5
+    assert task_list_request.limit == 10
+
 
 def test_catalog_rejects_count_mismatch_and_duplicate_names() -> None:
     catalog = get_tool_api_catalog()
@@ -179,7 +191,7 @@ def test_catalog_rejects_count_mismatch_and_duplicate_names() -> None:
 
     duplicated = catalog.tools[:-1] + (catalog.tools[0],)
     with pytest.raises(ValidationError, match="tool names must be unique"):
-        ToolAPICatalog(tool_count=9, tools=duplicated)
+        ToolAPICatalog(tool_count=10, tools=duplicated)
 
     unsafe_protected_tool = catalog.tools[5].model_copy(
         update={"trusted_runtime_entrypoint": None}
@@ -193,14 +205,14 @@ def test_catalog_rejects_count_mismatch_and_duplicate_names() -> None:
         ValidationError,
         match="trusted runtime entrypoint",
     ):
-        ToolAPICatalog(tool_count=9, tools=unsafe_tools)
+        ToolAPICatalog(tool_count=10, tools=unsafe_tools)
 
     with pytest.raises(
         ValidationError,
         match="adapter error codes",
     ):
         ToolAPICatalog(
-            tool_count=9,
+            tool_count=10,
             tools=catalog.tools,
             adapter_error_codes=("INTERNAL_ERROR",),
         )

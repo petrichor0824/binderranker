@@ -145,6 +145,7 @@ Current examples include:
 - `get_current_plan`
 - `get_task_status`
 - `get_result_summary`
+- `list_tasks`
 - `request_approval`
 - `execute_ranker`
 - `analyze_results`

@@ -231,6 +231,7 @@ _PUBLISHED_REQUEST_ROOT_FIELDS = frozenset(
         "bundle_dir",
         "extraction",
         "limit",
+        "offset",
         "raw_text",
         "supplement_text",
         "task_name",

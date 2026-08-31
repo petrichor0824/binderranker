@@ -32,6 +32,7 @@ from protein_design_agent.agent.tool_api import (
     CurrentPlanResult,
     SealedResultSummaryResult,
     TaskStatusResult,
+    WorkspaceTaskDiscoveryResult,
 )
 from protein_design_agent.agent.tool_adapter_errors import (
     ADAPTER_ERROR_CODES,
@@ -41,7 +42,7 @@ from protein_design_agent.agent.tool_adapter_errors import (
 )
 
 
-TOOL_API_CONTRACT_VERSION = "0.2"
+TOOL_API_CONTRACT_VERSION = "0.3"
 TOOL_API_SCHEMA_VERSION = "0.1"
 UNTRUSTED_REQUEST_FORBIDDEN_FIELDS = frozenset(
     {
@@ -69,6 +70,14 @@ class BundleToolRequest(_StrictContractModel):
     """Adapter-visible request for a tool scoped to one task bundle."""
 
     bundle_dir: Path
+
+
+class WorkspaceTaskListToolRequest(_StrictContractModel):
+    """Adapter-visible bounded inventory request for one workspace."""
+
+    workspace_dir: Path
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=20, ge=1, le=100)
 
 
 class ProvideInformationToolRequest(BundleToolRequest):
@@ -129,7 +138,7 @@ class ToolAPICatalog(_StrictContractModel):
 
     schema_version: Literal["0.1"] = TOOL_API_SCHEMA_VERSION
     api_name: Literal["BinderRanker Tool API"] = "BinderRanker Tool API"
-    contract_version: Literal["0.2"] = TOOL_API_CONTRACT_VERSION
+    contract_version: Literal["0.3"] = TOOL_API_CONTRACT_VERSION
 
     path_semantics: Literal["HOST_LOCAL_PATH"] = "HOST_LOCAL_PATH"
     scientific_evidence_status: Literal[
@@ -259,7 +268,7 @@ def _operation(
 
 
 def get_tool_api_catalog() -> ToolAPICatalog:
-    """Build the deterministic v0.2 contract for all nine public tools."""
+    """Build the deterministic v0.3 contract for all ten public tools."""
 
     tools = (
         _operation(
@@ -351,6 +360,17 @@ def get_tool_api_catalog() -> ToolAPICatalog:
             request_model=BundleToolRequest,
             response_model=SealedResultSummaryResult,
         ),
+        _operation(
+            name="list_tasks",
+            summary=(
+                "List a bounded page of managed tasks and their readable "
+                "lifecycle and sealed-result availability state."
+            ),
+            side_effect="READ_ONLY",
+            authorization_requirement="NONE",
+            request_model=WorkspaceTaskListToolRequest,
+            response_model=WorkspaceTaskDiscoveryResult,
+        ),
     )
 
     return ToolAPICatalog(tool_count=len(tools), tools=tools)
@@ -372,5 +392,7 @@ __all__ = [
     "ToolAuthorizationRequirement",
     "ToolOperationContract",
     "ToolSideEffect",
+    "WorkspaceTaskDiscoveryResult",
+    "WorkspaceTaskListToolRequest",
     "get_tool_api_catalog",
 ]

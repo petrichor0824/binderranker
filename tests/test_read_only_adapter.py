@@ -10,6 +10,7 @@ from protein_design_agent.adapters.read_only import (
     ReadOnlyAdapterConfigurationError,
     ReadOnlyToolAdapter,
     ResultSummaryAdapterResult,
+    TaskListAdapterResult,
     TaskStatusAdapterResult,
 )
 from protein_design_agent.agent.dataset_advisor import (
@@ -323,11 +324,14 @@ def test_adapter_capability_profile_is_explicit_and_json_safe(
     capabilities = ReadOnlyToolAdapter(workspace).capabilities()
     payload = capabilities.model_dump(mode="json")
 
+    assert payload["tool_api_contract_version"] == "0.3"
+    assert payload["request_scope"] == "BOUND_WORKSPACE_MANAGED_TASKS"
     assert payload["exposed_operations"] == [
         "get_current_plan",
         "get_task_status",
         "inspect_dataset",
         "get_result_summary",
+        "list_tasks",
     ]
     assert payload["mutating_operations_exposed"] is False
     assert payload["authorization_operations_exposed"] is False

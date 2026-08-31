@@ -60,9 +60,16 @@ def test_local_mcp_host_probe_uses_real_stdio_subprocess(
         "get_task_status",
         "inspect_dataset",
         "get_result_summary",
+        "list_tasks",
     ]
     assert report["all_tools_read_only"] is True
     assert report["protected_tools_absent"] is True
+    assert report["task_list_call"] == {
+        "ok": True,
+        "total_task_count": 1,
+        "returned_task_count": 1,
+        "contains_probe_task": True,
+    }
     assert report["status_call"] == {
         "ok": True,
         "current_stage": "EMPTY",
@@ -189,11 +196,12 @@ def test_stdio_tool_discovery_supports_codex_2025_06_18_protocol(
         "get_task_status",
         "inspect_dataset",
         "get_result_summary",
+        "list_tasks",
     ]
     assert [
         tool["outputSchema"]["type"]
         for tool in tools_page["result"]["tools"]
-    ] == ["object", "object", "object", "object"]
+    ] == ["object", "object", "object", "object", "object"]
 
 
 def test_codex_project_config_example_is_forward_safe() -> None:
@@ -220,6 +228,7 @@ def test_codex_project_config_example_is_forward_safe() -> None:
         "get_task_status",
         "inspect_dataset",
         "get_result_summary",
+        "list_tasks",
     ]
     assert server["default_tools_approval_mode"] == "writes"
     assert server["required"] is False

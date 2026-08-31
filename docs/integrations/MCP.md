@@ -7,7 +7,7 @@ or provenance logic.
 
 ## Current scope
 
-The current v0.6 adapter exposes exactly four model-callable tools:
+The current v0.6 adapter exposes exactly five model-callable tools:
 
 | MCP tool | Behavior |
 | --- | --- |
@@ -15,6 +15,7 @@ The current v0.6 adapter exposes exactly four model-callable tools:
 | `get_task_status` | Read planning and execution lifecycle state |
 | `inspect_dataset` | Run deterministic, read-only inspection of the dataset recorded by the task |
 | `get_result_summary` | Read a bounded engineering-rank view from the latest SHA256-sealed deterministic analysis |
+| `list_tasks` | Discover a bounded deterministic page of managed task names and lifecycle/result availability |
 
 The server also exposes the application-controlled resource
 `binderranker://adapter/capabilities`. It declares the exposed and deferred
@@ -45,6 +46,14 @@ An empty task or legacy unsealed result fails closed. A malformed or tampered
 sealed artifact returns the shared `SCIENTIFIC_RESULT_INVALID` error. This
 integrity gate establishes that the returned evidence matches a sealed local
 analysis; it does not establish biological predictive accuracy.
+
+`list_tasks` accepts `offset >= 0` and `limit` from 1 to 100 (default 20), so
+an Agent can discover tasks before it knows a `task_name`. It lists only valid,
+non-symlink managed task directories in deterministic order. Each item reports
+lifecycle availability and sealed-result availability; a malformed task is
+marked `INVALID` without hiding other tasks. The response contains no
+workspace path, bundle path, stored request text, timestamp, report prose, or
+internal error detail.
 
 ## Why MCP was selected
 
@@ -136,8 +145,9 @@ evidence.
 
 ## Workspace and disclosure boundary
 
-External calls accept `task_name`, not `bundle_dir` or another path. The
-adapter resolves the task only as `<workspace>/runs/<task_name>` and rejects:
+Task-scoped external calls accept `task_name`, not `bundle_dir` or another
+path. `list_tasks` accepts only bounded pagination. The adapter resolves a
+selected task only as `<workspace>/runs/<task_name>` and rejects:
 
 - absolute paths;
 - `.` and `..` traversal;

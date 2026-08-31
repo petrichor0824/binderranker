@@ -8,6 +8,7 @@ from protein_design_agent.adapters.mcp_server import create_mcp_server
 from protein_design_agent.adapters.read_only import (
     ReadOnlyToolAdapter,
     ResultSummaryAdapterResult,
+    TaskListAdapterResult,
 )
 from protein_design_agent.agent.analysis_artifacts import sha256_file
 from protein_design_agent.agent.ranker_result_parser import (
@@ -216,6 +217,11 @@ def test_adapter_returns_bounded_path_free_ranked_evidence(
     assert "private project" not in encoded
     assert "deterministic policy text" not in encoded
 
+    inventory = ReadOnlyToolAdapter(workspace).list_tasks()
+    assert isinstance(inventory, TaskListAdapterResult)
+    assert inventory.tasks[0].sealed_result_status == "SEALED_VERIFIED"
+    assert inventory.tasks[0].candidate_count == 2
+
 
 def test_adapter_rejects_missing_unsealed_and_tampered_results(
     tmp_path: Path,
@@ -254,6 +260,11 @@ def test_adapter_rejects_missing_unsealed_and_tampered_results(
     assert isinstance(tampered, AdapterErrorEnvelope)
     assert tampered.error.code == "SCIENTIFIC_RESULT_INVALID"
     assert str(tampered_workspace.resolve()) not in tampered.model_dump_json()
+
+    inventory = ReadOnlyToolAdapter(tampered_workspace).list_tasks()
+    assert isinstance(inventory, TaskListAdapterResult)
+    assert inventory.tasks[0].sealed_result_status == "INVALID"
+    assert inventory.tasks[0].candidate_count is None
 
 
 def test_adapter_rejects_malformed_but_hash_sealed_result(

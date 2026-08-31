@@ -167,6 +167,8 @@ The Tool API already includes:
 - `request_approval`
 - `execute_ranker`
 - `analyze_results`
+- `get_result_summary`
+- `list_tasks`
 
 Before adding an external adapter:
 

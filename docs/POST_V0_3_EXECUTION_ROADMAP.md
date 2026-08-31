@@ -798,6 +798,31 @@ This completes local read access to existing sealed ranking evidence. It does
 not create analyses, recompute scores, expose protected operations, establish
 remote Tunnel acceptance, or claim scientific performance.
 
+### Phase 7 task-discovery checkpoint — 2026-08-31
+
+The local external-Agent surface now supports path-free navigation before a
+caller knows a task name:
+
+- `list_tasks` is the tenth Tool API operation and fifth read-only MCP Tool;
+- contract version `0.3` adds only the workspace inventory request/result;
+- pagination is deterministic and bounded by `offset >= 0` and
+  `limit=1..100`;
+- only valid, non-symlink managed task directories are published;
+- one malformed lifecycle or sealed result is represented as unavailable or
+  invalid without hiding other tasks;
+- the external view omits workspace/bundle paths, stored request text,
+  timestamps, report prose, and internal error details;
+- the inventory reuses the shared task resolver, lifecycle parser, and sealed
+  result validation path instead of duplicating scientific logic.
+
+This checkpoint adds read-only navigation only. It does not add preparation,
+approval, execution, analysis writes, remote identity, or scientific claims.
+
+The full regression suite, release-asset verifier, clean installed-Wheel
+smokes, real stdio subprocess probe, and an isolated real Codex `list_tasks`
+call passed on 2026-08-31. The external call used only a synthetic empty task;
+real workspace task names were not disclosed.
+
 ## Acceptance test
 
 From a fresh environment:

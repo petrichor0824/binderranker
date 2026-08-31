@@ -359,6 +359,17 @@ This adds result consumption, not result generation: execution, analysis
 writes, authorization, remote identity, and scientific-performance claims
 remain unchanged.
 
+As of v0.6 Phase 7, `list_tasks` is the fifth read-only MCP Tool and the tenth
+Tool API operation. It removes the integration bootstrap gap where an external
+Agent had to know a task name before it could call BinderRanker. Discovery is
+workspace-bound, deterministic, paginated, and path-free. It reports only safe
+task names, lifecycle availability, sealed-result availability, and candidate
+counts for verified sealed results. Unsafe or symlinked task directories are
+not published, and one malformed task does not suppress healthy tasks. This is
+navigation metadata, not a second lifecycle or scientific-validation engine:
+the Tool API reuses `list_task_bundles`, `inspect_run_status`, and the sealed
+result reader.
+
 ---
 
 ## 7. The modes must be isolated at the interaction layer, not duplicated at the scientific layer

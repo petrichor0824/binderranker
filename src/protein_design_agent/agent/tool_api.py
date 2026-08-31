@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from protein_design_agent.agent.analysis_artifacts import (
     AnalysisArtifactError,
@@ -86,6 +86,13 @@ from protein_design_agent.schemas.agent_models import (
 from protein_design_agent.agent.tool_adapter_errors import (
     AdapterSafeError,
 )
+from protein_design_agent.agent.workspace_init import (
+    detect_existing_workspace,
+)
+from protein_design_agent.agent.workspace_tasks import (
+    TaskPathError,
+    list_task_bundles,
+)
 
 
 class ToolAPIError(AdapterSafeError):
@@ -136,6 +143,68 @@ class SealedResultSummaryResult(BaseModel):
     )
     provenance_status: Literal["SEALED_VERIFIED"] = "SEALED_VERIFIED"
     summary: RankerResultSummary
+
+
+class WorkspaceTaskDiscoveryItem(BaseModel):
+    """One managed task projected without stored request or result prose."""
+
+    task_name: str
+    bundle_dir: Path
+    lifecycle_status: Literal["AVAILABLE", "INVALID"]
+    current_stage: str | None = None
+    sealed_result_status: Literal[
+        "SEALED_VERIFIED",
+        "NOT_AVAILABLE",
+        "INVALID",
+    ]
+    candidate_count: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_sealed_result_state(self) -> "WorkspaceTaskDiscoveryItem":
+        if (self.sealed_result_status == "SEALED_VERIFIED") != (
+            self.candidate_count is not None
+        ):
+            raise ValueError(
+                "candidate_count must exist only for a sealed result"
+            )
+        if self.lifecycle_status == "AVAILABLE":
+            if self.current_stage is None:
+                raise ValueError("available lifecycle requires current_stage")
+        elif self.current_stage is not None:
+            raise ValueError("invalid lifecycle must not claim current_stage")
+        return self
+
+
+class WorkspaceTaskDiscoveryResult(BaseModel):
+    """Deterministic bounded task inventory for one managed workspace."""
+
+    schema_version: Literal["0.1"] = "0.1"
+    workspace_dir: Path
+    total_task_count: int = Field(ge=0)
+    offset: int = Field(ge=0)
+    limit: int = Field(ge=1, le=100)
+    returned_task_count: int = Field(ge=0)
+    truncated: bool
+    next_offset: int | None = Field(default=None, ge=0)
+    tasks: list[WorkspaceTaskDiscoveryItem]
+
+    @model_validator(mode="after")
+    def validate_pagination(self) -> "WorkspaceTaskDiscoveryResult":
+        if self.returned_task_count != len(self.tasks):
+            raise ValueError("returned_task_count must match tasks")
+        expected_truncated = (
+            self.offset + self.returned_task_count < self.total_task_count
+        )
+        if self.truncated != expected_truncated:
+            raise ValueError("truncated does not match task pagination")
+        expected_next = (
+            self.offset + self.returned_task_count
+            if self.truncated
+            else None
+        )
+        if self.next_offset != expected_next:
+            raise ValueError("next_offset does not match task pagination")
+        return self
 
 
 def get_current_plan(
@@ -232,6 +301,92 @@ def get_task_status(
             current_plan.planning_session
         ),
         run_status=run_status,
+    )
+
+
+def list_tasks(
+    workspace_dir: Path,
+    *,
+    offset: int = 0,
+    limit: int = 20,
+) -> WorkspaceTaskDiscoveryResult:
+    """List managed tasks without modifying or interpreting task state."""
+
+    if (
+        not isinstance(offset, int)
+        or isinstance(offset, bool)
+        or offset < 0
+    ):
+        raise ToolAPIError("任务列表 offset 必须是非负整数。")
+    if (
+        not isinstance(limit, int)
+        or isinstance(limit, bool)
+        or not 1 <= limit <= 100
+    ):
+        raise ToolAPIError("任务列表 limit 必须是 1 到 100 的整数。")
+
+    workspace = workspace_dir.expanduser().resolve()
+    if detect_existing_workspace(workspace) is None:
+        raise ToolAPIError("目录不是已初始化的 BinderRanker 工作空间。")
+
+    try:
+        bundles = list_task_bundles(workspace)
+    except (OSError, TaskPathError) as exc:
+        raise ToolAPIError("无法安全读取受管任务目录。") from exc
+
+    selected = bundles[offset : offset + limit]
+    items: list[WorkspaceTaskDiscoveryItem] = []
+
+    for bundle in selected:
+        try:
+            status = inspect_run_status(bundle)
+        except RunStatusError:
+            lifecycle_status: Literal["AVAILABLE", "INVALID"] = "INVALID"
+            current_stage = None
+        else:
+            lifecycle_status = "AVAILABLE"
+            current_stage = status.current_stage
+
+        try:
+            sealed = get_result_summary(bundle)
+        except ToolAPIError as exc:
+            sealed_result_status: Literal[
+                "SEALED_VERIFIED",
+                "NOT_AVAILABLE",
+                "INVALID",
+            ] = (
+                "INVALID"
+                if exc.adapter_error_code == "SCIENTIFIC_RESULT_INVALID"
+                else "NOT_AVAILABLE"
+            )
+            candidate_count = None
+        else:
+            sealed_result_status = "SEALED_VERIFIED"
+            candidate_count = sealed.summary.candidate_count
+
+        items.append(
+            WorkspaceTaskDiscoveryItem(
+                task_name=bundle.name,
+                bundle_dir=bundle,
+                lifecycle_status=lifecycle_status,
+                current_stage=current_stage,
+                sealed_result_status=sealed_result_status,
+                candidate_count=candidate_count,
+            )
+        )
+
+    returned = len(items)
+    total = len(bundles)
+    truncated = offset + returned < total
+    return WorkspaceTaskDiscoveryResult(
+        workspace_dir=workspace,
+        total_task_count=total,
+        offset=offset,
+        limit=limit,
+        returned_task_count=returned,
+        truncated=truncated,
+        next_offset=(offset + returned if truncated else None),
+        tasks=items,
     )
 
 
