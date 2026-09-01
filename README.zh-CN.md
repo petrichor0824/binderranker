@@ -2,6 +2,8 @@
 
 [English](README.md)
 
+[项目功能与成熟度详细报告（2026-09-01）](docs/PROJECT_STATUS_REPORT_2026-09-01.md)
+
 **生成式蛋白骨架候选的可解释排序与分层筛选工具**
 
 BinderRanker 用于在更昂贵的下游序列设计、结构/复合体预测、

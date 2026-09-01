@@ -2,6 +2,8 @@
 
 [简体中文](README.zh-CN.md)
 
+[Current functionality and maturity report (2026-09-01, Chinese)](docs/PROJECT_STATUS_REPORT_2026-09-01.md)
+
 **Interpretable Ranking and Layered Screening for Generated Protein Backbone Candidates**
 
 BinderRanker prioritizes generated protein backbone candidates before more
