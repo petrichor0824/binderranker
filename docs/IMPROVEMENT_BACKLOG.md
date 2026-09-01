@@ -29,13 +29,189 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
 - 兼容性：冻结 BinderRanker 算法和 Tool API 未修改；仅收紧无效科学结果的成功语义。
 - 完成版本：v0.3.1 stabilization。
 
+## Completed — v0.4 Scientific Transparency
+
+### Shared deterministic primary-score decomposition
+
+- 原问题：候选主分贡献此前只在可选模型解释路径临时计算，离线确定性结果摘要没有公开统一的公式、权重、贡献和重建证据。
+- 当前实现：从指标本体读取本次运行的审计权重；共享层计算候选直接主分项贡献，并验证其总和能重建记录的 `final_score_v4`。
+- 接入范围：确定性结果解析与可选模型解释共用同一逻辑；新报告公开分解证据，旧报告以 `UNAVAILABLE` 明确降级且不推断缺失公式。
+- 科学边界：贡献仅表示经验排序公式中的算术项，不是因果归因、结合能分解或跨靶点通用的重要性声明。
+- 不变项：不修改评分、排名、筛选条件、Tool 授权边界或冻结 Ranker 资源。
+- 目标阶段：v0.4.0 Workstream 7 第一切片。
+
+### Sealed human-readable deterministic analysis report
+
+- 原问题：`analyze-run` 已生成结构化结果摘要和失败差距 JSON，但离线用户仍需自行拼接多份产物才能审阅候选排名、分数贡献和允许公开的失败门槛证据。
+- 当前实现：新增不依赖模型或网络的 Markdown 报告，只组合已经验证的结果摘要与失败分析，不重复计算评分、排名、筛选或阈值。
+- 范围策略：`SMOKE_TEST_ONLY` 抑制不稳定的小样本动态阈值和差距；`EXPLORATORY` 与完整数据分析按各自权限展示批内差距，并明确其不代表生物机制。
+- Provenance：完成清单记录报告路径和 SHA256；报告被修改后完整性校验失败；没有报告的旧版分析清单继续按 legacy 语义读取。
+- 不变项：不修改评分、排名、筛选规则、Tool 授权边界或冻结 Ranker 资源。
+- 目标阶段：v0.4.0 Workstream 7 第二切片。
+
+### Deterministic adjacent-rank comparison evidence
+
+- 原问题：已有主分分解能够解释单个候选的分数来源，但用户仍需手工相减才能回答“候选 A 为什么在经验评分公式中排在相邻候选 B 前面”。
+- 当前实现：共享分解层逐项计算相邻候选的直接主分贡献差值，并要求差值之和精确重建记录的 `final_score_v4` 差；同时记录最大正向项、最大负向抵消项和重建误差。
+- 规模边界：默认只比较相邻排名，产物数量为 `N-1`，避免生成所有候选两两比较的平方级数据。
+- 兼容性：单候选明确标记为 `NOT_APPLICABLE`；旧结果或缺少分解证据明确标记为 `UNAVAILABLE`，不推断缺失比较。
+- 科学边界：贡献差只解释经验排名公式中的算术差异，不代表因果、结合能分解或生物机制。
+- 不变项：不修改评分、排名、筛选规则、Tool 授权边界或冻结 Ranker 资源。
+- 目标阶段：v0.4.0 Workstream 7 第三切片。
+
+### Sealed scientific-interpretation contract
+
+- 原问题：共享指标本体已约束可选模型解释和生成文档，但确定性结果 JSON 与 Markdown 尚未封存同一份指标方向、运行角色、批次相对性、禁用结论和下游验证边界；Tool/API 调用方读取数字产物时仍可能缺少机器可读解释契约。
+- 当前实现：结果摘要封存与本次 `region_score_used` 和分析范围策略绑定的完整指标本体及全局科学边界；摘要加载、确定性报告和可选解释证据均验证并复用该契约。
+- 兼容性：新摘要 schema 为 `0.4`；旧摘要继续读取并明确标记 `scientific_interpretation_status=UNAVAILABLE`，不推断缺失的运行绑定契约。
+- 文档一致性：`docs/METRICS.md` 由共享本体确定性生成，回归测试要求生成内容与仓库文件完全一致，防止语义文档静默漂移。
+- 不变项：不修改评分、排名、筛选规则、Tool 授权边界、冻结 Ranker 资源或 Agent 架构。
+- 目标阶段：v0.4.0 Workstream 7 第四切片。
+
+### Release artifact contract hardening
+
+- 原问题：结果摘要和分析清单的 `schema_version` 可以被当作任意字符串读取，未知未来格式存在被旧代码误读的风险；当前格式缺少新增字段时也可能被默认值掩盖。派生摘要经显式或 legacy 路径反序列化时，部分嵌套数值尚未统一拒绝 NaN/Inf。
+- 当前实现：结果摘要明确支持 `0.1`—`0.4`，分析清单明确支持 `0.1`—`0.3`；旧格式保持降级读取，未知格式和声明为当前格式但字段不完整的产物直接拒绝。
+- 数值边界：候选总分、组件分、关键指标、主分权重和动态阈值在摘要模型入口统一要求有限数。
+- 发布验证：已安装 Wheel 冒烟测试同时导入并构建科学解释契约和确定性指标文档，确认新模块不依赖源码 checkout。
+- 不变项：不修改评分、排名、筛选规则、冻结 Ranker 资源、Tool 授权边界或 Agent 架构。
+- 目标阶段：v0.4.0 Workstream 7 stabilization。
+
+## In progress — v0.5 Scientific Validation Infrastructure
+
+### Sealed benchmark input contract
+
+- 原问题：路线图要求用真实回顾性 campaign 和固定下游预算检验
+  BinderRanker，但此前没有共享的数据 schema、baseline/outcome 声明、
+  数据封存或 target-level 防泄漏门禁；直接计算 enrichment 会把关键科学
+  假设隐藏在一次性脚本中。
+- 当前实现：新增 framework-independent benchmark bundle contract；YAML
+  manifest 声明 outcome 证据类型、baseline、冻结 Ranker provenance、参数
+  选择政策、盲法和固定预算，候选 CSV 由 SHA256 封存。
+- 共享门禁：拒绝 bundle 路径逃逸、哈希漂移、重复候选、campaign 混合、
+  非有限分数、非完整排名、非二元 outcome、不可比较预算和同一 target
+  跨 `CALIBRATION` / `EVALUATION` 的泄漏。
+- 科学边界：通过门禁只证明 benchmark 输入满足当前契约，不证明
+  BinderRanker 富集成功候选、具有跨 target 泛化能力或产生因果效果。
+- 后续状态：Phase 2 已实现只使用 evaluation 数据的固定预算
+  BinderRanker/baseline 对照指标；Phase 3/4 继续补充 target sensitivity 与
+  provenance/readiness 门禁。
+- 不变项：不修改评分、排名、筛选规则、冻结 Ranker 资源、Tool 授权边界
+  或 Agent 架构。
+
+### Fixed-budget BinderRanker/baseline metrics
+
+- 原问题：通过 benchmark 输入门禁后，项目仍缺少共享、可审计的固定预算
+  对照计算；一次性脚本容易混入 calibration 数据、隐藏零阳性分母或遗漏
+  baseline。
+- 当前实现：只接受并重新校验 `ValidatedBenchmarkBundle`；按 manifest 预算
+  在每个 evaluation campaign 内分别选择候选，同时输出 BinderRanker 与
+  baseline 的 hits、precision、recall、enrichment 和 success，再给出 pooled
+  count 汇总。
+- 未定义语义：零阳性 campaign 的 recall、enrichment 及相应 delta 明确标记
+  `UNAVAILABLE`，不填 0、无穷或默认值；pooled 报告仍保留无阳性 campaign
+  数量。
+- 证据边界：报告固定声明为回顾性描述，不能单独证明跨 target 泛化、因果
+  效果或真实生物学成功；真实 campaign 数据与统计不确定性评审仍待后续。
+- 不变项：不修改评分、排名、筛选规则、冻结 Ranker 资源、Tool 授权边界
+  或 Agent 架构。
+- 目标阶段：v0.5.0 Workstream 8 Phase 2。
+
+### Target-level heterogeneity and removal sensitivity
+
+- 原问题：pooled 指标可能掩盖 target 间方向差异；同一 target 的多个 campaign
+  也不能被错误当成多个独立 target。真实数据接入前需要共享的样本充分性和
+  单 target 影响审计。
+- 当前实现：按 target 聚合 evaluation campaign，输出 hits-per-campaign、
+  precision、recall、enrichment 和 success-rate delta 的等 target 分布；逐一
+  移除有定义的 target，记录 macro-target 均值范围与最大偏移。
+- 未定义语义：零阳性 target 的 recall/enrichment 明确不可用；少于两个有
+  定义 target 时 leave-one-target-out 范围明确不可用。
+- 科学边界：该范围不是置信区间或假设检验，不证明统计显著、跨 target
+  泛化、因果或实验成功；正式不确定性推断需要真实样本量和预声明分析计划。
+- 不变项：不修改评分、排名、筛选规则、冻结 Ranker 资源、Tool 授权边界
+  或 Agent 架构。
+- 目标阶段：v0.5.0 Workstream 8 Phase 3。
+
+### Real-campaign provenance and readiness gate
+
+- 原问题：前三阶段能够封存数据并计算描述性对照与 target sensitivity，但仍可能
+  把合成 fixture、未经外部核对的历史声明和真实回顾性证据混为一谈，也缺少将
+  cohort、数据冻结、review record 与预声明分析计划绑定到同一 bundle 的共享门禁。
+- 当前实现：新增 strict companion YAML checklist，绑定 benchmark ID、manifest
+  SHA256 和 dataset SHA256；要求带时区的数据冻结时间、来源系统、抽取流程、不可变
+  记录 ID、完整 candidate universe 声明、缺失 outcome 政策、outcome/baseline/leakage
+  审核和 analysis plan ID。checklist 本身也写入 SHA256。
+- 就绪度报告：明确区分 `SYNTHETIC_FIXTURE` 的 `FIXTURE_ONLY` 与
+  `REAL_RETROSPECTIVE` 的 `READY_FOR_SCIENTIFIC_REVIEW`，并报告 target/campaign
+  outcome 结构、每 target campaign 范围、每 campaign candidate 范围以及当前方法的
+  结构前提。
+- 科学边界：软件只验证声明的结构与哈希绑定，不独立核验声明真实性；不使用武断的
+  通用样本量阈值，也不建立性能收益、统计显著性、泛化、因果或实验成功。
+- 下一切片：接入经独立审核的真实回顾性 campaign bundle，并在既定 analysis plan
+  下评估是否有足够依据选择正式不确定性方法；没有真实数据时不生成性能结论。
+- 不变项：不修改评分、排名、筛选规则、冻结 Ranker 资源、执行行为、Tool 授权边界
+  或 Agent 架构。
+- 目标阶段：v0.5.0 Workstream 8 Phase 4。
+
 ## P1 — Stable Tool/API boundary
 
 ### Tool API adoption and runtime integration
-- 当前状态：v0.3 已建立稳定、framework-independent 的 BinderRanker Tool API；legacy Chat 和部分 CLI 路径尚未统一迁移到这一边界。
-- 后续方向：直接调用、可选 built-in Agent 和未来外部 adapter 统一复用 BinderRanker Tool API，不绕过 deterministic Core。
-- 暂缓原因：v0.3 的目标是冻结稳定 domain boundary；后续只在实际调用方需要时继续收紧契约。
-- 建议阶段：按科学工作流和外部集成的实际需要安排。
+- 当前状态：v0.6 Phase 1 已为 8 个 framework-independent Tool 建立统一、
+  版本化、机器可读的 catalog；input/output JSON Schema、副作用分类、
+  host-local path 语义和 host-injected fields 由共享模块集中生成。
+- 安全边界：严格 adapter request model 拒绝未知字段；`provider_name`、
+  `approved_by`、批准/执行确认、smoke-test acknowledgement 和 approval note
+  均不进入未受信请求 schema。现有 Python Tool 签名保持兼容。
+- 验证状态：catalog 确定性、JSON 序列化、完整 inventory、分类、授权字段隔离、
+  schema 完整性和旧 result model import 均有回归测试，并进入 clean-Wheel smoke。
+- Phase 2 状态：已实现宿主持有的 `TrustedAuthorizationBroker` 和
+  `TrustedToolRuntime`。不透明 capability 绑定动作、canonical bundle 和审核文件
+  SHA256，默认 5 分钟过期，错作用域即失效，并保证并发时只能消费一次；只有消费成功
+  后 runtime 才向兼容 API 注入确认事实。
+- 安全限制：broker 签发方法不得注册为模型 Tool；capability 只在宿主进程内存在，
+  不序列化、不作为网络 token，用户认证和确认 UI 仍由具体 adapter 宿主负责。
+- Phase 3 状态：已新增版本化 `AdapterErrorEnvelope`、8 个稳定错误码和共享
+  `invoke_adapter_boundary()`。成功结果保持原模型；失败结果不会泄露原始异常、主机路径、
+  traceback、token、subprocess stderr 或 validation input。所有 v0.1 错误均明确为不可
+  自动重试，避免 approval、mutation 或 execution 被适配器盲目重放。
+- Phase 4 状态：完成 2026-08-26 生态评审并选择 MCP。首个具体 adapter 使用官方
+  `mcp>=2,<3`、本地 stdio 和结构化输出，只开放 `get_current_plan`、
+  `get_task_status`、`inspect_dataset`。外部请求只接受受管 `task_name`，成功视图不暴露
+  主机路径或已保存自由文本；失败复用共享 envelope 并设置 MCP `isError=true`。
+- Phase 4 安全限制：未开放任务修改、批准、执行、分析写入、HTTP 或远程认证。MCP host
+  的普通 Tool approval 不自动等价于 BinderRanker 的可信用户授权。
+- Phase 5A 状态：完成 2026-08-27 私有远程接入评审。OpenAI Secure MCP Tunnel 可通过
+  出站 HTTPS 直接转发现有 stdio server，因此无需先开放 BinderRanker HTTP 端口。新增
+  `--check-tunnel-readiness` 机器可读预检和远程 MCP 威胁模型；预检只证明本地 workspace、
+  MCP SDK、stdio 与只读 Tool scope 就绪，不伪造 OpenAI 权限或真实连接状态。
+- Phase 5A 安全限制：当前仍是一进程、一 workspace、单信任域；BinderRanker 无调用者
+  身份契约、无外部可信确认桥接。OpenAI tunnel/runtime 认证归 control plane 与 operator
+  所有，普通 MCP approval 仍不能授权执行。
+- 下一切片：由 owner 完成 Tunnel ID、运行时 API key、组织/workspace 关联和开发者模式
+  权限后，执行真实 ChatGPT/Codex/Responses API 只读端到端验证。只有获得该证据后才评审
+  是否需要额外 host adapter；受保护 Tool 和多租户服务继续延后。
+- Phase 5B-local 状态：在 owner 暂无 OpenAI API key 时，先完成免 Key 的本机 stdio Host
+  验证。新增 Codex 配置模板和真实子进程探针；Host 已收到 BinderRanker 名称、安装版本与
+  server instructions，发现且只发现三个只读 Tool，并验证成功状态调用、受控失败、能力
+  resource 和无路径泄露。2026-08-30 的真实 Codex Host 验收进一步发现并修复
+  `2025-06-18` 路径要求 `outputSchema` 具有对象根的问题；新增精确 wire regression 后，
+  临时只读 Codex 会话已实际调用三个 Tool，两个读取成功，空数据集检查按预期返回
+  `TOOL_REJECTED`。本机 Host checkpoint 已完成。
+- Phase 6 状态：Tool API contract 已加法升级到 `0.2` 和 9 个操作；新增
+  `get_result_summary` 作为第四个只读 MCP Tool。它只读取最新 SHA256 封存且重新通过
+  `RankerResultSummary` 验证的确定性分析，按 `limit=1..100` 返回有界排名、记录分数、
+  filter evidence、component/key metrics 和主分贡献，并移除 artifact/source 路径、
+  stored project text 与 report prose。缺失或 legacy 未封存结果按任务状态拒绝，篡改或
+  malformed sealed evidence 归类为 `SCIENTIFIC_RESULT_INVALID`；不会创建分析、执行 Ranker
+  或改变科学结论。
+- Phase 7 状态：Tool API contract 已加法升级到 `0.3` 和 10 个操作；新增
+  `list_tasks` 作为第五个只读 MCP Tool。外部 Agent 不再需要预先知道
+  `task_name`，可按确定性顺序分页发现受管任务，并读取 lifecycle 与封存结果的
+  可用性。输出不含 workspace/bundle 路径、存储请求文本、时间戳、报告正文或内部
+  错误；非法名称与 symlink 目录不公开，单个损坏任务不会阻断其他任务发现。
+- 远程 Tunnel 状态：明确记为 `EXTERNAL_CREDENTIAL_PENDING`，不是本地代码失败；不以本机
+  Host 证据替代 Tunnel ID、runtime key、组织权限或真实远程调用证据。
 
 ## P3 — Optional interaction and external-Agent integration
 
@@ -51,8 +227,9 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
 - 建议阶段：可选，且不是科学路线图前置条件。
 
 ### OpenClaw / MCP gateway
-- 方向：把外部 Agent 接到同一 Tool API，而不是绕过 deterministic core。
-- 建议阶段：科学能力、可复现性和 Tool/API 契约满足当前阶段要求后，再按真实集成需求安排。
+- 当前：中立的本地只读 MCP gateway 已完成，复用同一 Tool API 和错误契约。
+- 后续：OpenClaw/DeepSeek Harness 专用包装仅在出现真实兼容需求时增加；不得复制
+  BinderRanker domain logic。远程或受保护操作必须先完成认证与可信确认设计。
 
 ## P2 — Error UX 后续增强
 
@@ -125,11 +302,14 @@ planning 和 Agent infrastructure 只有在直接改善 BinderRanker 可用性�
 ### Runtime authorization injection for mutating Tools
 
 - 发现位置：`agent/tool_api.py` 的 `request_approval()` / `execute_ranker()`，以及未来任何外部 Tool runtime。
-- 当前问题：framework-independent Tool API 目前通过 `approval_confirmed` 和 `execution_confirmed` 显式表达两次独立授权事实。这个契约适合当前 deterministic API，但未来若直接把这些布尔参数暴露给模型填写，LLM Tool Call 就可能被错误等同为真实用户授权。
-- 建议方向：外部 Agent 接入时通过可信 runtime context 注入用户身份和授权状态；模型只能请求执行某个 Tool，不能自行生成 approval 或 execution authorization。继续保留“批准计划”和“确认真正执行”两个独立步骤。
-- 为什么当前不做：当前 slice 只建立 framework-independent Tool boundary，尚未接入外部 Agent runtime。现在提前设计完整会话级授权容器会扩大范围；现有 Chat、CLI、approval core 和 local executor 已经完整执行双确认与一次性批准规则。
+- 当前状态：v0.6 Phase 2 已通过宿主持有的 opaque、短时、动作/任务/审核哈希绑定、
+  原子单次 capability 完成共享 runtime 授权注入。v0.6 Phase 3 又将授权失败映射为
+  稳定且不可自动重试的 adapter error code，不公开 capability 或内部异常内容。
+- 后续要求：外部 Agent 接入时只能通过该 trusted runtime 注入用户身份和授权状态；
+  模型只能请求操作，不能签发 capability，也不能自行生成 approval 或 execution
+  authorization。继续保留“批准计划”和“确认真正执行”两个独立步骤。
 - 优先级：任何 Agent 获得修改或执行类 Tool 之前的安全 blocker；不是 Agent 框架迁移目标。
-- 建议版本：首次开放此类外部 Tool 前完成。
+- 建议版本：共享 blocker 已完成；具体 adapter 仍需证明签发入口不在模型可调用 surface。
 
 ### Dataset observation / advice separation
 

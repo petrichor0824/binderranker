@@ -113,7 +113,7 @@ The historical command:
 
     protein-design-agent
 
-is retained only as a compatibility alias during the v0.3 transition.
+is retained only as a backward-compatibility alias.
 
 New documentation and examples should use `binderranker` unless they are
 explicitly documenting compatibility or project history.

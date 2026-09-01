@@ -7,11 +7,198 @@ used by the corresponding release.
 
 ## Unreleased
 
+### Added
+
+- Added a versioned, machine-readable catalog for all ten public BinderRanker
+  Tool operations, with deterministic input/output JSON Schemas, explicit
+  side-effect classes, host-local path semantics, and trusted host-field
+  declarations for future HTTP, MCP, workflow, and external-Agent adapters.
+- Added strict, frozen adapter request models that reject unknown fields and
+  exclude provider identity, approval identity, approval confirmation,
+  smoke-test acknowledgement, approval notes, and execution confirmation from
+  untrusted model-authored arguments.
+- Added a host-owned trusted authorization broker and protected Tool runtime.
+  Its opaque capabilities require an independent user confirmation, bind one
+  action and task plus the reviewed manifest SHA256, expire after five minutes
+  by default, and can be consumed atomically only once.
+- Added a versioned adapter error envelope with stable request, authorization,
+  domain-state, scientific-validity, execution, and internal error codes.
+  Successful Tool result models remain unchanged; failure envelopes never
+  publish raw exception text, host paths, tracebacks, credentials, capability
+  identifiers, subprocess stderr, or validation inputs.
+- Added the first concrete external adapter as an optional local MCP server
+  using the official `mcp>=2,<3` SDK. It exposes only current-plan, task-status,
+  and deterministic dataset-inspection operations over `stdio`.
+- Added a workspace-scoped read-only adapter core that accepts managed task
+  names instead of paths and projects Tool results into explicit structured
+  views without host-local paths, stored free-form request text, or raw warning
+  and exception details.
+- Added `get_result_summary` as a fourth read-only MCP operation and a ninth
+  Tool API operation. It reads only the latest SHA256-sealed deterministic
+  analysis, revalidates the versioned result model, returns a bounded
+  engineering-rank view, and rejects missing, unsealed, malformed, or tampered
+  artifacts without exposing host paths or stored free text.
+- Added `list_tasks` as a fifth read-only MCP operation and a tenth Tool API
+  operation. It returns deterministic, bounded pages of safe managed task
+  names, lifecycle availability, sealed-result availability, and candidate
+  counts without requiring the caller to know a task name in advance.
+- Task discovery skips unsafe names and symbolic-link bundles, isolates
+  malformed task state instead of failing the whole inventory, and omits host
+  paths, stored request text, timestamps, report prose, and internal errors.
+- Added a machine-readable MCP capability resource that explicitly declares
+  deferred mutation, approval, execution, and analysis-write operations plus
+  the unchanged `SCIENTIFIC_VALIDATION_PENDING` evidence boundary.
+- Added a path-free `--check-tunnel-readiness` preflight for private OpenAI
+  Secure MCP Tunnel configuration. It validates only locally provable
+  workspace, SDK, transport, and Tool-scope facts and explicitly leaves OpenAI
+  permissions, caller identity, live connectivity, and trusted human
+  confirmation unverified.
+- Added a remote-MCP threat model covering private stdio tunneling, single
+  trust-domain deployment, credential separation, disclosure controls,
+  approval confusion, audit ownership, and deferred public/multi-tenant gates.
+- Added an API-key-free local Codex MCP runbook and forward-safe configuration
+  template with an explicit five-Tool allow list and `writes` approval mode.
+- Added a real stdio subprocess interoperability probe that verifies MCP server
+  name/version/instructions, Tool discovery, success and fail-closed calls,
+  capability boundaries, and path-free evidence outside the server process;
+  the probe preserves virtual-environment launchers across symlink-based POSIX
+  environments and retains Python 3.10 test compatibility.
+- Added a sealed benchmark-bundle contract for v0.5 scientific-validation
+  infrastructure, with explicit outcome, baseline, Ranker provenance,
+  parameter-selection, blinding, fixed-budget, and target-split declarations.
+- Added shared deterministic validation for benchmark SHA256 integrity,
+  candidate identity, complete BinderRanker/baseline ranks, finite scores,
+  binary outcomes, comparable budgets, and calibration/evaluation target
+  isolation. This gate validates benchmark inputs but does not make performance
+  or biological claims.
+- Added immutable fixed-budget benchmark reports that compare BinderRanker and
+  the manifest-declared baseline campaign by campaign and in count-pooled
+  summaries, using evaluation rows only.
+- Added explicit `AVAILABLE` / `UNAVAILABLE` states for recall and enrichment
+  when an individual campaign has no positive outcomes, plus report-level
+  retrospective claim boundaries and sealed-input identity checks.
+- Added deterministic target-level benchmark sensitivity reports that pool
+  repeated campaigns within each target, preserve zero-positive target states,
+  summarize cross-target direction and range, and perform leave-one-target-out
+  removal analysis without presenting it as a confidence interval.
+- Added a strict benchmark-readiness companion checklist bound to the sealed
+  manifest and dataset hashes, with declared data freeze, cohort completeness,
+  scientific review, analysis plan, evidence limitations, and timezone-aware
+  provenance records.
+- Added deterministic readiness reports that distinguish real-retrospective
+  declarations from synthetic fixtures, expose target/campaign outcome
+  structure and method prerequisites, and keep independent verification,
+  performance benefit, and formal inference explicitly unestablished.
+
+### Fixed
+
+- Fixed local Codex Tool discovery on the MCP `2025-06-18` handshake path by
+  keeping all five structured Tool output schemas object-rooted. The generic
+  subprocess verifier now exercises the legacy handshake family instead of
+  relying only on the MCP SDK's newer default protocol path.
+
+### Validation
+
+- Added Tool contract regressions for complete inventory, stable serialization,
+  side-effect and authorization classification, strict request validation,
+  host-field isolation, schema completeness, and existing Tool result-model
+  import compatibility.
+- Added task-discovery regressions for deterministic pagination, read-only
+  filesystem behavior, invalid-name and symlink exclusion, malformed-task
+  isolation, sealed-result availability, path-free projections, legacy MCP
+  schemas, clean installed-Wheel subprocess calls, and an isolated real Codex
+  call over synthetic task metadata.
+- Added authorization regressions covering absent confirmation, opaque
+  transport, host-fact injection, replay, concurrency, expiry, cross-broker,
+  wrong-action, wrong-task, changed-review-resource, and unvalidated-request
+  rejection.
+- Added adapter-boundary regressions covering strict schema failures, stable
+  classifications, unknown operations, authorization failures, scientific
+  invalidity, execution failure, unexpected exceptions, information
+  sanitization, success-result compatibility, and no blind automatic retry.
+- Added read-only adapter and in-memory MCP regressions for tool discovery,
+  annotations, workspace/traversal/symlink isolation, path-free projections,
+  structured success output, MCP `isError` failures, capability discovery, and
+  the absence of approval and execution tools.
+- Added explicit legacy-client and raw `2025-06-18` stdio regressions for the
+  five object-rooted MCP output schemas, matching the protocol path exercised
+  by the current local Codex Host.
+- Added a clean installed-Wheel MCP smoke test after installing the optional
+  extra, while retaining a base-Wheel smoke assertion that the adapter core is
+  importable without the MCP dependency.
+- Extended the installed-Wheel MCP smoke and regressions with private-tunnel
+  readiness PASS/BLOCKED states, missing and unsupported SDK versions, unsafe
+  workspaces, nonzero preflight exit semantics, and no false live-connection
+  claims.
+- Extended the clean installed-Wheel smoke test to build the Tool API catalog
+  and verify that protected authorization fields are absent from its untrusted
+  request schemas outside the source checkout.
+- Extended the clean installed-Wheel smoke test to import the shared adapter
+  error boundary and verify its schema, stable code inventory, sanitized
+  unknown-operation response, and non-retryable policy.
+- Extended the clean installed-Wheel smoke test to import the v0.5 scientific
+  validation package, validate a synthetic sealed benchmark bundle, and
+  compute fixed-budget BinderRanker/baseline metrics, target sensitivity, and
+  fixture-only readiness boundaries outside the source checkout.
+
+## 0.4.0 - 2026-08-25
+
+BinderRanker v0.4.0 is a scientific-transparency release. It makes empirical
+ranking arithmetic, interpretation boundaries, and deterministic analysis
+artifacts directly auditable without changing the frozen BinderRanker scoring
+or screening algorithm.
+
+### Added
+
+- Added a shared, model-independent primary-score decomposition layer that
+  exposes audited weights, per-candidate weighted contributions, reconstructed
+  scores, and reconstruction errors in deterministic result summaries.
+- Added explicit `AVAILABLE` / `UNAVAILABLE` decomposition semantics so legacy
+  reports remain readable without inferring missing scientific evidence.
+- Added a deterministic, human-readable Markdown analysis report that combines
+  validated rankings, public screening status, score contributions, and
+  policy-permitted failed-gate evidence without requiring a model or network.
+- Added SHA256 sealing and artifact resolution for the deterministic report,
+  while preserving support for analysis manifests created before the report
+  existed.
+- Added shared adjacent-candidate score comparisons that reconstruct each
+  recorded rank gap from direct-primary contribution deltas and identify the
+  largest positive and negative arithmetic terms.
+- Added a sealed scientific-interpretation contract that exposes run-specific
+  metric direction and role, batch-relative score and threshold boundaries,
+  prohibited claims, and required downstream validation.
+
 ### Changed
 
 - Aligned active architecture and roadmap documentation around BinderRanker as
   a scientific ranking and screening capability; Agent interfaces are now
   consistently documented as optional access and integration layers.
+- Optional model explanations now reuse the same deterministic report-context
+  and score-decomposition logic as offline result analysis.
+- `SMOKE_TEST_ONLY` reports now suppress unstable dynamic-threshold details;
+  exploratory and full-dataset reports retain numerical gap evidence with
+  explicit batch-relative interpretation boundaries.
+- Deterministic Markdown reports now explain adjacent rank differences without
+  presenting contribution deltas as causal, energetic, or biological effects.
+- Deterministic reports and optional evidence-bound explanations now validate
+  and reuse the interpretation contract stored in the result summary.
+- Result-summary and completed-analysis loaders now accept only documented
+  artifact schema generations, preserve known legacy generations, and reject
+  unknown or incomplete current-generation artifacts.
+
+### Fixed
+
+- Derived result-summary loading now rejects NaN and infinity in candidate
+  scores, component scores, key metrics, primary-score weights, and dynamic
+  thresholds, including explicit and legacy analysis paths.
+
+### Validation
+
+- The clean installed-Wheel smoke test now imports the metric-documentation and
+  scientific-interpretation modules, builds the 20-metric run contract, and
+  verifies that these v0.4 modules do not depend on a source checkout.
+- Release-asset verification now requires the sdist citation version to match
+  the Wheel/sdist package metadata.
 
 ## 0.3.1 - 2026-08-21
 

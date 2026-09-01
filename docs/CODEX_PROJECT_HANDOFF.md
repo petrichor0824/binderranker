@@ -137,7 +137,7 @@ A model must never:
 At handoff time:
 
 - distribution name is `binderranker`;
-- version is `0.3.0`;
+- original handoff version was `0.3.0`; current release version is `0.4.0`;
 - Python namespace remains `protein_design_agent`;
 - canonical CLI is `binderranker`;
 - compatibility alias is `protein-design-agent`;
@@ -148,7 +148,8 @@ At handoff time:
 - deterministic result analysis can run without loading model explanation runtime;
 - approval and execution are separate user-confirmed boundaries;
 - CI covers Linux Python 3.10/3.11/3.12, Windows Python 3.12, package build, clean install, release verification, and smoke checks;
-- the stabilization branch includes first-run/recovery/error/confirmation and Windows reliability work.
+- the current release line also includes v0.3.1 scientific-result stabilization
+  and v0.4 deterministic scientific-transparency artifacts.
 
 Do not rebuild capabilities that already exist without first proving the existing implementation cannot serve the new contract.
 
@@ -166,6 +167,8 @@ The Tool API already includes:
 - `request_approval`
 - `execute_ranker`
 - `analyze_results`
+- `get_result_summary`
+- `list_tasks`
 
 Before adding an external adapter:
 

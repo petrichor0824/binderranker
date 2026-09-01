@@ -2,6 +2,11 @@ from pathlib import Path
 
 import pytest
 
+from protein_design_agent.agent.deterministic_report import (
+    DeterministicReportError,
+    build_deterministic_analysis_markdown,
+    write_deterministic_analysis_report,
+)
 from protein_design_agent.agent.failure_analysis import (
     FailureAnalysisError,
     analyze_ranker_failures,
@@ -25,13 +30,17 @@ def build_summary(
     broad_reason: str = (
         "high_contact_map_jump_fraction"
     ),
+    scope_level: str = "SMOKE_TEST_ONLY",
 ) -> Path:
+    exploratory = scope_level == "EXPLORATORY"
     policy = PoolReportingPolicy(
-        analysis_scope_level=(
-            "SMOKE_TEST_ONLY"
+        analysis_scope_level=scope_level,
+        reporting_mode=(
+            "EXPLORATORY"
+            if exploratory
+            else "SUPPRESSED"
         ),
-        reporting_mode="SUPPRESSED",
-        publish_pool_counts=False,
+        publish_pool_counts=exploratory,
         pool_labels_reliable=False,
         formal_interpretation_allowed=False,
         formal_candidate_recommendation_allowed=False,
@@ -47,19 +56,25 @@ def build_summary(
             "strict": 0,
         },
         public_pool_counts={
-            "broad": None,
-            "medium": None,
-            "strict": None,
+            "broad": 0 if exploratory else None,
+            "medium": 0 if exploratory else None,
+            "strict": 0 if exploratory else None,
         },
         public_pool_status={
             "broad": (
-                "NOT_AVAILABLE_SMALL_SAMPLE"
+                "EXPLORATORY_ONLY"
+                if exploratory
+                else "NOT_AVAILABLE_SMALL_SAMPLE"
             ),
             "medium": (
-                "NOT_AVAILABLE_SMALL_SAMPLE"
+                "EXPLORATORY_ONLY"
+                if exploratory
+                else "NOT_AVAILABLE_SMALL_SAMPLE"
             ),
             "strict": (
-                "NOT_AVAILABLE_SMALL_SAMPLE"
+                "EXPLORATORY_ONLY"
+                if exploratory
+                else "NOT_AVAILABLE_SMALL_SAMPLE"
             ),
         },
     )
@@ -69,9 +84,13 @@ def build_summary(
         engineering_rank=1,
         final_score_v4=0.6,
         raw_filter_level="FAIL",
-        public_filter_level=None,
+        public_filter_level=(
+            "FAIL" if exploratory else None
+        ),
         public_filter_status=(
-            "NOT_AVAILABLE_SMALL_SAMPLE"
+            "EXPLORATORY_ONLY"
+            if exploratory
+            else "NOT_AVAILABLE_SMALL_SAMPLE"
         ),
         broad_pass=False,
         medium_pass=False,
@@ -103,7 +122,7 @@ def build_summary(
             / "execution_apr_test.json"
         ),
         analysis_scope={
-            "level": "SMOKE_TEST_ONLY",
+            "level": scope_level,
             "pdb_count": 1,
             (
                 "workflow_allows_"
@@ -326,4 +345,124 @@ def test_failure_analysis_file_is_protected(
     ):
         write_failure_analysis(
             result_summary_path=path
+        )
+
+
+def test_deterministic_report_suppresses_smoke_thresholds(
+    tmp_path: Path,
+) -> None:
+    path = build_summary(tmp_path)
+    summary = RankerResultSummary.model_validate_json(
+        path.read_text(encoding="utf-8")
+    )
+    failure = analyze_ranker_failures(path)
+
+    report = build_deterministic_analysis_markdown(
+        summary=summary,
+        failure=failure,
+    )
+
+    assert "without a language model" in report
+    assert "SMOKE_TEST_ONLY" in report
+    assert "intentionally suppressed" in report
+    assert "## Scientific interpretation contract" in report
+    assert "Contract status: `UNAVAILABLE`" in report
+    assert "## Adjacent rank differences" in report
+    assert "Comparison status: `UNAVAILABLE`" in report
+    assert "contact_map_jump_fraction (broad)" not in report
+    assert "0.105" not in report
+
+
+def test_deterministic_report_shows_exploratory_gap(
+    tmp_path: Path,
+) -> None:
+    path = build_summary(
+        tmp_path,
+        scope_level="EXPLORATORY",
+    )
+    summary = RankerResultSummary.model_validate_json(
+        path.read_text(encoding="utf-8")
+    )
+    failure = analyze_ranker_failures(path)
+
+    report = build_deterministic_analysis_markdown(
+        summary=summary,
+        failure=failure,
+    )
+
+    assert "EXPLORATORY_ONLY" in report
+    assert "contact_map_jump_fraction (broad)" in report
+    assert "0.108 > 0.105" in report
+    assert "ABOVE_1_TO_5_PERCENT" in report
+    assert "not a biological mechanism" in report
+
+
+def test_deterministic_report_file_is_protected(
+    tmp_path: Path,
+) -> None:
+    summary = build_summary(tmp_path)
+    failure = write_failure_analysis(
+        result_summary_path=summary,
+    )
+    output = tmp_path / "deterministic.md"
+
+    written = write_deterministic_analysis_report(
+        result_summary_path=summary,
+        failure_analysis_path=failure,
+        output_path=output,
+    )
+
+    assert written == output.resolve()
+    assert written.is_file()
+
+    with pytest.raises(
+        ValueError,
+        match="禁止覆盖",
+    ):
+        write_deterministic_analysis_report(
+            result_summary_path=summary,
+            failure_analysis_path=failure,
+            output_path=output,
+        )
+
+
+def test_deterministic_report_rejects_mismatched_inputs(
+    tmp_path: Path,
+) -> None:
+    path = build_summary(tmp_path)
+    summary = RankerResultSummary.model_validate_json(
+        path.read_text(encoding="utf-8")
+    )
+    failure = analyze_ranker_failures(path).model_copy(
+        update={"project_name": "different_project"}
+    )
+
+    with pytest.raises(
+        DeterministicReportError,
+        match="项目名不一致",
+    ):
+        build_deterministic_analysis_markdown(
+            summary=summary,
+            failure=failure,
+        )
+
+
+def test_deterministic_report_rejects_incomplete_decomposition(
+    tmp_path: Path,
+) -> None:
+    path = build_summary(tmp_path)
+    summary = RankerResultSummary.model_validate_json(
+        path.read_text(encoding="utf-8")
+    ).model_copy(
+        update={"score_decomposition_status": "AVAILABLE"}
+    )
+    failure = analyze_ranker_failures(path)
+
+    with pytest.raises(
+        DeterministicReportError,
+        match="缺少完整的分解证据",
+    ):
+        build_deterministic_analysis_markdown(
+            summary=summary,
+            failure=failure,
         )

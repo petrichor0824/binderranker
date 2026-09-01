@@ -29,6 +29,128 @@ BinderRanker configuration and current batch normalization. It does not mean:
 Score differences should be interpreted together with component scores,
 filter results, and structural inspection.
 
+## Verify the deterministic score decomposition
+
+New result summaries expose `score_decomposition_status` before presenting
+candidate-level primary-score contributions.
+
+When the status is `AVAILABLE`, inspect:
+
+- `primary_score_formula`, the formula recorded for the active scoring mode;
+- `primary_score_weights`, the audited direct-component weights;
+- `primary_score_contributions`, each candidate's weight multiplied by its
+  recorded component score;
+- `reconstructed_final_score_v4` and
+  `primary_score_reconstruction_error`, which verify that the contributions
+  reproduce the recorded ranking score.
+
+A result whose recorded score cannot be reconstructed is rejected by the
+parser. When the status is `UNAVAILABLE`, the report predates the necessary
+formula context or does not contain it; the ranking remains readable, but
+BinderRanker does not guess a decomposition.
+
+These contributions explain arithmetic inside the ranking formula. They are
+not causal attributions, free-energy components, or evidence that a metric has
+the same importance across targets or candidate batches.
+
+## Read the deterministic analysis report
+
+`binderranker analyze-run` writes
+`binderranker_deterministic_analysis.md` alongside the authoritative JSON
+summary and failure analysis. The Markdown report is generated without a
+language model and does not recompute scores, ranks, filters, or thresholds.
+It presents only evidence that has already passed the structured parsers and
+cross-artifact consistency checks.
+
+The report follows the analysis-scope policy:
+
+- `SMOKE_TEST_ONLY` keeps public screening status but suppresses numerical
+  dynamic-threshold and gap details because a tiny batch does not support
+  stable interpretation;
+- `EXPLORATORY` may show failed gates and numerical threshold gaps as
+  within-batch exploratory evidence;
+- `FULL_DATASET_ANALYSIS` may show the same deterministic evidence under the
+  full-workflow interpretation policy, while still requiring downstream
+  validation.
+
+The report path and SHA256 digest are recorded in the completed analysis
+manifest. Editing the report after completion causes provenance verification
+to fail. Analysis manifests created before this report was introduced remain
+readable as legacy artifacts.
+
+## Use the sealed scientific-interpretation contract
+
+Current deterministic result summaries include a machine-readable
+`scientific_interpretation_contract`. It binds the controlled metric ontology
+to the run's recorded scoring mode and analysis-scope policy. The contract
+records:
+
+- every exposed metric's direction, role, definition, permitted
+  interpretations, prohibited interpretations, and suggested checks;
+- that scores and ranks are empirical, batch-relative engineering evidence;
+- that cross-batch and cross-target score comparison is not allowed without
+  calibration;
+- that dynamic thresholds are batch-relative rather than universal cutoffs;
+- the current threshold interpretation mode;
+- prohibited scientific claims and required downstream validation.
+
+The deterministic Markdown report and optional evidence-bound explanation
+validate and reuse this contract. A modified contract that no longer matches
+the shared metric ontology or result policy is rejected. Older summaries remain
+readable with `scientific_interpretation_status=UNAVAILABLE`; BinderRanker does
+not invent missing run-bound interpretation evidence.
+
+## Check artifact schema compatibility
+
+Result summaries declare the evidence generation they contain. BinderRanker
+supports result-summary schemas `0.1`, `0.2`, `0.3`, and `0.4`:
+
+- `0.1` is the v0.3.1 result-summary contract;
+- `0.2` adds deterministic primary-score decomposition;
+- `0.3` adds adjacent-rank arithmetic comparisons;
+- `0.4` adds the sealed scientific-interpretation contract.
+
+Older generations remain readable and expose later evidence as explicitly
+`UNAVAILABLE`. A summary claiming a newer known generation must contain all
+fields introduced by that generation; missing fields are treated as artifact
+damage rather than silently replaced with defaults. Unknown future schema
+versions are rejected so an older BinderRanker installation cannot
+misinterpret newer evidence.
+
+Completed analysis manifests follow the same rule for their known `0.1`
+through `0.3` generations. Current `0.3` manifests must include the sealed
+deterministic-report path and digest. All loaded summary scores, component
+values, metrics, weights, and thresholds must be finite; NaN and infinity are
+invalid even when they arrive through an explicit or legacy artifact path.
+
+## Compare adjacent ranks arithmetically
+
+When primary-score decomposition is available, the result summary and
+deterministic report compare each adjacent rank pair. For rank 1 versus rank
+2, for example, BinderRanker subtracts rank 2 from rank 1 for every recorded
+direct-primary contribution.
+
+The comparison records:
+
+- the recorded `final_score_v4` difference;
+- each direct-primary contribution difference;
+- the sum of those contribution differences;
+- the reconstruction error between the two values;
+- the largest positive and largest negative contribution differences, when
+  present.
+
+A positive contribution difference supports the higher-ranked candidate's
+recorded score advantage. A negative difference is an arithmetic offset: the
+higher-ranked candidate received less from that term but overcame it through
+other terms. These statements describe the recorded empirical ranking formula
+only. They are not causal explanations, energetic decompositions, or evidence
+of a biological mechanism.
+
+Only adjacent ranks are compared by default. This keeps the evidence linear in
+the candidate count and makes each local rank separation directly auditable.
+A single-candidate run is marked `NOT_APPLICABLE`; legacy or insufficient
+formula evidence is marked `UNAVAILABLE` without inferred comparisons.
+
 ## Understand strengths and weaknesses
 
 The compact result preview reports the strongest and weakest normalized

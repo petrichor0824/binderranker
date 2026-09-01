@@ -2,6 +2,8 @@
 
 [English](README.md)
 
+[项目功能与成熟度详细报告（2026-09-01）](docs/PROJECT_STATUS_REPORT_2026-09-01.md)
+
 **生成式蛋白骨架候选的可解释排序与分层筛选工具**
 
 BinderRanker 用于在更昂贵的下游序列设计、结构/复合体预测、
@@ -33,7 +35,7 @@ BinderRanker 本身不负责生成候选骨架；它对已有的候选 PDB 集�
 BinderRanker 是一个**候选优先级筛选层**。高分或进入严格筛选层，
 都不能作为生物学成功的直接证明。
 
-当前开发版本线：**v0.3.1**
+当前发布版本线：**v0.4.0 — 科学透明度**。
 
 ---
 
@@ -141,7 +143,8 @@ Broad、Medium 和 Strict 不是固定的生物物理阈值，
 - 候选优势和已记录的弱点；
 - failed-gate 信息；
 - threshold-gap 分析；
-- 确定性的结果摘要；
+- 带封存科学解释契约的确定性结果摘要；
+- 包含相邻排名分数差异的人类可读确定性分析报告；
 - 配置、执行及文件的来源追踪（provenance）；
 - 可选的、受证据约束的模型解释。
 
@@ -193,9 +196,9 @@ BinderRanker 根据输入候选数量限制结果可以被解释到什么程度�
     source .venv/bin/activate
     python -m pip install --upgrade pip
 
-安装 BinderRanker v0.3.1 wheel：
+安装 BinderRanker v0.4.0 wheel：
 
-    python -m pip install ./binderranker-0.3.1-py3-none-any.whl
+    python -m pip install ./binderranker-0.4.0-py3-none-any.whl
 
 检查安装：
 
@@ -369,7 +372,39 @@ BinderRanker 也不能替代：
 无论通过哪一种入口，底层使用的都是同一个 BinderRanker 科学能力。
 Agent 接口只改善可访问性与集成体验，不拥有也不重新定义科学行为。
 
-v0.3 期间内部 Python namespace 仍然保持：
+v0.6 集成层现在为全部 10 个 Tool 操作提供带版本的机器可读 catalog，
+统一公开 JSON schema、副作用分类和需要宿主注入的可信字段。未受信请求
+不能提交授权或调用者身份；受保护操作只能通过可信的进程内 capability
+进入，该 capability 短期有效，绑定动作、任务和审核文件哈希，并且只能原子
+消费一次。适配层失败现在统一使用带版本、无敏感内部细节的错误 schema，提供稳定
+机器错误码，并禁止自动重试受保护操作。
+
+第一个外部 adapter 现已作为可选的本地**只读 MCP server**提供。它向受管工作区
+任务开放有界任务发现、当前计划、任务状态、确定性数据集检查，以及对最新完整性验证
+结果摘要的有界读取。调用者不知道任务名时可先使用 `list_tasks`；任务级调用只能提交
+经过校验的 `task_name`，不能提交任意主机路径。成功结果不会暴露主机路径或已保存的
+自由文本请求。结果读取只接受当前版本 SHA256 封存的分析，
+不会创建或重新计算分析产物。批准、执行、任务修改、分析写入、HTTP 服务和远程认证
+均未开放。
+
+安装并通过 MCP host 启动：
+
+    python -m pip install "binderranker[mcp]"
+    binderranker-mcp --workspace /path/to/binderranker-workspace
+
+宿主配置、精确能力边界和当前远程 API 限制见
+[`docs/integrations/MCP.md`](docs/integrations/MCP.md)。
+私有 OpenAI 接入可以通过 Secure MCP Tunnel 复用同一 stdio 命令，不需要开放
+BinderRanker 公网端口。先运行
+`binderranker-mcp --workspace /path --check-tunnel-readiness`，再按照
+[`docs/integrations/REMOTE_MCP_SECURITY.md`](docs/integrations/REMOTE_MCP_SECURITY.md)
+中的威胁模型配置。预检不会伪称 OpenAI 账号权限或真实 Tunnel 已验证。
+
+没有 OpenAI API Key 时，本机 Codex 仍可直接启动同一个只读 stdio server。
+免 Key 配置、前向安全 Tool 白名单和真实子进程验证流程见
+[`docs/integrations/CODEX_LOCAL_MCP.md`](docs/integrations/CODEX_LOCAL_MCP.md)。
+
+为保持向后兼容，内部 Python namespace 继续使用：
 
 `protein_design_agent`
 
@@ -400,6 +435,21 @@ BinderRanker 明确区分**工程验证**与**科学验证**。
 - 富集分析（enrichment analysis）；
 - 前瞻性实验验证。
 
+v0.4 之后的开发首先建立带 SHA256 封存、并显式防止 target 泄漏的
+benchmark 输入契约，以及确定性的固定预算 BinderRanker/baseline 对照。
+对照指标排除 calibration 数据，并显式保留无法定义的 campaign 统计量。
+这些能力用于审计回顾性证据；合成数据或仅通过契约验证，不表示
+BinderRanker 已被证明能够改善真实下游结果。
+
+v0.5 开发层还会按 target 聚合同一 target 的多个 campaign，并报告确定性的
+leave-one-target-out 敏感性。这用于暴露 target 异质性和样本不足；移除范围
+不是置信区间，也不是泛化能力检验。
+
+配套的 readiness 层会把数据封存、cohort、审核和分析计划声明绑定到精确的
+benchmark 哈希，并明确区分合成 fixture 与声明为真实回顾性记录的数据。它只报告
+当前方法所需的结构前提，不虚构通用的“样本量足够”阈值。通过该门禁仅表示材料可
+提交独立科学审核；软件不会验证历史声明的真实性，也不建立性能收益或正式推断。
+
 ---
 
 ## 文档
@@ -408,6 +458,11 @@ BinderRanker 明确区分**工程验证**与**科学验证**。
 - [指标说明](docs/METRICS.md)
 - [结果解读](docs/RESULT_INTERPRETATION.md)
 - [验证状态与边界](docs/VALIDATION.md)
+- [Benchmark 输入契约](docs/BENCHMARK_CONTRACT.md)
+- [固定预算 Benchmark 指标](docs/BENCHMARK_METRICS.md)
+- [Target-level Benchmark 敏感性](docs/BENCHMARK_SENSITIVITY.md)
+- [Benchmark 就绪度与 provenance 审核](docs/BENCHMARK_READINESS.md)
+- [Tool API 契约与授权边界](docs/TOOL_API_CONTRACT.md)
 - [公开身份与科学表述边界](docs/PUBLIC_IDENTITY.md)
 - [v0.3 架构](docs/V0.3_ARCHITECTURE.md)
 - [架构演进与开发原则](docs/ARCHITECTURE_EVOLUTION.md)

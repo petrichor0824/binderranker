@@ -110,6 +110,12 @@ A completed run records the approved configuration, execution manifest,
 critical-file fingerprints, structured Ranker outputs, result summary, and
 analysis artifacts.
 
+The deterministic result summary also seals a run-specific scientific
+interpretation contract. It records controlled metric direction and role,
+batch-relative score and threshold boundaries, prohibited claims, and required
+downstream validation. Deterministic reports and optional model evidence must
+validate against this contract rather than infer semantics from field names.
+
 Model-generated explanation is downstream of deterministic calculation. It
 cannot alter Ranker scores, pool membership, execution evidence, or recorded
 provenance.

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "binderranker"
-version = "0.3.1"
+version = "0.4.0"
 description = "Interpretable ranking and layered screening for generated protein backbone candidates"
 readme = "README.md"
 authors = [
@@ -33,8 +33,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+mcp = [
+    "mcp>=2,<3"
+]
 dev = [
-    "pytest>=8,<10"
+    "pytest>=8,<10",
+    "mcp>=2,<3",
+    "tomli>=2,<3; python_version < '3.11'"
 ]
 
 [tool.setuptools]
@@ -49,6 +54,7 @@ testpaths = ["tests"]
 
 [project.scripts]
 binderranker = "protein_design_agent.cli:main"
+binderranker-mcp = "protein_design_agent.adapters.mcp_entrypoint:main"
 protein-design-agent = "protein_design_agent.cli:main"
 
 [project.urls]

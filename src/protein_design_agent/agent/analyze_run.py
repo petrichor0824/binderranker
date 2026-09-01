@@ -23,7 +23,9 @@ from pydantic import BaseModel, Field
 from protein_design_agent.agent.analysis_artifacts import (
     build_analysis_provenance_seal,
 )
-
+from protein_design_agent.agent.deterministic_report import (
+    write_deterministic_analysis_report,
+)
 from protein_design_agent.agent.failure_analysis import (
     write_failure_analysis,
 )
@@ -53,7 +55,7 @@ class AnalyzeRunError(RuntimeError):
 class AnalyzeRunManifest(BaseModel):
     """一次 analyze-run 的审计清单。"""
 
-    schema_version: str = "0.2"
+    schema_version: str = "0.3"
     status: str
 
     bundle_dir: Path
@@ -64,10 +66,12 @@ class AnalyzeRunManifest(BaseModel):
 
     result_summary_path: Path | None = None
     failure_analysis_path: Path | None = None
+    deterministic_report_path: Path | None = None
 
     completed_at_utc: str | None = None
     result_summary_sha256: str | None = None
     failure_analysis_sha256: str | None = None
+    deterministic_report_sha256: str | None = None
     execution_manifest_path: Path | None = None
     execution_manifest_sha256: str | None = None
 
@@ -86,7 +90,7 @@ class AnalyzeRunManifest(BaseModel):
 class AnalyzeRunResult(BaseModel):
     """analyze-run 的返回结果。"""
 
-    schema_version: str = "0.1"
+    schema_version: str = "0.2"
     status: str = Field(default="COMPLETED")
 
     bundle_dir: Path
@@ -95,6 +99,7 @@ class AnalyzeRunResult(BaseModel):
 
     result_summary_path: Path
     failure_analysis_path: Path
+    deterministic_report_path: Path
 
     with_model: bool
     provider_name: str | None = None
@@ -255,6 +260,10 @@ def run_analyze_run(
         resolved_analysis_dir
         / "agent_failure_analysis_v2.json"
     )
+    deterministic_report_path = (
+        resolved_analysis_dir
+        / "binderranker_deterministic_analysis.md"
+    )
 
     running_manifest = AnalyzeRunManifest(
         status="RUNNING",
@@ -266,6 +275,9 @@ def run_analyze_run(
         ),
         failure_analysis_path=(
             failure_analysis_path
+        ),
+        deterministic_report_path=(
+            deterministic_report_path
         ),
     )
 
@@ -289,6 +301,20 @@ def run_analyze_run(
                 ),
                 output_path=(
                     failure_analysis_path
+                ),
+            )
+        )
+
+        written_report = (
+            write_deterministic_analysis_report(
+                result_summary_path=(
+                    written_summary
+                ),
+                failure_analysis_path=(
+                    written_failure
+                ),
+                output_path=(
+                    deterministic_report_path
                 ),
             )
         )
@@ -365,6 +391,9 @@ def run_analyze_run(
                 failure_analysis_path=(
                     written_failure
                 ),
+                deterministic_report_path=(
+                    written_report
+                ),
             )
         )
 
@@ -419,6 +448,9 @@ def run_analyze_run(
             ),
             failure_analysis_path=(
                 written_failure
+            ),
+            deterministic_report_path=(
+                written_report
             ),
             with_model=with_model,
             provider_name=provider_name,

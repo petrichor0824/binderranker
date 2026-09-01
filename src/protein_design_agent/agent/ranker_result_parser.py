@@ -29,7 +29,12 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    model_validator,
+)
 
 from protein_design_agent.agent.approval import (
     FileFingerprint,
@@ -39,12 +44,28 @@ from protein_design_agent.agent.result_policy import (
     PoolReportingView,
     build_pool_reporting_view,
 )
+from protein_design_agent.agent.ranker_report_context import (
+    RankerReportContextError,
+    parse_boolean_flag as parse_ranker_boolean_flag,
+    parse_ranker_report_context,
+)
 from protein_design_agent.agent.scientific_result_validation import (
     COMPONENT_SCORE_COLUMNS,
     KEY_METRIC_COLUMNS,
     REQUIRED_SCORED_COLUMNS,
     ScientificResultValidationError,
     validate_scientific_result,
+)
+from protein_design_agent.agent.scientific_interpretation import (
+    ScientificInterpretationContract,
+    build_scientific_interpretation_contract,
+)
+from protein_design_agent.agent.score_decomposition import (
+    AdjacentCandidateScoreComparison,
+    ScoreDecompositionError,
+    build_adjacent_primary_score_comparisons,
+    decompose_primary_score,
+    validate_primary_score_formula,
 )
 
 
@@ -55,6 +76,10 @@ class RankerResultParseError(RuntimeError):
 class FilterThreshold(BaseModel):
     """一个动态过滤阈值。"""
 
+    model_config = ConfigDict(
+        allow_inf_nan=False
+    )
+
     metric: str
     direction: Literal["min", "max"]
     value: float
@@ -63,6 +88,10 @@ class FilterThreshold(BaseModel):
 
 class CandidateResult(BaseModel):
     """一个候选的确定性解析结果。"""
+
+    model_config = ConfigDict(
+        allow_inf_nan=False
+    )
 
     pdb_name: str
 
@@ -88,13 +117,33 @@ class CandidateResult(BaseModel):
     component_scores: dict[str, float]
     key_metrics: dict[str, float]
 
+    primary_score_contributions: dict[
+        str,
+        float,
+    ] = Field(default_factory=dict)
+    reconstructed_final_score_v4: (
+        float | None
+    ) = None
+    primary_score_reconstruction_error: (
+        float | None
+    ) = None
+
     row_error: str | None = None
 
 
 class RankerResultSummary(BaseModel):
     """一次 Ranker 执行的安全结构化摘要。"""
 
-    schema_version: str = "0.1"
+    model_config = ConfigDict(
+        allow_inf_nan=False
+    )
+
+    schema_version: Literal[
+        "0.1",
+        "0.2",
+        "0.3",
+        "0.4",
+    ] = "0.4"
     status: Literal["PARSED"] = "PARSED"
 
     project_name: str
@@ -114,6 +163,41 @@ class RankerResultSummary(BaseModel):
     ]
     thresholds_formally_interpretable: bool
 
+    score_decomposition_status: Literal[
+        "AVAILABLE",
+        "UNAVAILABLE",
+    ] = "UNAVAILABLE"
+    score_decomposition_reason: str | None = None
+    region_score_used: bool | None = None
+    primary_score_formula: str | None = None
+    primary_score_weights: dict[
+        str,
+        float,
+    ] = Field(default_factory=dict)
+
+    scientific_interpretation_status: Literal[
+        "AVAILABLE",
+        "UNAVAILABLE",
+    ] = "UNAVAILABLE"
+    scientific_interpretation_reason: str | None = (
+        "No sealed scientific-interpretation contract was recorded."
+    )
+    scientific_interpretation_contract: (
+        ScientificInterpretationContract | None
+    ) = None
+
+    candidate_comparison_status: Literal[
+        "AVAILABLE",
+        "UNAVAILABLE",
+        "NOT_APPLICABLE",
+    ] = "UNAVAILABLE"
+    candidate_comparison_reason: str | None = (
+        "No validated candidate-comparison evidence was recorded."
+    )
+    adjacent_candidate_score_comparisons: list[
+        AdjacentCandidateScoreComparison
+    ] = Field(default_factory=list)
+
     candidates_by_engineering_rank: list[
         CandidateResult
     ]
@@ -122,6 +206,254 @@ class RankerResultSummary(BaseModel):
     result_use: str
 
     source_files: dict[str, Path]
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_versioned_schema_fields(
+        cls,
+        value: Any,
+    ) -> Any:
+        """Reject partial known schemas before defaults can hide damage."""
+        if not isinstance(value, dict):
+            return value
+
+        raw_version = value.get(
+            "schema_version"
+        )
+
+        # Direct Python construction historically omitted the version and
+        # relies on model defaults. Serialized BinderRanker artifacts always
+        # record it explicitly, so only those inputs receive strict generation
+        # checks here.
+        if raw_version is None:
+            return value
+
+        fields_by_generation = {
+            "0.1": frozenset(),
+            "0.2": frozenset(
+                {
+                    "score_decomposition_status",
+                    "score_decomposition_reason",
+                    "region_score_used",
+                    "primary_score_formula",
+                    "primary_score_weights",
+                }
+            ),
+            "0.3": frozenset(
+                {
+                    "candidate_comparison_status",
+                    "candidate_comparison_reason",
+                    (
+                        "adjacent_candidate_"
+                        "score_comparisons"
+                    ),
+                }
+            ),
+            "0.4": frozenset(
+                {
+                    (
+                        "scientific_"
+                        "interpretation_status"
+                    ),
+                    (
+                        "scientific_"
+                        "interpretation_reason"
+                    ),
+                    (
+                        "scientific_"
+                        "interpretation_contract"
+                    ),
+                }
+            ),
+        }
+
+        if raw_version not in fields_by_generation:
+            # The Literal field below emits the authoritative unsupported-
+            # version validation error. Do not reinterpret future schemas.
+            return value
+
+        order = ("0.1", "0.2", "0.3", "0.4")
+        required: set[str] = set()
+        for version in order:
+            required.update(
+                fields_by_generation[version]
+            )
+            if version == raw_version:
+                break
+
+        missing = sorted(
+            required - set(value)
+        )
+        if missing:
+            raise ValueError(
+                "结果摘要 schema "
+                f"{raw_version} 缺少该版本必需字段："
+                f"{missing}"
+            )
+
+        candidate_fields = {
+            "primary_score_contributions",
+            "reconstructed_final_score_v4",
+            "primary_score_reconstruction_error",
+        }
+        if raw_version != "0.1":
+            raw_candidates = value.get(
+                "candidates_by_engineering_rank"
+            )
+            if isinstance(raw_candidates, list):
+                for index, candidate in enumerate(
+                    raw_candidates
+                ):
+                    if not isinstance(
+                        candidate,
+                        dict,
+                    ):
+                        continue
+
+                    missing_candidate = sorted(
+                        candidate_fields
+                        - set(candidate)
+                    )
+                    if missing_candidate:
+                        raise ValueError(
+                            "结果摘要 schema "
+                            f"{raw_version} 的候选 {index} "
+                            "缺少该版本必需字段："
+                            f"{missing_candidate}"
+                        )
+
+        return value
+
+    @model_validator(mode="after")
+    def validate_candidate_comparison_contract(
+        self,
+    ) -> "RankerResultSummary":
+        """Keep candidate-comparison state complete and self-consistent."""
+        candidates = (
+            self.candidates_by_engineering_rank
+        )
+        comparisons = (
+            self
+            .adjacent_candidate_score_comparisons
+        )
+
+        if len(candidates) != self.candidate_count:
+            raise ValueError(
+                "候选列表长度与 candidate_count 不一致"
+            )
+
+        if self.candidate_comparison_status == "AVAILABLE":
+            if (
+                self.score_decomposition_status
+                != "AVAILABLE"
+                or self.candidate_count < 2
+                or len(comparisons)
+                != self.candidate_count - 1
+                or self.candidate_comparison_reason
+                is not None
+            ):
+                raise ValueError(
+                    "AVAILABLE 候选比较状态缺少完整证据"
+                )
+
+            try:
+                expected = (
+                    build_adjacent_primary_score_comparisons(
+                        candidates
+                    )
+                )
+            except ScoreDecompositionError as exc:
+                raise ValueError(
+                    "候选比较无法通过共享算术验证"
+                ) from exc
+
+            if comparisons != expected:
+                raise ValueError(
+                    "候选比较记录与共享算术结果不一致"
+                )
+
+        elif comparisons:
+            raise ValueError(
+                "非 AVAILABLE 状态不得包含候选比较"
+            )
+
+        elif (
+            self.candidate_comparison_status
+            == "NOT_APPLICABLE"
+            and (
+                self.candidate_count != 1
+                or self.score_decomposition_status
+                != "AVAILABLE"
+            )
+        ):
+            raise ValueError(
+                "NOT_APPLICABLE 仅适用于"
+                "分解可用的单候选结果"
+            )
+
+        elif (
+            self.candidate_comparison_status
+            != "AVAILABLE"
+            and not self.candidate_comparison_reason
+        ):
+            raise ValueError(
+                "不可用或不适用的候选比较必须记录原因"
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_scientific_interpretation_contract(
+        self,
+    ) -> "RankerResultSummary":
+        """Keep the sealed interpretation contract tied to run facts."""
+        contract = (
+            self.scientific_interpretation_contract
+        )
+
+        if (
+            self.scientific_interpretation_status
+            == "AVAILABLE"
+        ):
+            if (
+                contract is None
+                or self.score_decomposition_status
+                != "AVAILABLE"
+                or self.region_score_used is None
+                or self.scientific_interpretation_reason
+                is not None
+            ):
+                raise ValueError(
+                    "AVAILABLE 科学解释状态缺少完整契约证据"
+                )
+
+            expected = (
+                build_scientific_interpretation_contract(
+                    region_score_used=(
+                        self.region_score_used
+                    ),
+                    pool_reporting_policy=(
+                        self.pool_reporting.policy
+                    ),
+                )
+            )
+
+            if contract != expected:
+                raise ValueError(
+                    "科学解释契约与共享指标本体或结果策略不一致"
+                )
+
+        elif contract is not None:
+            raise ValueError(
+                "UNAVAILABLE 科学解释状态不得包含契约"
+            )
+
+        elif not self.scientific_interpretation_reason:
+            raise ValueError(
+                "不可用的科学解释契约必须记录原因"
+            )
+
+        return self
 
 
 POOL_HEADER_RE = re.compile(
@@ -664,6 +996,129 @@ def parse_completed_ranker_run(
         )
     )
 
+    try:
+        report_context = (
+            parse_ranker_report_context(
+                source_files["report_txt"],
+                require_final_formula=False,
+            )
+        )
+    except RankerReportContextError as exc:
+        raise RankerResultParseError(
+            "Ranker 报告上下文无法解析："
+            f"{exc}"
+        ) from exc
+
+    region_score_used: bool | None = None
+    primary_formula: str | None = None
+    score_weights: dict[str, float] = {}
+    decomposition_status: Literal[
+        "AVAILABLE",
+        "UNAVAILABLE",
+    ] = "UNAVAILABLE"
+    decomposition_reason: str | None = None
+
+    raw_region_score_used = (
+        report_context.run_config.get(
+            "region_score_used"
+        )
+    )
+
+    if raw_region_score_used is None:
+        decomposition_reason = (
+            "Ranker 报告未记录 region_score_used；"
+            "保留旧结果兼容性，不推断主分公式"
+        )
+    else:
+        try:
+            region_score_used = (
+                parse_ranker_boolean_flag(
+                    raw_region_score_used,
+                    field_name=(
+                        "region_score_used"
+                    ),
+                )
+            )
+        except RankerReportContextError as exc:
+            raise RankerResultParseError(
+                "主分分解上下文无效："
+                f"{exc}"
+            ) from exc
+
+        formula_key = (
+            "final_score_v4_region"
+            if region_score_used
+            else "final_score_v4_original"
+        )
+        primary_formula = (
+            report_context.score_formulas.get(
+                formula_key
+            )
+        )
+
+        if primary_formula is None:
+            decomposition_reason = (
+                "Ranker 报告未记录本次运行使用的"
+                f" {formula_key} 公式；"
+                "保留旧结果兼容性，不推断主分公式"
+            )
+        else:
+            try:
+                score_weights = (
+                    validate_primary_score_formula(
+                        primary_formula,
+                        region_score_used=(
+                            region_score_used
+                        )
+                    )
+                )
+            except ScoreDecompositionError as exc:
+                raise RankerResultParseError(
+                    "主分分解上下文无效："
+                    f"{exc}"
+                ) from exc
+
+            decomposition_status = "AVAILABLE"
+
+    interpretation_contract: (
+        ScientificInterpretationContract | None
+    ) = None
+    interpretation_status: Literal[
+        "AVAILABLE",
+        "UNAVAILABLE",
+    ]
+    interpretation_reason: str | None
+
+    if decomposition_status != "AVAILABLE":
+        interpretation_status = "UNAVAILABLE"
+        interpretation_reason = (
+            "主分公式上下文不可用，因此不能封存"
+            "与本次运行绑定的科学解释契约："
+            f"{decomposition_reason}"
+        )
+    else:
+        assert region_score_used is not None
+
+        try:
+            interpretation_contract = (
+                build_scientific_interpretation_contract(
+                    region_score_used=(
+                        region_score_used
+                    ),
+                    pool_reporting_policy=(
+                        pool_reporting.policy
+                    ),
+                )
+            )
+        except ValueError as exc:
+            raise RankerResultParseError(
+                "科学解释契约无法建立："
+                f"{exc}"
+            ) from exc
+
+        interpretation_status = "AVAILABLE"
+        interpretation_reason = None
+
     candidates: list[
         CandidateResult
     ] = []
@@ -736,6 +1191,34 @@ def parse_completed_ranker_run(
             or ""
         ).strip()
 
+        final_score_v4 = parse_float(
+            row,
+            "final_score_v4",
+            pdb_name=pdb_name,
+        )
+
+        decomposition = None
+        if decomposition_status == "AVAILABLE":
+            try:
+                decomposition = (
+                    decompose_primary_score(
+                        component_scores=(
+                            component_scores
+                        ),
+                        recorded_final_score_v4=(
+                            final_score_v4
+                        ),
+                        region_score_used=bool(
+                            region_score_used
+                        ),
+                    )
+                )
+            except ScoreDecompositionError as exc:
+                raise RankerResultParseError(
+                    "候选主分无法重建："
+                    f"{pdb_name} / {exc}"
+                ) from exc
+
         candidates.append(
             CandidateResult(
                 pdb_name=pdb_name,
@@ -743,11 +1226,7 @@ def parse_completed_ranker_run(
                     engineering_rank
                 ),
                 final_score_v4=(
-                    parse_float(
-                        row,
-                        "final_score_v4",
-                        pdb_name=pdb_name,
-                    )
+                    final_score_v4
                 ),
                 raw_filter_level=(
                     raw_filter_level
@@ -796,6 +1275,27 @@ def parse_completed_ranker_run(
                     component_scores
                 ),
                 key_metrics=key_metrics,
+                primary_score_contributions=(
+                    {}
+                    if decomposition is None
+                    else decomposition.contributions
+                ),
+                reconstructed_final_score_v4=(
+                    None
+                    if decomposition is None
+                    else (
+                        decomposition
+                        .reconstructed_final_score_v4
+                    )
+                ),
+                primary_score_reconstruction_error=(
+                    None
+                    if decomposition is None
+                    else (
+                        decomposition
+                        .reconstruction_error
+                    )
+                ),
                 row_error=(
                     raw_error or None
                 ),
@@ -824,6 +1324,45 @@ def parse_completed_ranker_run(
             "连续且唯一的 1..N 排名；"
             f"实际为 {actual_ranks}"
         )
+
+    comparisons: list[
+        AdjacentCandidateScoreComparison
+    ] = []
+    comparison_status: Literal[
+        "AVAILABLE",
+        "UNAVAILABLE",
+        "NOT_APPLICABLE",
+    ]
+    comparison_reason: str | None
+
+    if decomposition_status != "AVAILABLE":
+        comparison_status = "UNAVAILABLE"
+        comparison_reason = (
+            "主分分解不可用，因此不能生成"
+            "候选间主分贡献差值："
+            f"{decomposition_reason}"
+        )
+    elif len(candidates) < 2:
+        comparison_status = "NOT_APPLICABLE"
+        comparison_reason = (
+            "当前只有一个有效候选，"
+            "不存在相邻排名可比较"
+        )
+    else:
+        try:
+            comparisons = (
+                build_adjacent_primary_score_comparisons(
+                    candidates
+                )
+            )
+        except ScoreDecompositionError as exc:
+            raise RankerResultParseError(
+                "相邻候选主分比较无效："
+                f"{exc}"
+            ) from exc
+
+        comparison_status = "AVAILABLE"
+        comparison_reason = None
 
     thresholds = parse_filter_thresholds(
         source_files["report_txt"]
@@ -856,6 +1395,33 @@ def parse_completed_ranker_run(
         thresholds_formally_interpretable=(
             pool_reporting.policy
             .formal_interpretation_allowed
+        ),
+        score_decomposition_status=(
+            decomposition_status
+        ),
+        score_decomposition_reason=(
+            decomposition_reason
+        ),
+        region_score_used=region_score_used,
+        primary_score_formula=primary_formula,
+        primary_score_weights=score_weights,
+        scientific_interpretation_status=(
+            interpretation_status
+        ),
+        scientific_interpretation_reason=(
+            interpretation_reason
+        ),
+        scientific_interpretation_contract=(
+            interpretation_contract
+        ),
+        candidate_comparison_status=(
+            comparison_status
+        ),
+        candidate_comparison_reason=(
+            comparison_reason
+        ),
+        adjacent_candidate_score_comparisons=(
+            comparisons
         ),
         candidates_by_engineering_rank=(
             candidates

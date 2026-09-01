@@ -330,6 +330,9 @@ def test_deterministic_analysis_uses_no_model(
             failure_analysis_path=(
                 analysis / "failure.json"
             ),
+            deterministic_report_path=(
+                analysis / "deterministic.md"
+            ),
             explanation_markdown_path=None,
         )
 
@@ -586,6 +589,10 @@ def test_chat_reports_model_explanation_fallback(
             failure_analysis_path=(
                 analysis_dir
                 / "agent_failure_analysis_v2.json"
+            ),
+            deterministic_report_path=(
+                analysis_dir
+                / "binderranker_deterministic_analysis.md"
             ),
             explanation_markdown_path=None,
             explanation_status="UNAVAILABLE",

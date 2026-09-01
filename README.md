@@ -2,6 +2,8 @@
 
 [简体中文](README.zh-CN.md)
 
+[Current functionality and maturity report (2026-09-01, Chinese)](docs/PROJECT_STATUS_REPORT_2026-09-01.md)
+
 **Interpretable Ranking and Layered Screening for Generated Protein Backbone Candidates**
 
 BinderRanker prioritizes generated protein backbone candidates before more
@@ -33,7 +35,7 @@ existing candidate PDB set.
 BinderRanker is a **prioritization layer**. A high score or strict-layer pass
 is not biological proof.
 
-Current development line: **v0.3.1**
+Current release line: **v0.4.0 — scientific transparency**.
 
 ---
 
@@ -126,7 +128,10 @@ Depending on the run and permitted analysis scope, BinderRanker can expose:
 - candidate ranking and component scores;
 - broad / medium / strict screening results;
 - strengths, weaknesses, failed gates, and threshold gaps;
-- deterministic result summaries;
+- deterministic result summaries with a sealed scientific-interpretation
+  contract;
+- a human-readable deterministic analysis report with adjacent-rank score
+  differences;
 - configuration, execution, and file provenance;
 - optional evidence-bound model explanations.
 
@@ -171,7 +176,7 @@ model API key.
     python3 -m venv .venv
     source .venv/bin/activate
     python -m pip install --upgrade pip
-    python -m pip install ./binderranker-0.3.1-py3-none-any.whl
+    python -m pip install ./binderranker-0.4.0-py3-none-any.whl
 
 Verify:
 
@@ -302,9 +307,48 @@ BinderRanker remains the same scientific capability regardless of the access
 path. Agent interfaces improve accessibility and integration; they do not own
 or redefine scientific behavior.
 
-The internal Python namespace remains `protein_design_agent` during the v0.3
-compatibility transition. It is an implementation detail, not the public
-project identity.
+The v0.6 integration layer now publishes a versioned, machine-readable catalog
+for all ten Tool operations, including JSON schemas, side-effect classes,
+and trusted host-field requirements. Authorization and caller identity are
+excluded from untrusted request schemas; protected external execution remains
+available only through a trusted in-process runtime capability that is
+short-lived, action- and task-bound, review-hash-bound, and atomically
+single-use. Adapter failures now use one versioned, non-sensitive error schema
+with stable machine codes and no automatic retry of protected operations.
+
+The first external adapter is now available as an optional, local **read-only
+MCP server**. It exposes current plan, task status, deterministic dataset
+inspection, bounded task discovery, and bounded reads of the latest
+integrity-verified result summary for managed workspace tasks. Task-scoped
+calls accept a validated `task_name`, never an arbitrary host path; callers
+can first use `list_tasks` when no task name is known. Successful views omit
+host paths and stored free-form request text. Result reads require a current
+SHA256-sealed analysis and never create or recompute analysis artifacts.
+Approval, execution, mutation, analysis writes, HTTP serving, and remote
+authentication are deliberately not exposed.
+
+Install and launch it through an MCP host with:
+
+    python -m pip install "binderranker[mcp]"
+    binderranker-mcp --workspace /path/to/binderranker-workspace
+
+See [`docs/integrations/MCP.md`](docs/integrations/MCP.md) for the host
+configuration, exact capability boundary, and current remote-API limitation.
+Private OpenAI integration can reuse the same stdio command through Secure MCP
+Tunnel without opening a public BinderRanker port. Run
+`binderranker-mcp --workspace /path --check-tunnel-readiness` first, then follow
+the threat model in
+[`docs/integrations/REMOTE_MCP_SECURITY.md`](docs/integrations/REMOTE_MCP_SECURITY.md).
+This preflight does not verify OpenAI account permissions or a live tunnel.
+
+Without an OpenAI API key, a local Codex client can start the same read-only
+stdio server directly. The API-key-free setup, forward-safe Tool allow list,
+and real subprocess validation are documented in
+[`docs/integrations/CODEX_LOCAL_MCP.md`](docs/integrations/CODEX_LOCAL_MCP.md).
+
+The internal Python namespace remains `protein_design_agent` for backward
+compatibility. It is an implementation detail, not the public project
+identity.
 
 ---
 
@@ -319,6 +363,26 @@ Scientific validation requires separate downstream evidence such as
 retrospective design-campaign comparison, complex-prediction evaluation,
 enrichment analysis, or prospective experimental validation.
 
+Post-v0.4 development begins that work with a sealed, leakage-aware benchmark
+input contract and a deterministic fixed-budget BinderRanker/baseline
+comparison. The comparison excludes calibration rows and preserves undefined
+campaign statistics explicitly. These facilities make retrospective evidence
+auditable; synthetic or contract-only validation is not evidence that
+BinderRanker improves real outcomes.
+
+The v0.5 development layer also aggregates repeated campaigns by target and
+reports deterministic leave-one-target-out sensitivity. This exposes target
+heterogeneity and sample insufficiency without presenting a removal range as a
+confidence interval or a test of generalization.
+
+A companion readiness layer now binds data-freeze, cohort, review, and
+analysis-plan declarations to the exact sealed benchmark hashes. It explicitly
+separates synthetic fixtures from data declared as real retrospective records
+and reports structural method prerequisites without inventing a universal
+sample-size threshold. Passing this gate means only that the material is ready
+for independent scientific review; the software does not verify historical
+declarations or establish performance benefit or formal inference.
+
 ---
 
 ## Documentation
@@ -327,6 +391,11 @@ enrichment analysis, or prospective experimental validation.
 - [Metric reference](docs/METRICS.md)
 - [Result interpretation](docs/RESULT_INTERPRETATION.md)
 - [Validation](docs/VALIDATION.md)
+- [Benchmark contract](docs/BENCHMARK_CONTRACT.md)
+- [Fixed-budget benchmark metrics](docs/BENCHMARK_METRICS.md)
+- [Target-level benchmark sensitivity](docs/BENCHMARK_SENSITIVITY.md)
+- [Benchmark readiness and provenance review](docs/BENCHMARK_READINESS.md)
+- [Tool API contract and authorization boundary](docs/TOOL_API_CONTRACT.md)
 - [Public identity and claim policy](docs/PUBLIC_IDENTITY.md)
 - [v0.3 architecture](docs/V0.3_ARCHITECTURE.md)
 - [Architecture evolution and development principles](docs/ARCHITECTURE_EVOLUTION.md)

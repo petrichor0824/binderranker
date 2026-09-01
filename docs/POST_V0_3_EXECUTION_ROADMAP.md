@@ -51,12 +51,13 @@ directly improve BinderRanker usability.
 
 ## 2. Current repository baseline
 
-The active stabilization branch currently represents BinderRanker v0.3.0 plus post-release stabilization work.
+The active release-cut branch represents BinderRanker v0.4.0 after completing
+the scientific-transparency implementation and artifact-contract stabilization.
 
 ### Current product facts
 
 - package: `binderranker`
-- version: `0.3.0`
+- current release-cut version: `0.4.0`
 - Python: `>=3.10`
 - canonical CLI: `binderranker`
 - compatibility CLI: `protein-design-agent`
@@ -439,6 +440,28 @@ Tests:
 
 Turn the existing framework-independent Tool API into an intentionally versioned integration surface.
 
+### v0.6 Phase 1 status — contract catalog implemented
+
+The first bounded v0.6 slice now provides a shared `0.1` machine-readable
+catalog for all eight Tool operations. It centrally defines deterministic
+input/output JSON Schemas, side effects, host-local path semantics,
+authorization requirements, and fields that a trusted host must inject.
+
+Strict untrusted request models exclude provider provenance and every current
+approval/execution fact. Phase 2 supplies the Workstream 3D trusted runtime
+primitive, and Phase 3 supplies the shared adapter error boundary described
+below. A concrete external adapter is still not shipped. See
+[`TOOL_API_CONTRACT.md`](TOOL_API_CONTRACT.md).
+
+The v0.6 Phase 6 additive result-read slice advances the contract to `0.2`
+and nine operations. `get_result_summary` is a new read-only operation over
+the latest SHA256-sealed deterministic analysis; all eight pre-existing Tool
+signatures and the catalog envelope schema remain unchanged.
+
+This is integration engineering under the existing scientific-validation
+boundary. It does not establish BinderRanker performance or biological
+validity and does not modify the frozen ranking algorithm.
+
 ## 3A — Tool inventory and classification
 
 Each Tool must be classified by side effects:
@@ -469,6 +492,9 @@ Examples:
 
 This classification should be machine-readable or centrally defined if useful.
 
+Status: implemented in the versioned Tool API catalog. Deterministic analysis
+is classified as `APPEND_ONLY_ARTIFACT`, not read-only.
+
 ## 3B — Stable schemas
 
 Review all public Tool inputs/outputs for:
@@ -482,6 +508,13 @@ Review all public Tool inputs/outputs for:
 - no leakage of internal exception text/secrets.
 
 Avoid exposing internal implementation classes merely because they are convenient today.
+
+Status: completed through v0.6 Phase 3. The catalog now publishes the shared
+`AdapterErrorEnvelope` schema and all stable codes. The shared boundary keeps
+successful result models unchanged, maps request/authorization/domain/
+scientific/execution/internal failures deterministically, never includes raw
+exception text or host details, and marks every v0.1 error non-retryable so an
+adapter cannot blindly replay a mutating or executing Tool.
 
 ## 3C — Observation vs planning advice
 
@@ -524,11 +557,25 @@ BinderRanker Tool API
 
 BinderRanker Core retains the final domain guard.
 
+Status: implemented in v0.6 Phase 2 for in-process host adapters. The
+host-owned broker issues a non-JSON, five-minute capability only after an
+independent confirmation event. Each capability is bound to one action, one
+canonical task directory, and the reviewed manifest SHA256; it is consumed
+atomically once and fails closed on expiry, replay, scope mismatch, or review
+resource changes. The issuance API must never be registered as a model Tool.
+
+This completes the shared trusted-runtime primitive, not an external adapter.
+Concrete adapters must still provide authenticated user interaction, workspace
+path constraints, use the shared error envelope, and prove that broker issuance
+is outside the model-callable surface.
+
 ## Acceptance criteria
 
 - Tool contracts documented;
 - read/write/execution classes explicit;
 - authorization cannot be forged by model output;
+- one stable, non-sensitive adapter error taxonomy is published;
+- adapter failures cannot trigger automatic execution replay;
 - JSON adapter tests pass;
 - built-in workflow regression remains green.
 
@@ -614,6 +661,19 @@ Before implementation, research the current state of:
 
 MCP is likely the best first neutral adapter, but the choice must be evidence-based at implementation time.
 
+### Selection result — 2026-08-26
+
+MCP was selected for the first adapter after reviewing the OpenAI remote-MCP
+interface and the official MCP Python SDK v2 stable line. It provides a neutral
+cross-host protocol, structured outputs, tool annotations, local `stdio`, and
+an in-memory Client suitable for protocol regression tests. A vendor-specific
+OpenClaw, DeepSeek Harness, or Python-Agent wrapper would add a narrower
+dependency without improving the BinderRanker scientific boundary.
+
+The first implementation uses local `stdio` only. Remote Streamable HTTP,
+authentication, multi-tenant isolation, and deployment are not implied by this
+selection.
+
 ## Adapter principles
 
 The adapter must:
@@ -640,6 +700,128 @@ Prefer a narrow but complete useful set:
 - execution request with independent host confirmation.
 
 If authorization support is not mature enough, ship read-only/planning Tools first and explicitly defer execution Tools rather than weakening the safety boundary.
+
+### Phase 4 implementation checkpoint
+
+The bounded first slice is implemented with:
+
+- `get_current_plan`, `get_task_status`, and `inspect_dataset` only;
+- one configured BinderRanker workspace and validated managed `task_name` input;
+- no arbitrary path arguments, mutation, approval, execution, or analysis write;
+- path-free, stored-free-text-free structured result views;
+- shared `AdapterErrorEnvelope` failures plus MCP `isError=true`;
+- a machine-readable capability resource;
+- official `mcp>=2,<3` as an optional dependency;
+- in-memory MCP parity tests and a clean installed-Wheel MCP smoke test.
+
+This completes the safe read-only portion of Workstream 5. The full acceptance
+sequence remains open for protected operations because no trusted external-host
+confirmation bridge has been approved.
+
+### Phase 5A private tunnel checkpoint — 2026-08-27
+
+Current OpenAI documentation establishes a safer private route than adding a
+public BinderRanker HTTP endpoint: Secure MCP Tunnel can forward MCP requests
+to the existing local stdio command through an outbound-only tunnel-client
+process. BinderRanker therefore keeps the Phase 4 transport and adds:
+
+- `--check-tunnel-readiness` with a versioned, path-free JSON report;
+- deterministic local checks for initialized workspace, supported MCP SDK,
+  stdio transport, and the three-operation read-only scope;
+- explicit false values for OpenAI control-plane access, live tunnel status,
+  caller identity, and trusted human-confirmation availability;
+- a single-trust-domain deployment rule and remote-MCP threat model;
+- installed-Wheel and regression coverage for PASS and BLOCKED preflight states.
+
+This completes local readiness, not live remote acceptance. The owner/operator
+must still create or select a Tunnel ID, supply tunnel-client runtime
+credentials outside BinderRanker, configure organization/workspace associations
+and permissions, run tunnel-client doctor, and verify real read-only calls from
+the intended OpenAI surface. Public HTTP, multi-tenant routing, and protected
+Tools remain deferred.
+
+### Phase 5B-local Host checkpoint — 2026-08-27
+
+Because the owner does not currently have an OpenAI Platform runtime API key,
+the live Secure MCP Tunnel checkpoint is recorded as
+`EXTERNAL_CREDENTIAL_PENDING`, not as a BinderRanker failure. Development
+continues through the credential-free local Host path supported by Codex:
+
+- a portable Codex stdio configuration template uses an exact three-Tool allow
+  list and forward-safe `writes` approval mode;
+- a standalone verifier launches the installed BinderRanker MCP entry point as
+  a real child process rather than calling the server in-process;
+- acceptance covers MCP server name, installed version, instructions, Tool
+  annotations, a successful lifecycle read, a fail-closed dataset read, the
+  capability resource, and absence of returned host paths;
+- no API key, public listener, caller-identity claim, protected Tool, or
+  scientific-performance claim is added.
+
+The live local Codex Host check completed on 2026-08-30. It first exposed a
+legacy `2025-06-18` Tool-discovery incompatibility that the MCP SDK's newer
+default protocol path had not exercised: union output schemas lacked an
+explicit object root. Shared schema generation was corrected, the subprocess
+probe was moved to the legacy handshake family, and an exact `2025-06-18` wire
+regression was added. A fresh ephemeral Codex session then discovered and
+called all three Tools; status and plan reads succeeded and dataset inspection
+failed closed with `TOOL_REJECTED` as designed.
+
+Remote tunnel validation resumes only when the owner chooses to provision the
+external credential and permissions.
+
+### Phase 6 sealed result-read checkpoint — 2026-08-31
+
+The local external-Agent surface now exposes useful post-execution evidence
+without opening execution or analysis writes:
+
+- `get_result_summary` is the ninth Tool API operation and fourth read-only MCP
+  Tool;
+- the shared artifact resolver selects the latest completed analysis and
+  verifies result-summary, failure-analysis, deterministic-report, and
+  execution-manifest SHA256 seals;
+- the versioned `RankerResultSummary` is revalidated before projection;
+- MCP responses are bounded to 1--100 candidates and omit artifact/source
+  paths, stored project text, and report prose;
+- missing and legacy unsealed evidence is rejected as unavailable task state;
+  malformed or tampered sealed evidence is classified as
+  `SCIENTIFIC_RESULT_INVALID`;
+- the Tool remains read-only, idempotent, closed-world, and compatible with the
+  Codex `writes` approval policy.
+
+The clean installed-Wheel subprocess check and a fresh real Codex client call
+both passed on 2026-08-31. The client read one bounded candidate from sealed
+fixture evidence, observed `SEALED_VERIFIED` provenance, and received no host
+path. This acceptance used the existing Codex login session and no OpenAI
+Platform API key.
+
+This completes local read access to existing sealed ranking evidence. It does
+not create analyses, recompute scores, expose protected operations, establish
+remote Tunnel acceptance, or claim scientific performance.
+
+### Phase 7 task-discovery checkpoint — 2026-08-31
+
+The local external-Agent surface now supports path-free navigation before a
+caller knows a task name:
+
+- `list_tasks` is the tenth Tool API operation and fifth read-only MCP Tool;
+- contract version `0.3` adds only the workspace inventory request/result;
+- pagination is deterministic and bounded by `offset >= 0` and
+  `limit=1..100`;
+- only valid, non-symlink managed task directories are published;
+- one malformed lifecycle or sealed result is represented as unavailable or
+  invalid without hiding other tasks;
+- the external view omits workspace/bundle paths, stored request text,
+  timestamps, report prose, and internal error details;
+- the inventory reuses the shared task resolver, lifecycle parser, and sealed
+  result validation path instead of duplicating scientific logic.
+
+This checkpoint adds read-only navigation only. It does not add preparation,
+approval, execution, analysis writes, remote identity, or scientific claims.
+
+The full regression suite, release-asset verifier, clean installed-Wheel
+smokes, real stdio subprocess probe, and an isolated real Codex `list_tasks`
+call passed on 2026-08-31. The external call used only a synthetic empty task;
+real workspace task names were not disclosed.
 
 ## Acceptance test
 
@@ -698,11 +880,75 @@ Each tutorial should include:
 
 # Workstream 7 — Scientific transparency and score explanation
 
+Target: v0.4.0.
+
+Status: implementation, artifact-contract stabilization, and v0.4.0 release-cut
+verification complete; final tag and release require owner approval.
+
 ## Objective
 
 Users should understand why candidates rank differently without turning documentation into unsupported biological certainty.
 
 Current public source already exposes scoring formulas and metrics.
+
+The first v0.4 slice establishes a shared, model-independent primary-score
+decomposition layer. Deterministic result summaries now expose the active
+formula, audited weights, per-candidate weighted contributions, reconstructed
+score, and reconstruction error when the report provides sufficient evidence.
+The optional model explainer delegates to the same logic. Legacy reports stay
+readable with an explicit `UNAVAILABLE` status instead of inferred evidence.
+
+This slice does not change scoring, ranking, filters, or frozen Ranker
+resources.
+
+The second v0.4 slice adds a sealed, human-readable deterministic analysis
+report for offline and HPC-friendly review. It composes the validated result
+summary and failure-gap analysis without duplicating or recomputing scientific
+logic. Scope policy is enforced in the rendered view: `SMOKE_TEST_ONLY`
+suppresses unstable threshold details, while exploratory and full-dataset
+analyses can expose numerical gaps with explicit batch-relative limitations.
+The report path and SHA256 are included in the completed analysis provenance
+seal, and pre-report manifests remain readable.
+
+This slice also leaves scoring, ranking, filters, Tool authorization, and
+frozen Ranker resources unchanged.
+
+The third v0.4 slice adds shared adjacent-rank comparison evidence. Each
+comparison subtracts the lower-ranked candidate's direct-primary contributions
+from the adjacent higher-ranked candidate and requires their sum to reconstruct
+the recorded `final_score_v4` difference. The deterministic report exposes the
+largest positive term, the largest negative offset, all contribution deltas,
+and reconstruction error. Only adjacent pairs are generated, keeping artifact
+growth linear. Single-candidate and legacy/insufficient-evidence cases use
+explicit `NOT_APPLICABLE` or `UNAVAILABLE` semantics.
+
+These comparisons explain arithmetic in the recorded empirical score. They do
+not assert causality, binding energetics, or biological mechanism, and they do
+not change ranking or screening behavior.
+
+The fourth v0.4 slice seals a shared scientific-interpretation contract into
+the deterministic result summary. It binds the complete controlled metric
+ontology to the recorded scoring mode and analysis-scope policy, including
+metric direction and role, batch-relative score and threshold boundaries,
+prohibited claims, and required downstream validation. Result-summary loading,
+the deterministic Markdown report, and optional evidence-bound explanation all
+validate and reuse the same contract. Legacy summaries remain readable with an
+explicit `UNAVAILABLE` status instead of inferred run-bound semantics.
+
+The generated metrics reference is now checked byte-for-byte against its
+deterministic renderer so ontology documentation cannot silently drift.
+
+The stabilization slice following implementation hardens the serialized
+artifact boundary. Result summaries explicitly accept known schema generations
+`0.1` through `0.4`, reject unknown future generations, and require every field
+introduced by the declared generation. Completed analysis manifests similarly
+accept their known `0.1` through `0.3` generations, while schema `0.3` requires
+the deterministic-report integrity fields. Derived numeric evidence rejects
+NaN and infinity again when summaries are loaded, including through explicit
+or legacy analysis entry points.
+
+This completes the planned Workstream 7 implementation scope. It does not
+start the v0.5 scientific-validation infrastructure workstream.
 
 Focus on:
 
@@ -725,6 +971,12 @@ A polished paper-grade calibration rationale/ablation document may be deferred u
 # Workstream 8 — Scientific validation infrastructure
 
 Target: v0.5.0.
+
+Status: Phase 1 benchmark input contract, Phase 2 fixed-budget metric layer,
+Phase 3 target-removal sensitivity, and Phase 4 provenance/readiness gate
+implemented on v0.5 development branches; independently reviewed real
+empirical benchmark evidence, formal uncertainty inference, and scientific
+interpretation remain pending.
 
 ## Objective
 
@@ -752,6 +1004,68 @@ Demonstrate whether BinderRanker improves candidate prioritization under fixed d
 ## Important
 
 Do not let Agent/integration expansion substitute for scientific validation.
+
+## Phase 1 — Sealed benchmark input contract
+
+Before computing performance metrics, require a self-contained YAML/CSV bundle
+that declares the downstream outcome, evidence type, comparator baseline,
+frozen Ranker provenance, fixed selection budgets, parameter-selection policy,
+and outcome-blinding assumptions.
+
+The shared intake gate must verify the CSV SHA256, candidate identity, complete
+BinderRanker and baseline rankings, finite scores, binary outcomes, comparable
+campaign budgets, and target-level isolation between `CALIBRATION` and
+`EVALUATION`.
+
+Passing this gate means only that benchmark inputs satisfy the documented
+contract. It is not BinderRanker performance evidence.
+
+## Phase 2 — Fixed-budget comparison metrics
+
+Compute BinderRanker and baseline results side by side only from a validated
+bundle. Calibration rows must not enter reported evaluation metrics. Undefined
+metric states, campaign heterogeneity, and scientific claim boundaries must be
+preserved rather than replaced with optimistic defaults.
+
+Implementation status: complete on the v0.5 fixed-budget metrics branch. The
+immutable report revalidates sealed inputs, computes campaign-level and pooled
+hits, precision, recall, enrichment, and success for BinderRanker and the
+declared baseline, and explicitly marks zero-positive campaign recall and
+enrichment as unavailable. Synthetic regression fixtures validate arithmetic
+and packaging only; they are not empirical BinderRanker performance evidence.
+
+## Phase 3 — Target heterogeneity and removal sensitivity
+
+Aggregate repeated evaluation campaigns within the same target before
+cross-target review. Report equal-target metric distributions and
+leave-one-target-out macro-estimate ranges, while preserving zero-positive
+target states and explicit insufficient-target semantics.
+
+Implementation status: complete on the v0.5 target-sensitivity branch. The
+range is explicitly descriptive removal sensitivity, not a confidence interval
+or hypothesis test. Formal uncertainty inference remains gated on an adequately
+sized real benchmark and a predeclared scientific analysis plan.
+
+## Phase 4 — Real-campaign provenance and review readiness
+
+Bind a strict companion checklist to the exact sealed manifest and dataset.
+The checklist must declare data kind, freeze provenance, cohort construction,
+candidate-universe completeness, missing-outcome policy, outcome/baseline/
+leakage review, an analysis-plan identifier, and evidence limitations.
+
+Implementation status: complete on the v0.5 benchmark-readiness branch. The
+deterministic report distinguishes synthetic fixtures from data declared as
+real retrospective records, summarizes target/campaign outcome structure, and
+reports only prerequisites directly required by the implemented descriptive
+methods. It does not invent a universal sample-size threshold. Checklist
+validation establishes declaration structure and hash binding, not historical
+truth, independent scientific approval, performance benefit, or formal
+inference.
+
+The next evidence phase requires an independently reviewed real campaign
+bundle. If the real data and predeclared analysis plan justify a formal
+uncertainty method, that method must be reviewed and implemented explicitly;
+the readiness report cannot select one automatically.
 
 ---
 

@@ -58,6 +58,16 @@ from protein_design_agent.agent.providers.base import (
 from protein_design_agent.agent.ranker_result_parser import (
     RankerResultSummary,
 )
+from protein_design_agent.agent.ranker_report_context import (
+    RankerReportContextError,
+    parse_boolean_flag as parse_ranker_boolean_flag,
+    parse_ranker_report_context,
+)
+from protein_design_agent.agent.score_decomposition import (
+    ScoreDecompositionError,
+    decompose_primary_score,
+    primary_score_weights as shared_primary_score_weights,
+)
 
 
 class ResultExplanationError(RuntimeError):
@@ -154,25 +164,6 @@ class ResultExplanationRecord(BaseModel):
     explanation: ResultExplanationPayload
 
 
-REPORT_CONFIG_RE = re.compile(
-    r"^\s*"
-    r"(binder_chain|desired_regions|"
-    r"undesired_regions|hotspot_regions|"
-    r"hotspot_expand_radius|"
-    r"region_score_mode|region_score_used|"
-    r"region_filter)"
-    r"\s*=\s*(.*?)\s*$"
-)
-
-REPORT_FORMULA_RE = re.compile(
-    r"^\s*"
-    r"(final_score_v4_original|"
-    r"final_score_v4_region|"
-    r"final_score_v4)"
-    r"\s*=\s*(.*?)\s*$"
-)
-
-
 def load_ranker_summary(
     path: Path,
 ) -> RankerResultSummary:
@@ -233,50 +224,21 @@ def parse_report_context(
 
     这里只读取文本，不执行公式。
     """
-    report_path = report_path.resolve()
-
-    if not report_path.exists():
+    try:
+        context = parse_ranker_report_context(
+            report_path,
+            require_final_formula=True,
+        )
+    except RankerReportContextError as exc:
         raise ResultExplanationError(
-            f"Ranker 报告不存在：{report_path}"
-        )
-
-    lines = report_path.read_text(
-        encoding="utf-8",
-        errors="strict",
-    ).splitlines()
-
-    run_config: dict[str, str] = {}
-    score_formulas: dict[str, str] = {}
-
-    for line in lines:
-        config_match = (
-            REPORT_CONFIG_RE.match(line)
-        )
-
-        if config_match:
-            run_config[
-                config_match.group(1)
-            ] = config_match.group(2)
-            continue
-
-        formula_match = (
-            REPORT_FORMULA_RE.match(line)
-        )
-
-        if formula_match:
-            score_formulas[
-                formula_match.group(1)
-            ] = formula_match.group(2)
-
-    if "final_score_v4" not in score_formulas:
-        raise ResultExplanationError(
-            "无法从 Ranker 报告找到 "
-            "final_score_v4 说明"
-        )
+            str(exc)
+        ) from exc
 
     return {
-        "run_config": run_config,
-        "score_formulas": score_formulas,
+        "run_config": context.run_config,
+        "score_formulas": (
+            context.score_formulas
+        ),
     }
 
 
@@ -308,32 +270,15 @@ def parse_boolean_flag(
     field_name: str,
 ) -> bool:
     """严格解析报告中的布尔配置。"""
-    if isinstance(value, bool):
-        return value
-
-    normalized = str(value).strip().lower()
-
-    if normalized in {
-        "true",
-        "1",
-        "yes",
-        "on",
-    }:
-        return True
-
-    if normalized in {
-        "false",
-        "0",
-        "no",
-        "off",
-        "",
-    }:
-        return False
-
-    raise ResultExplanationError(
-        f"无法解析布尔配置 {field_name}："
-        f"{value!r}"
-    )
+    try:
+        return parse_ranker_boolean_flag(
+            value,
+            field_name=field_name,
+        )
+    except RankerReportContextError as exc:
+        raise ResultExplanationError(
+            str(exc)
+        ) from exc
 
 
 def primary_score_weights(
@@ -341,19 +286,14 @@ def primary_score_weights(
     region_score_used: bool,
 ) -> dict[str, float]:
     """返回本次运行真正使用的主分权重。"""
-    if region_score_used:
-        return {
-            "morphology_adaptive_score": 0.78,
-            "score_safety": 0.10,
-            "score_roughness": 0.05,
-            "score_region": 0.07,
-        }
-
-    return {
-        "morphology_adaptive_score": 0.85,
-        "score_safety": 0.10,
-        "score_roughness": 0.05,
-    }
+    try:
+        return shared_primary_score_weights(
+            region_score_used=region_score_used
+        )
+    except ScoreDecompositionError as exc:
+        raise ResultExplanationError(
+            str(exc)
+        ) from exc
 
 
 def add_primary_score_facts(
@@ -375,55 +315,41 @@ def add_primary_score_facts(
             "component_scores"
         ]
 
-        contributions: dict[str, float] = {}
-
-        for metric_key, weight in (
-            weights.items()
-        ):
-            if metric_key not in component_scores:
-                raise ResultExplanationError(
-                    "主分组成指标缺失："
-                    f"{candidate['pdb_name']} / "
-                    f"{metric_key}"
+        try:
+            decomposition = (
+                decompose_primary_score(
+                    component_scores=(
+                        component_scores
+                    ),
+                    recorded_final_score_v4=(
+                        candidate[
+                            "final_score_v4"
+                        ]
+                    ),
+                    region_score_used=(
+                        region_score_used
+                    ),
                 )
-
-            contributions[metric_key] = (
-                float(component_scores[metric_key])
-                * weight
             )
-
-        reconstructed = sum(
-            contributions.values()
-        )
-
-        recorded = float(
-            candidate["final_score_v4"]
-        )
-
-        error = abs(
-            reconstructed - recorded
-        )
-
-        if error > 1e-8:
+        except ScoreDecompositionError as exc:
             raise ResultExplanationError(
-                "主分重建与记录值不一致："
-                f"{candidate['pdb_name']}，"
-                f"重建={reconstructed}，"
-                f"记录={recorded}，"
-                f"误差={error}"
-            )
+                f"{candidate['pdb_name']}：{exc}"
+            ) from exc
 
         candidate[
             "primary_score_contributions"
-        ] = contributions
+        ] = decomposition.contributions
 
         candidate[
             "reconstructed_final_score_v4"
-        ] = reconstructed
+        ] = (
+            decomposition
+            .reconstructed_final_score_v4
+        )
 
         candidate[
             "primary_score_reconstruction_error"
-        ] = error
+        ] = decomposition.reconstruction_error
 
     return weights
 
@@ -591,6 +517,25 @@ def build_result_explanation_evidence(
             "结果摘要和失败分析的候选数不一致"
         )
 
+    if (
+        summary.score_decomposition_status
+        != "AVAILABLE"
+    ):
+        reason = (
+            summary.score_decomposition_reason
+            or "结果摘要未提供原因"
+        )
+        raise ResultExplanationError(
+            "确定性主分分解不可用，"
+            "不能进入模型解释："
+            f"{reason}"
+        )
+
+    if summary.region_score_used is None:
+        raise ResultExplanationError(
+            "结果摘要缺少 region_score_used"
+        )
+
     scope_level = str(
         summary.analysis_scope.get(
             "level",
@@ -751,13 +696,48 @@ def build_result_explanation_evidence(
             "证据候选数量不完整"
         )
 
-    region_score_used = parse_boolean_flag(
-        report_context["run_config"].get(
-            "region_score_used",
-            "",
-        ),
-        field_name="region_score_used",
+    report_region_score_used = (
+        parse_boolean_flag(
+            report_context["run_config"].get(
+                "region_score_used",
+                "",
+            ),
+            field_name="region_score_used",
+        )
     )
+    region_score_used = (
+        summary.region_score_used
+    )
+
+    if (
+        report_region_score_used
+        != region_score_used
+    ):
+        raise ResultExplanationError(
+            "结果摘要与 Ranker 报告的 "
+            "region_score_used 不一致"
+        )
+
+    formula_key = (
+        "final_score_v4_region"
+        if region_score_used
+        else "final_score_v4_original"
+    )
+    report_primary_formula = (
+        report_context["score_formulas"].get(
+            formula_key
+        )
+    )
+
+    if (
+        report_primary_formula is None
+        or report_primary_formula
+        != summary.primary_score_formula
+    ):
+        raise ResultExplanationError(
+            "结果摘要与 Ranker 报告的"
+            "主分公式不一致"
+        )
 
     if scope_level == "SMOKE_TEST_ONLY":
         threshold_analysis_mode = (
@@ -795,10 +775,40 @@ def build_result_explanation_evidence(
         )
     )
 
+    interpretation_contract = (
+        summary.scientific_interpretation_contract
+    )
+
+    if (
+        summary.scientific_interpretation_status
+        == "AVAILABLE"
+    ):
+        if interpretation_contract is None:
+            raise ResultExplanationError(
+                "结果摘要声明科学解释契约可用，"
+                "但未提供契约"
+            )
+
+        if (
+            metric_semantics_models
+            != interpretation_contract.metric_semantics
+        ):
+            raise ResultExplanationError(
+                "模型证据指标语义与封存的科学解释契约不一致"
+            )
+
     score_weights = add_primary_score_facts(
         candidates=evidence_candidates,
         region_score_used=region_score_used,
     )
+
+    if score_weights != (
+        summary.primary_score_weights
+    ):
+        raise ResultExplanationError(
+            "结果摘要中的主分权重与"
+            "共享指标本体不一致"
+        )
 
     batch_metric_summary = (
         build_batch_metric_summary(
@@ -828,7 +838,7 @@ def build_result_explanation_evidence(
     }
 
     evidence = {
-        "evidence_schema_version": "0.2",
+        "evidence_schema_version": "0.3",
         "project_name": summary.project_name,
         "analysis_scope_level": (
             scope_level
@@ -868,6 +878,13 @@ def build_result_explanation_evidence(
         "metric_semantics": (
             metric_semantics
         ),
+        "scientific_interpretation_contract": (
+            None
+            if interpretation_contract is None
+            else interpretation_contract.model_dump(
+                mode="json"
+            )
+        ),
         "batch_metric_summary": (
             batch_metric_summary
         ),
@@ -892,6 +909,10 @@ def build_result_explanation_evidence(
                 "metric_semantics_are_"
                 "authoritative"
             ): True,
+            (
+                "scientific_interpretation_"
+                "contract_is_authoritative"
+            ): interpretation_contract is not None,
             (
                 "primary_score_contributions_"
                 "are_authoritative"
@@ -978,6 +999,8 @@ def build_result_explainer_messages(
 - strengths 和 limitations 中的 metric_key
   必须来自对应候选的 component_scores 或 key_metrics；
 - metric_semantics 是指标含义的唯一权威来源；
+- scientific_interpretation_contract 存在时，
+  它是批次相对性、禁止结论和下游验证边界的权威来源；
 - 每次解释指标时必须遵守对应的
   allowed_interpretations 和 forbidden_interpretations；
 - 不得仅根据字段英文名称猜测生物学或结构含义；

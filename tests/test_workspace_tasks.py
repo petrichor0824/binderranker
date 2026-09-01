@@ -5,6 +5,7 @@ import pytest
 from protein_design_agent.agent.workspace_tasks import (
     DEFAULT_TASK_NAME,
     TaskPathError,
+    list_task_bundles,
     resolve_task_bundle,
     validate_task_name,
 )
@@ -164,6 +165,8 @@ def test_existing_task_symlink_cannot_escape_runs(
         pytest.skip(
             "当前平台不允许创建目录符号链接"
         )
+
+    assert list_task_bundles(workspace) == ()
 
     with pytest.raises(
         TaskPathError,

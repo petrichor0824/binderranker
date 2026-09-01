@@ -29,6 +29,10 @@ CANONICAL_ENTRY_POINT = (
 LEGACY_ENTRY_POINT = (
     "protein_design_agent.cli:main"
 )
+MCP_ENTRY_POINT = (
+    "protein_design_agent.adapters."
+    "mcp_entrypoint:main"
+)
 
 RANKER_SUFFIX = (
     "protein_design_agent/resources/"
@@ -76,6 +80,33 @@ def parse_metadata(text: str) -> Message:
     return Parser().parsestr(text)
 
 
+def parse_citation_version(text: str) -> str:
+    """Read the single top-level CFF software version without YAML deps."""
+    versions = []
+
+    for line in text.splitlines():
+        if (
+            line == line.lstrip()
+            and line.startswith("version:")
+        ):
+            value = line.split(
+                ":",
+                maxsplit=1,
+            )[1].strip().strip("\"'")
+            if value:
+                versions.append(value)
+
+    require(
+        len(versions) == 1,
+        (
+            "sdist CITATION.cff: expected exactly "
+            f"one top-level version, got {versions}"
+        ),
+    )
+
+    return versions[0]
+
+
 def require_metadata(
     metadata: Message,
     *,
@@ -105,6 +136,33 @@ def require_metadata(
         isinstance(version, str)
         and bool(version.strip()),
         f"{source}: Version is missing",
+    )
+
+    extras = set(
+        metadata.get_all(
+            "Provides-Extra",
+            [],
+        )
+    )
+    requirements = metadata.get_all(
+        "Requires-Dist",
+        [],
+    )
+
+    require(
+        "mcp" in extras,
+        f"{source}: mcp optional extra is missing",
+    )
+    require(
+        any(
+            requirement.startswith("mcp")
+            and 'extra == "mcp"' in requirement
+            for requirement in requirements
+        ),
+        (
+            f"{source}: mcp optional dependency "
+            "metadata is missing"
+        ),
     )
 
     return version
@@ -195,6 +253,15 @@ def inspect_wheel(
             == LEGACY_ENTRY_POINT,
             (
                 "wheel: legacy CLI compatibility "
+                "entry point is invalid"
+            ),
+        )
+
+        require(
+            scripts.get("binderranker-mcp")
+            == MCP_ENTRY_POINT,
+            (
+                "wheel: read-only MCP adapter "
                 "entry point is invalid"
             ),
         )
@@ -303,6 +370,8 @@ def inspect_sdist(
     required_names = (
         f"{root}/LICENSE",
         f"{root}/README.md",
+        f"{root}/CHANGELOG.md",
+        f"{root}/CITATION.cff",
         f"{root}/pyproject.toml",
         f"{root}/src/{RANKER_SUFFIX}",
         (
@@ -320,6 +389,35 @@ def inspect_sdist(
             name in names,
             f"sdist: missing {name}",
         )
+
+    citation_name = f"{root}/CITATION.cff"
+    with tarfile.open(
+        sdist,
+        "r:gz",
+    ) as archive:
+        citation_handle = archive.extractfile(
+            citation_name
+        )
+        require(
+            citation_handle is not None,
+            "sdist: could not read CITATION.cff",
+        )
+        citation_version = (
+            parse_citation_version(
+                citation_handle.read().decode(
+                    "utf-8"
+                )
+            )
+        )
+
+    require(
+        citation_version == version,
+        (
+            "sdist CITATION.cff version "
+            f"{citation_version!r} does not match "
+            f"package version {version!r}"
+        ),
+    )
 
     sample_prefix = (
         f"{root}/src/{SAMPLE_PREFIX}"

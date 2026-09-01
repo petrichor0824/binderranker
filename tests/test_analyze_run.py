@@ -62,6 +62,20 @@ def install_fake_deterministic_writers(
         )
         return output_path
 
+    def fake_report(
+        *,
+        result_summary_path,
+        failure_analysis_path,
+        output_path,
+    ):
+        assert result_summary_path.is_file()
+        assert failure_analysis_path.is_file()
+        output_path.write_text(
+            "# Deterministic analysis\n",
+            encoding="utf-8",
+        )
+        return output_path
+
     monkeypatch.setattr(
         module,
         "write_ranker_result_summary",
@@ -72,6 +86,12 @@ def install_fake_deterministic_writers(
         module,
         "write_failure_analysis",
         fake_failure,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "write_deterministic_analysis_report",
+        fake_report,
     )
 
 
@@ -98,6 +118,7 @@ def test_deterministic_analysis_succeeds(
     assert result.provider_name is None
     assert result.result_summary_path.is_file()
     assert result.failure_analysis_path.is_file()
+    assert result.deterministic_report_path.is_file()
     assert result.manifest_path.is_file()
 
     text = result.manifest_path.read_text(
@@ -306,6 +327,7 @@ def test_model_failure_preserves_deterministic_analysis(
 
     assert result.result_summary_path.is_file()
     assert result.failure_analysis_path.is_file()
+    assert result.deterministic_report_path.is_file()
 
     assert (
         result.explanation_evidence_path
@@ -358,7 +380,7 @@ def test_completed_analysis_manifest_is_sealed(
         )
     )
 
-    assert manifest["schema_version"] == "0.2"
+    assert manifest["schema_version"] == "0.3"
     assert manifest["status"] == "COMPLETED"
 
     completed_at = manifest.get(
@@ -392,6 +414,13 @@ def test_completed_analysis_manifest_is_sealed(
         manifest["failure_analysis_sha256"]
         == sha256_file(
             result.failure_analysis_path
+        )
+    )
+
+    assert (
+        manifest["deterministic_report_sha256"]
+        == sha256_file(
+            result.deterministic_report_path
         )
     )
 

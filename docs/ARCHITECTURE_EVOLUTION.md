@@ -74,7 +74,8 @@ At the time this document was written, the active stabilization branch already c
 ### 3.1 Packaging and release identity
 
 - Distribution name: `binderranker`
-- Current package version: `0.3.0`
+- Current package/release version: `0.4.0`
+- Release focus: scientific transparency and artifact-contract hardening
 - Python requirement: `>=3.10`
 - Canonical CLI: `binderranker`
 - Historical compatibility CLI: `protein-design-agent`
@@ -309,6 +310,65 @@ Possible adapters include:
 The project should not hard-bind scientific logic to one Agent vendor.
 
 All adapters must converge on the same BinderRanker Tool API and deterministic Core.
+
+As of v0.6 Phase 4, the first concrete adapter is a local read-only MCP server.
+The choice follows an implementation-time review of the OpenAI remote-MCP
+interface and the official MCP Python SDK v2 stable line. The server uses the
+official SDK, local `stdio`, structured outputs, read-only/idempotent/closed-
+world annotations, and the shared BinderRanker error envelope.
+
+Phase 4 initially exposed only `get_current_plan`, `get_task_status`, and
+`inspect_dataset`. The adapter accepts managed task names rather than paths and
+emits purpose-built views without host paths or stored free-form request text. Preparation,
+mutation, approval, execution, and append-only analysis remain unavailable
+until a host-specific design can authenticate the human and bind a real
+confirmation event to BinderRanker's trusted runtime. MCP protocol support by
+itself does not satisfy that domain authorization requirement.
+
+The current server is not a remote API: it has no HTTP listener, OAuth, tenant
+model, or public deployment. Those are separate future decisions.
+
+As of v0.6 Phase 5A, private OpenAI connectivity no longer requires a public
+BinderRanker HTTP listener. OpenAI Secure MCP Tunnel can invoke the existing
+stdio command through an outbound-only tunnel-client process. BinderRanker now
+publishes a local readiness preflight and a threat model, but it does not own or
+infer OpenAI control-plane permissions, runtime authentication, organization or
+workspace association, or live tunnel health.
+
+This remains a single-trust-domain design: one process is bound to one managed
+workspace. The tunnel does not provide BinderRanker with a trusted caller
+identity or human-confirmation event, so protected Tools remain deferred even
+after a successful read-only tunnel connection.
+
+Phase 5B-local validates the same boundary without an API credential: a generic
+local MCP Host launches the official entry point as a real stdio subprocess,
+receives BinderRanker's server identity/version/instructions, discovers only
+the three read-only Tools, and observes both successful and fail-closed calls.
+Codex configuration adds a matching host-side Tool allow list. The 2026-08-30
+live local check also fixes and covers the Codex `2025-06-18` requirement that
+structured Tool output schemas have an explicit object root. This is local Host
+interoperability evidence, not remote tunnel or scientific-performance evidence.
+
+As of v0.6 Phase 6, `get_result_summary` is the fourth read-only MCP Tool and
+the ninth Tool API operation. It reads only the latest SHA256-sealed
+deterministic analysis, revalidates the versioned result summary, and projects
+a bounded engineering-rank view without artifact paths, source paths, stored
+project text, or report prose. Missing and legacy unsealed evidence fails
+closed; malformed or tampered sealed evidence is a scientific-validity error.
+This adds result consumption, not result generation: execution, analysis
+writes, authorization, remote identity, and scientific-performance claims
+remain unchanged.
+
+As of v0.6 Phase 7, `list_tasks` is the fifth read-only MCP Tool and the tenth
+Tool API operation. It removes the integration bootstrap gap where an external
+Agent had to know a task name before it could call BinderRanker. Discovery is
+workspace-bound, deterministic, paginated, and path-free. It reports only safe
+task names, lifecycle availability, sealed-result availability, and candidate
+counts for verified sealed results. Unsafe or symlinked task directories are
+not published, and one malformed task does not suppress healthy tasks. This is
+navigation metadata, not a second lifecycle or scientific-validation engine:
+the Tool API reuses `list_task_bundles`, `inspect_run_status`, and the sealed
+result reader.
 
 ---
 
